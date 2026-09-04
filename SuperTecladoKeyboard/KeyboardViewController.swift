@@ -1,18 +1,23 @@
 import SwiftUI
 import UIKit
 
+@MainActor
+private final class KeyboardViewModel: ObservableObject {
+    @Published var savedClips: [SharedClipboardClip] = []
+    @Published var temporaryClips: [SharedTemporaryClip] = []
+    @Published var hasFullAccess = false
+}
+
 final class KeyboardViewController: UIInputViewController {
+    private let model = KeyboardViewModel()
     private var host: UIHostingController<SuperTecladoView>?
-    private var savedClips: [SharedClipboardClip] = []
-    private var temporaryClips: [SharedTemporaryClip] = []
     private var clipboardTimer: Timer?
 
     override func viewDidLoad() {
         super.viewDidLoad()
         reload()
         installKeyboardView()
-
-        let height = view.heightAnchor.constraint(equalToConstant: 310)
+        let height = view.heightAnchor.constraint(equalToConstant: 342)
         height.priority = .defaultHigh
         height.isActive = true
     }
@@ -42,8 +47,9 @@ final class KeyboardViewController: UIInputViewController {
               hasFullAccess,
               let text = UIPasteboard.general.string,
               !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-              (!SharedClipboardStore.skipOneTimeCodes || !isLikelyOneTimeCode(text)) else { return false }
-
+              (!SharedClipboardStore.skipOneTimeCodes || !isLikelyOneTimeCode(text)) else {
+            return false
+        }
         return SharedClipboardStore.captureTemporaryText(
             text,
             pasteboardChangeCount: UIPasteboard.general.changeCount
@@ -53,7 +59,7 @@ final class KeyboardViewController: UIInputViewController {
     private func startClipboardMonitoring() {
         clipboardTimer?.invalidate()
         clipboardTimer = Timer.scheduledTimer(
-            timeInterval: 1,
+            timeInterval: 0.7,
             target: self,
             selector: #selector(pollClipboard),
             userInfo: nil,
@@ -62,9 +68,7 @@ final class KeyboardViewController: UIInputViewController {
     }
 
     @objc private func pollClipboard() {
-        if captureClipboardAsTemporaryIfNeeded() {
-            reload()
-        }
+        if captureClipboardAsTemporaryIfNeeded() { reload() }
     }
 
     private func isLikelyOneTimeCode(_ text: String) -> Bool {
@@ -90,37 +94,31 @@ final class KeyboardViewController: UIInputViewController {
 
     private func makeView() -> SuperTecladoView {
         SuperTecladoView(
-            savedClips: savedClips,
-            temporaryClips: temporaryClips,
-            hasFullAccess: hasFullAccess,
+            model: model,
             insertSaved: { [weak self] clip in
                 self?.textDocumentProxy.insertText(clip.text)
-                if self?.hasFullAccess == true {
-                    SharedClipboardStore.markUsed(id: clip.id)
-                    self?.reload()
-                }
+                SharedClipboardStore.markUsed(id: clip.id)
+                self?.reload()
             },
             insertTemporary: { [weak self] clip in
                 self?.textDocumentProxy.insertText(clip.text)
-                if self?.hasFullAccess == true {
-                    SharedClipboardStore.markTemporaryUsed(id: clip.id)
-                    self?.reload()
-                }
+                SharedClipboardStore.markTemporaryUsed(id: clip.id)
+                self?.reload()
             },
             saveTemporary: { [weak self] clip in
                 guard self?.hasFullAccess == true else { return }
                 SharedClipboardStore.promoteTemporary(id: clip.id)
                 self?.reload()
             },
-            insertText: { [weak self] text in
-                self?.textDocumentProxy.insertText(text)
-            },
+            insertText: { [weak self] text in self?.textDocumentProxy.insertText(text) },
             toggleFavorite: { [weak self] clip in
-                guard self?.hasFullAccess == true else { return }
                 SharedClipboardStore.toggleFavorite(id: clip.id)
                 self?.reload()
             },
-            refresh: { [weak self] in self?.reload() },
+            refresh: { [weak self] in
+                self?.captureClipboardAsTemporaryIfNeeded(automatic: false)
+                self?.reload()
+            },
             paste: { [weak self] in
                 guard let self,
                       self.hasFullAccess,
@@ -128,6 +126,7 @@ final class KeyboardViewController: UIInputViewController {
                       !text.isEmpty else { return }
                 self.captureClipboardAsTemporaryIfNeeded(automatic: false)
                 self.textDocumentProxy.insertText(text)
+                self.reload()
             },
             delete: { [weak self] in self?.textDocumentProxy.deleteBackward() },
             insertSpace: { [weak self] in self?.textDocumentProxy.insertText(" ") },
@@ -137,82 +136,22 @@ final class KeyboardViewController: UIInputViewController {
     }
 
     private func reload() {
-        savedClips = SharedClipboardStore.load()
-        temporaryClips = SharedClipboardStore.loadTemporaryInbox()
-        host?.rootView = makeView()
+        model.savedClips = SharedClipboardStore.load()
+        model.temporaryClips = SharedClipboardStore.loadTemporaryInbox()
+        model.hasFullAccess = hasFullAccess
     }
 }
 
+private enum KeyboardMode { case typing, clipboard }
+private enum KeyboardPage { case letters, numbers, symbols }
 private enum KeyboardSection: String, CaseIterable, Identifiable {
     case temporary = "Temporales"
     case saved = "Guardados"
-
     var id: Self { self }
-}
-
-private enum KeyboardMode {
-    case typing
-    case clipboard
-}
-
-private enum KeyboardPage {
-    case letters
-    case numbers
-    case symbols
-}
-
-private enum KeyboardFilter: String, CaseIterable, Identifiable {
-    case all = "Recientes"
-    case favorites = "Favoritos"
-    case pinned = "Fijados"
-
-    var id: Self { self }
-}
-
-private enum KeyboardContentFilter: String, CaseIterable, Identifiable {
-    case all
-    case text
-    case links
-    case images
-
-    var id: Self { self }
-
-    var title: String {
-        switch self {
-        case .all: "Todos los formatos"
-        case .text: "Texto"
-        case .links: "Enlaces"
-        case .images: "Imágenes"
-        }
-    }
-
-    var symbol: String {
-        switch self {
-        case .all: "square.grid.2x2"
-        case .text: "doc.text"
-        case .links: "link"
-        case .images: "photo"
-        }
-    }
-
-    func includes(_ clip: SharedClipboardClip) -> Bool {
-        switch self {
-        case .all:
-            true
-        case .text:
-            !["link", "image"].contains(clip.kindRawValue)
-        case .links:
-            clip.kindRawValue == "link"
-        case .images:
-            clip.kindRawValue == "image"
-        }
-    }
 }
 
 private struct SuperTecladoView: View {
-    let savedClips: [SharedClipboardClip]
-    let temporaryClips: [SharedTemporaryClip]
-    let hasFullAccess: Bool
+    @ObservedObject var model: KeyboardViewModel
     let insertSaved: (SharedClipboardClip) -> Void
     let insertTemporary: (SharedTemporaryClip) -> Void
     let saveTemporary: (SharedTemporaryClip) -> Void
@@ -229,398 +168,355 @@ private struct SuperTecladoView: View {
     @State private var page: KeyboardPage = .letters
     @State private var isShifted = false
     @State private var section: KeyboardSection = .temporary
-    @State private var filter: KeyboardFilter = .all
-    @AppStorage(
-        "keyboardContentFilter",
-        store: UserDefaults(suiteName: SharedClipboardStore.appGroupID)
-    ) private var contentFilterRawValue = KeyboardContentFilter.all.rawValue
-    @AppStorage(
-        "keyboardFolderFilter",
-        store: UserDefaults(suiteName: SharedClipboardStore.appGroupID)
-    ) private var selectedFolder = ""
-    @AppStorage(
-        "keyboardColorFilter",
-        store: UserDefaults(suiteName: SharedClipboardStore.appGroupID)
-    ) private var selectedColor = ""
 
-    private var contentFilter: KeyboardContentFilter {
-        KeyboardContentFilter(rawValue: contentFilterRawValue) ?? .all
-    }
-
-    private var visibleSavedClips: [SharedClipboardClip] {
-        let sectionClips = switch filter {
-        case .all: savedClips
-        case .favorites: savedClips.filter(\.isFavorite)
-        case .pinned: savedClips.filter(\.isPinned)
-        }
-        return sectionClips
-            .filter(contentFilter.includes)
-            .filter { selectedFolder.isEmpty || $0.folderName == selectedFolder }
-            .filter { selectedColor.isEmpty || $0.colorTagRawValue == selectedColor }
-    }
-
-    private var visibleTemporaryClips: [SharedTemporaryClip] {
-        temporaryClips.filter { clip in
-            switch contentFilter {
-            case .all: true
-            case .text: !["link", "image"].contains(clip.kindRawValue)
-            case .links: clip.kindRawValue == "link"
-            case .images: clip.kindRawValue == "image"
-            }
-        }
-    }
-
-    private var hasOrganizationFilter: Bool {
-        !selectedFolder.isEmpty || !selectedColor.isEmpty
-    }
-
-    private var organizationFilterColor: Color {
-        if let color = SharedClipColor(rawValue: selectedColor) { return color.color }
-        return selectedFolder.isEmpty ? .primary : .cyan
-    }
+    private let background = Color(red: 0.105, green: 0.11, blue: 0.125)
+    private let toolbarBackground = Color(red: 0.12, green: 0.125, blue: 0.14)
+    private let keyBackground = Color(red: 0.285, green: 0.29, blue: 0.305)
+    private let specialBackground = Color(red: 0.18, green: 0.185, blue: 0.205)
+    private let accent = Color(red: 0.05, green: 0.68, blue: 0.96)
 
     var body: some View {
-        VStack(spacing: 8) {
-            header
-            if mode == .clipboard {
-                sectionPicker
-                if section == .saved { savedFilterPicker }
-                clipList
-                clipboardControls
-            } else {
+        VStack(spacing: 0) {
+            if mode == .typing {
+                typingToolbar
                 typingKeyboard
+            } else {
+                clipboardToolbar
+                clipboardPanel
             }
         }
-        .padding(.horizontal, 8)
-        .padding(.top, 7)
-        .padding(.bottom, 6)
-        .background(Color(uiColor: .systemGroupedBackground))
+        .background(background)
+        .foregroundStyle(.white)
+        .preferredColorScheme(.dark)
     }
 
-    private var header: some View {
-        HStack(spacing: 8) {
-            Image(systemName: "clipboard.fill")
-                .foregroundStyle(.cyan)
-            Text(mode == .typing ? "Super Teclado" : "Portapapeles")
-                .font(.subheadline.weight(.semibold))
-                .lineLimit(1)
+    private var typingToolbar: some View {
+        HStack(spacing: 12) {
+            ZStack {
+                Circle().fill(accent)
+                Text("S").font(.headline.bold()).foregroundStyle(.white)
+            }
+            .frame(width: 30, height: 30)
+            Text("Super Teclado")
+                .font(.subheadline.weight(.medium))
+                .foregroundStyle(.white.opacity(0.92))
             Spacer(minLength: 0)
-            Button {
-                mode = mode == .typing ? .clipboard : .typing
-            } label: {
-                Image(systemName: mode == .typing ? "clipboard" : "keyboard")
-                    .frame(width: 32, height: 28)
+            toolbarButton("clipboard.fill", selected: false) {
+                refresh()
+                mode = .clipboard
+                section = .temporary
             }
-            .buttonStyle(.borderedProminent)
-            .tint(.cyan)
-            .accessibilityLabel(mode == .typing ? "Abrir portapapeles" : "Volver al teclado")
-            if !hasFullAccess {
-                Image(systemName: "lock.fill")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .accessibilityLabel("Acceso total desactivado")
-            }
-            if mode == .clipboard {
-                Menu {
-                    Picker("Tipo de contenido", selection: $contentFilterRawValue) {
-                        ForEach(KeyboardContentFilter.allCases) { item in
-                            Label(item.title, systemImage: item.symbol)
-                                .tag(item.rawValue)
-                        }
-                    }
-                } label: {
-                    Image(systemName: contentFilter.symbol)
-                        .frame(width: 32, height: 28)
-                }
-                .buttonStyle(.bordered)
-                .tint(contentFilter == .all ? .secondary : .cyan)
-                .accessibilityLabel("Filtrar por tipo de contenido")
-                if section == .saved { organizationMenu }
-                Button(action: refresh) {
-                    Image(systemName: "arrow.clockwise")
-                        .frame(width: 32, height: 28)
-                }
-                .buttonStyle(.bordered)
+            toolbarButton("ellipsis", selected: false) {
+                page = page == .letters ? .numbers : .letters
             }
         }
+        .padding(.horizontal, 12)
+        .frame(height: 44)
+        .background(toolbarBackground)
+    }
+
+    private var clipboardToolbar: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "clipboard.fill").foregroundStyle(accent)
+            Text("Portapapeles").font(.headline)
+            Spacer(minLength: 0)
+            toolbarButton("keyboard", selected: true) { mode = .typing }
+            toolbarButton("square.grid.2x2", selected: false) {
+                section = section == .temporary ? .saved : .temporary
+            }
+            toolbarButton("arrow.clockwise", selected: false, action: refresh)
+        }
+        .padding(.horizontal, 12)
+        .frame(height: 48)
+        .background(toolbarBackground)
+    }
+
+    private func toolbarButton(
+        _ symbol: String,
+        selected: Bool,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            Image(systemName: symbol)
+                .font(.system(size: 17, weight: .semibold))
+                .frame(width: 44, height: 34)
+                .background(selected ? accent : specialBackground, in: RoundedRectangle(cornerRadius: 8))
+        }
+        .buttonStyle(.plain)
     }
 
     private var typingKeyboard: some View {
         VStack(spacing: 7) {
             if page == .letters {
                 characterRow(Array("qwertyuiop").map(String.init))
-                characterRow(Array("asdfghjklñ").map(String.init))
-                HStack(spacing: 5) {
-                    specialKey(isShifted ? "shift.fill" : "shift") {
-                        isShifted.toggle()
-                    }
+                characterRow(Array("asdfghjklñ").map(String.init), inset: 17)
+                HStack(spacing: 6) {
+                    specialKey(isShifted ? "shift.fill" : "shift", width: 48) { isShifted.toggle() }
                     ForEach(Array("zxcvbnm").map(String.init), id: \.self) { character in
                         characterKey(character)
                     }
-                    specialKey("delete.left", action: delete)
+                    specialKey("delete.left", width: 48, action: delete)
                 }
             } else {
                 characterRow(["1", "2", "3", "4", "5", "6", "7", "8", "9", "0"])
                 characterRow(page == .numbers
                     ? ["@", "#", "€", "_", "&", "-", "+", "(", ")", "/"]
                     : ["~", "`", "|", "•", "√", "π", "÷", "×", "{", "}"])
-                HStack(spacing: 5) {
-                    Button(page == .numbers ? "#+=" : "123") {
+                HStack(spacing: 6) {
+                    textSpecialKey(page == .numbers ? "#+=" : "123", width: 48) {
                         page = page == .numbers ? .symbols : .numbers
                     }
-                    .frame(minWidth: 44, minHeight: 40)
-                    .buttonStyle(.bordered)
                     ForEach(page == .numbers
                         ? ["*", "\"", "'", ":", ";", "!", "?"]
-                        : ["%", "©", "®", "™", "[", "]", "<", ">"], id: \.self) { character in
+                        : ["%", "©", "®", "™", "[", "]", "<"], id: \.self) { character in
                         characterKey(character)
                     }
-                    specialKey("delete.left", action: delete)
+                    specialKey("delete.left", width: 48, action: delete)
                 }
             }
-
-            HStack(spacing: 5) {
-                specialKey("globe", action: nextKeyboard)
-                Button(page == .letters ? "?123" : "ABC") {
-                    page = page == .letters ? .numbers : .letters
-                }
-                .frame(minWidth: 46, minHeight: 38)
-                .buttonStyle(.bordered)
-                characterKey(",", compact: true)
-                Button(action: insertSpace) {
-                    Text("Español")
-                        .frame(maxWidth: .infinity, minHeight: 38)
-                }
-                .buttonStyle(.borderedProminent)
-                .tint(.cyan)
-                characterKey(".", compact: true)
-                specialKey("return", action: insertReturn)
-            }
+            bottomTypingRow
         }
+        .padding(.horizontal, 5)
+        .padding(.top, 7)
+        .padding(.bottom, 8)
         .frame(maxHeight: .infinity)
     }
 
-    private func characterRow(_ characters: [String]) -> some View {
-        HStack(spacing: 5) {
-            ForEach(characters, id: \.self) { character in
-                characterKey(character)
+    private var bottomTypingRow: some View {
+        HStack(spacing: 6) {
+            textSpecialKey(page == .letters ? "123" : "ABC", width: 58) {
+                page = page == .letters ? .numbers : .letters
+                isShifted = false
             }
+            specialKey("globe", width: 48, action: nextKeyboard)
+            Button(action: insertSpace) {
+                Text("espacio")
+                    .font(.body)
+                    .frame(maxWidth: .infinity, minHeight: 47)
+                    .background(keyBackground, in: RoundedRectangle(cornerRadius: 7))
+            }
+            .buttonStyle(KeyboardPressStyle())
+            Button(action: insertReturn) {
+                Text("intro")
+                    .font(.subheadline)
+                    .frame(width: 72, height: 47)
+                    .background(specialBackground, in: RoundedRectangle(cornerRadius: 7))
+            }
+            .buttonStyle(KeyboardPressStyle())
         }
     }
 
-    private func characterKey(_ character: String, compact: Bool = false) -> some View {
+    private func characterRow(_ characters: [String], inset: CGFloat = 0) -> some View {
+        HStack(spacing: 6) {
+            ForEach(characters, id: \.self) { character in characterKey(character) }
+        }
+        .padding(.horizontal, inset)
+    }
+
+    private func characterKey(_ character: String) -> some View {
         Button {
-            let output = isShifted ? character.uppercased() : character
-            insertText(output)
+            insertText(isShifted ? character.uppercased() : character)
             if isShifted { isShifted = false }
         } label: {
             Text(isShifted ? character.uppercased() : character)
-                .font(.title3)
-                .frame(maxWidth: compact ? 42 : .infinity, minHeight: 40)
+                .font(.system(size: 22))
+                .frame(maxWidth: .infinity, minHeight: 47)
+                .background(keyBackground, in: RoundedRectangle(cornerRadius: 7))
         }
-        .buttonStyle(.bordered)
-        .tint(.primary)
+        .buttonStyle(KeyboardPressStyle())
     }
 
-    private func specialKey(_ symbol: String, action: @escaping () -> Void) -> some View {
+    private func specialKey(
+        _ symbol: String,
+        width: CGFloat,
+        action: @escaping () -> Void
+    ) -> some View {
         Button(action: action) {
             Image(systemName: symbol)
-                .frame(minWidth: 38, minHeight: 40)
+                .font(.system(size: 19, weight: .medium))
+                .frame(width: width, height: 47)
+                .background(specialBackground, in: RoundedRectangle(cornerRadius: 7))
         }
-        .buttonStyle(.bordered)
+        .buttonStyle(KeyboardPressStyle())
     }
 
-    private var sectionPicker: some View {
-        Picker("Biblioteca", selection: $section) {
+    private func textSpecialKey(
+        _ title: String,
+        width: CGFloat,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            Text(title)
+                .font(.system(size: 15, weight: .medium))
+                .frame(width: width, height: 47)
+                .background(specialBackground, in: RoundedRectangle(cornerRadius: 7))
+        }
+        .buttonStyle(KeyboardPressStyle())
+    }
+
+    private var clipboardPanel: some View {
+        VStack(spacing: 7) {
+            sectionSelector
+            if !model.hasFullAccess { fullAccessBanner }
+            clipList
+            clipboardControls
+        }
+        .padding(.horizontal, 8)
+        .padding(.top, 6)
+        .padding(.bottom, 8)
+        .frame(maxHeight: .infinity)
+    }
+
+    private var sectionSelector: some View {
+        HStack(spacing: 2) {
             ForEach(KeyboardSection.allCases) { item in
-                Text(item.rawValue).tag(item)
+                Button {
+                    section = item
+                    refresh()
+                } label: {
+                    Text(item.rawValue)
+                        .font(.subheadline.weight(.semibold))
+                        .frame(maxWidth: .infinity, minHeight: 34)
+                        .background(
+                            section == item ? Color.white.opacity(0.28) : Color.clear,
+                            in: RoundedRectangle(cornerRadius: 7)
+                        )
+                }
+                .buttonStyle(.plain)
             }
         }
-        .pickerStyle(.segmented)
+        .padding(2)
+        .background(specialBackground, in: RoundedRectangle(cornerRadius: 9))
     }
 
-    private var savedFilterPicker: some View {
-        Picker("Filtro", selection: $filter) {
-            ForEach(KeyboardFilter.allCases) { item in
-                Text(item.rawValue).tag(item)
-            }
+    private var fullAccessBanner: some View {
+        HStack(spacing: 7) {
+            Image(systemName: "lock.fill")
+            Text("Activa “Acceso total” para leer tus copias").font(.caption)
+            Spacer(minLength: 0)
         }
-        .pickerStyle(.segmented)
-    }
-
-    private var organizationMenu: some View {
-        Menu {
-            Menu("Carpeta") {
-                Button {
-                    selectedFolder = ""
-                } label: {
-                    Label("Todas las carpetas", systemImage: selectedFolder.isEmpty ? "checkmark" : "folder")
-                }
-
-                ForEach(SharedClipboardStore.loadFolders(), id: \.self) { folder in
-                    Button {
-                        selectedFolder = folder
-                    } label: {
-                        Label(folder, systemImage: selectedFolder == folder ? "checkmark" : "folder")
-                    }
-                }
-            }
-
-            Menu("Etiqueta de color") {
-                Button {
-                    selectedColor = ""
-                } label: {
-                    Label("Todos los colores", systemImage: selectedColor.isEmpty ? "checkmark" : "circle")
-                }
-
-                ForEach(SharedClipColor.allCases) { color in
-                    Button {
-                        selectedColor = color.rawValue
-                    } label: {
-                        Label(color.title, systemImage: selectedColor == color.rawValue ? "checkmark" : "circle.fill")
-                    }
-                }
-            }
-
-            if hasOrganizationFilter {
-                Divider()
-                Button("Limpiar filtros", role: .destructive) {
-                    selectedFolder = ""
-                    selectedColor = ""
-                }
-            }
-        } label: {
-            Image(systemName: hasOrganizationFilter ? "folder.fill" : "folder")
-                .foregroundStyle(organizationFilterColor)
-                .frame(width: 32, height: 28)
-        }
-        .buttonStyle(.bordered)
-        .accessibilityLabel("Filtrar por carpeta o color")
+        .foregroundStyle(.yellow)
+        .padding(.horizontal, 10)
+        .frame(height: 30)
+        .background(Color.yellow.opacity(0.12), in: RoundedRectangle(cornerRadius: 8))
     }
 
     @ViewBuilder
     private var clipList: some View {
         if section == .temporary {
-            temporaryClipList
+            if model.temporaryClips.isEmpty {
+                emptyState(
+                    title: model.hasFullAccess ? "Copia texto para verlo aquí" : "Acceso total desactivado",
+                    symbol: model.hasFullAccess ? "clipboard" : "lock.fill"
+                )
+            } else {
+                temporaryList
+            }
+        } else if model.savedClips.isEmpty {
+            emptyState(title: "No hay elementos guardados", symbol: "pin")
         } else {
-            savedClipList
+            savedList
         }
     }
 
-    @ViewBuilder
-    private var temporaryClipList: some View {
-        if visibleTemporaryClips.isEmpty {
-            ContentUnavailableView(
-                hasFullAccess ? "Copia texto para verlo aquí" : "Activa Acceso total",
-                systemImage: hasFullAccess ? "clipboard" : "lock.fill"
-            )
-            .frame(maxHeight: .infinity)
-        } else {
-            ScrollView {
-                LazyVStack(spacing: 6) {
-                    ForEach(visibleTemporaryClips) { clip in
-                        HStack(spacing: 8) {
-                            Button { insertTemporary(clip) } label: {
-                                HStack(spacing: 9) {
-                                    Image(systemName: symbol(for: clip.kindRawValue))
-                                        .foregroundStyle(.orange)
-                                        .frame(width: 20)
-                                    VStack(alignment: .leading, spacing: 2) {
-                                        Text(clip.text)
-                                            .font(.callout)
-                                            .lineLimit(2)
-                                            .frame(maxWidth: .infinity, alignment: .leading)
-                                        Text(clip.capturedAt, style: .relative)
-                                            .font(.caption2)
-                                            .foregroundStyle(.secondary)
-                                    }
-                                }
-                                .contentShape(Rectangle())
-                            }
-                            .buttonStyle(.plain)
+    private func emptyState(title: String, symbol: String) -> some View {
+        VStack(spacing: 9) {
+            Image(systemName: symbol)
+                .font(.system(size: 36, weight: .light))
+                .foregroundStyle(.white.opacity(0.55))
+            Text(title).font(.headline).multilineTextAlignment(.center)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
 
-                            Button { saveTemporary(clip) } label: {
-                                Image(systemName: "pin.fill")
-                                    .foregroundStyle(.cyan)
-                                    .frame(width: 30, height: 34)
-                            }
-                            .buttonStyle(.plain)
-                            .accessibilityLabel("Guardar permanentemente")
-                        }
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 7)
-                        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
-                    }
+    private var temporaryList: some View {
+        ScrollView {
+            LazyVStack(spacing: 6) {
+                ForEach(model.temporaryClips) { clip in
+                    clipRow(
+                        text: clip.text,
+                        date: clip.capturedAt,
+                        symbol: symbol(for: clip.kindRawValue),
+                        accentColor: .orange,
+                        primaryAction: { insertTemporary(clip) },
+                        secondarySymbol: "pin.fill",
+                        secondaryAction: { saveTemporary(clip) }
+                    )
                 }
             }
         }
     }
 
-    @ViewBuilder
-    private var savedClipList: some View {
-        if visibleSavedClips.isEmpty {
-            ContentUnavailableView(
-                savedClips.isEmpty ? "No hay guardados" : "No hay elementos con estos filtros",
-                systemImage: contentFilter == .all
-                    ? (filter == .favorites ? "star" : "clipboard")
-                    : contentFilter.symbol
-            )
-            .frame(maxHeight: .infinity)
-        } else {
-            ScrollView {
-                LazyVStack(spacing: 6) {
-                    ForEach(visibleSavedClips) { clip in
-                        HStack(spacing: 8) {
-                            Button {
-                                insertSaved(clip)
-                            } label: {
-                                HStack(spacing: 9) {
-                                    Image(systemName: clip.kindSymbol)
-                                        .foregroundStyle(.cyan)
-                                        .frame(width: 20)
-                                    if let colorRawValue = clip.colorTagRawValue,
-                                       let color = SharedClipColor(rawValue: colorRawValue) {
-                                        Circle()
-                                            .fill(color.color)
-                                            .frame(width: 8, height: 8)
-                                    }
-                                    VStack(alignment: .leading, spacing: 2) {
-                                        Text(clip.text)
-                                            .font(.callout)
-                                            .lineLimit(2)
-                                            .frame(maxWidth: .infinity, alignment: .leading)
-                                        HStack(spacing: 6) {
-                                            Text(clip.updatedAt, style: .relative)
-                                            if let folder = clip.folderName {
-                                                Label(folder, systemImage: "folder.fill")
-                                                    .lineLimit(1)
-                                            }
-                                        }
-                                        .font(.caption2)
-                                        .foregroundStyle(.secondary)
-                                    }
-                                }
-                                .contentShape(Rectangle())
-                            }
-                            .buttonStyle(.plain)
-
-                            if hasFullAccess {
-                                Button {
-                                    toggleFavorite(clip)
-                                } label: {
-                                    Image(systemName: clip.isFavorite ? "star.fill" : "star")
-                                        .foregroundStyle(clip.isFavorite ? .yellow : .secondary)
-                                        .frame(width: 30, height: 34)
-                                }
-                                .buttonStyle(.plain)
-                            }
-                        }
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 7)
-                        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
-                    }
+    private var savedList: some View {
+        ScrollView {
+            LazyVStack(spacing: 6) {
+                ForEach(model.savedClips) { clip in
+                    clipRow(
+                        text: clip.text,
+                        date: clip.updatedAt,
+                        symbol: clip.kindSymbol,
+                        accentColor: accent,
+                        primaryAction: { insertSaved(clip) },
+                        secondarySymbol: clip.isFavorite ? "star.fill" : "star",
+                        secondaryAction: { toggleFavorite(clip) }
+                    )
                 }
             }
+        }
+    }
+
+    private func clipRow(
+        text: String,
+        date: Date,
+        symbol: String,
+        accentColor: Color,
+        primaryAction: @escaping () -> Void,
+        secondarySymbol: String,
+        secondaryAction: @escaping () -> Void
+    ) -> some View {
+        HStack(spacing: 8) {
+            Button(action: primaryAction) {
+                HStack(spacing: 9) {
+                    Image(systemName: symbol).foregroundStyle(accentColor).frame(width: 22)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(text)
+                            .font(.callout)
+                            .lineLimit(2)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        Text(date, style: .relative)
+                            .font(.caption2)
+                            .foregroundStyle(.white.opacity(0.55))
+                    }
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            Button(action: secondaryAction) {
+                Image(systemName: secondarySymbol)
+                    .foregroundStyle(accent)
+                    .frame(width: 34, height: 36)
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 7)
+        .background(keyBackground.opacity(0.62), in: RoundedRectangle(cornerRadius: 10))
+    }
+
+    private var clipboardControls: some View {
+        HStack(spacing: 6) {
+            specialKey("globe", width: 52, action: nextKeyboard)
+            specialKey("doc.on.clipboard", width: 52, action: paste)
+                .disabled(!model.hasFullAccess)
+                .opacity(model.hasFullAccess ? 1 : 0.4)
+            specialKey("delete.left", width: 52, action: delete)
+            Button(action: insertSpace) {
+                Text("espacio")
+                    .frame(maxWidth: .infinity, minHeight: 47)
+                    .background(accent, in: RoundedRectangle(cornerRadius: 7))
+            }
+            .buttonStyle(KeyboardPressStyle())
+            specialKey("return", width: 72, action: insertReturn)
         }
     }
 
@@ -633,29 +529,14 @@ private struct SuperTecladoView: View {
         default: "text.alignleft"
         }
     }
+}
 
-    private var clipboardControls: some View {
-        HStack(spacing: 5) {
-            keyboardButton("globe", action: nextKeyboard)
-            keyboardButton("doc.on.clipboard", action: paste)
-                .disabled(!hasFullAccess)
-                .opacity(hasFullAccess ? 1 : 0.45)
-            keyboardButton("delete.left", action: delete)
-            Button(action: insertSpace) {
-                Text("espacio")
-                    .frame(maxWidth: .infinity, minHeight: 36)
-            }
-            .buttonStyle(.borderedProminent)
-            keyboardButton("return", action: insertReturn)
-        }
-    }
-
-    private func keyboardButton(_ symbol: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Image(systemName: symbol)
-                .frame(width: 34, height: 36)
-        }
-        .buttonStyle(.bordered)
+private struct KeyboardPressStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .scaleEffect(configuration.isPressed ? 0.96 : 1)
+            .brightness(configuration.isPressed ? 0.12 : 0)
+            .animation(.easeOut(duration: 0.06), value: configuration.isPressed)
     }
 }
 
