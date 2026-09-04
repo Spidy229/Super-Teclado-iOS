@@ -65,6 +65,7 @@ struct SharedTemporaryClip: Codable, Identifiable, Hashable {
     var capturedAt: Date
     var kindRawValue: String
     var expiresAt: Date?
+    var pasteboardChangeCount: Int? = nil
 }
 
 enum SharedClipboardStore {
@@ -72,7 +73,8 @@ enum SharedClipboardStore {
     private static let fileName = "super-teclado-history.json"
     private static let temporaryInboxFileName = "super-teclado-temporary-inbox.json"
     private static let foldersKey = "super-teclado-folders"
-    private static let lastCapturedChangeCountKey = "super-teclado-last-captured-change-count"
+    private static let savedFallbackKey = "super-teclado-saved-fallback"
+    private static let temporaryFallbackKey = "super-teclado-temporary-fallback"
 
     static var automaticCaptureEnabled: Bool {
         let defaults = UserDefaults(suiteName: appGroupID)
@@ -97,18 +99,15 @@ enum SharedClipboardStore {
     }
 
     static func load() -> [SharedClipboardClip] {
-        guard let url = historyURL(),
-              let data = try? Data(contentsOf: url),
-              let clips = try? JSONDecoder().decode([SharedClipboardClip].self, from: data) else {
-            return []
-        }
-        return sort(clips)
+        let fileClips: [SharedClipboardClip] = decodeFile(at: historyURL()) ?? []
+        let fallbackClips: [SharedClipboardClip] = decodeDefaults(forKey: savedFallbackKey) ?? []
+        return sort(mergeSaved(fileClips + fallbackClips))
     }
 
     static func save(_ clips: [SharedClipboardClip]) {
-        guard let url = historyURL(),
-              let data = try? JSONEncoder().encode(sort(clips)) else { return }
-        try? data.write(to: url, options: .atomic)
+        let sorted = sort(clips)
+        encodeFile(sorted, at: historyURL())
+        encodeDefaults(sorted, forKey: savedFallbackKey)
     }
 
     @discardableResult
@@ -120,44 +119,35 @@ enum SharedClipboardStore {
         let value = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !value.isEmpty else { return false }
 
-        let defaults = UserDefaults(suiteName: appGroupID)
-        if defaults?.integer(forKey: lastCapturedChangeCountKey) == pasteboardChangeCount,
-           defaults?.object(forKey: lastCapturedChangeCountKey) != nil {
+        var clips = loadTemporaryInbox()
+        if clips.contains(where: { $0.pasteboardChangeCount == pasteboardChangeCount }) {
             return false
         }
 
-        var clips = loadTemporaryInbox()
-        if let index = clips.firstIndex(where: { $0.text == value }) {
-            clips[index].capturedAt = .now
-        } else {
-            clips.append(
-                SharedTemporaryClip(
-                    id: UUID(),
-                    text: value,
-                    capturedAt: .now,
-                    kindRawValue: detectKind(value),
-                    expiresAt: Calendar.current.date(
-                        byAdding: .hour,
-                        value: temporaryRetentionHours,
-                        to: .now
-                    )
-                )
+        clips.append(
+            SharedTemporaryClip(
+                id: UUID(),
+                text: value,
+                capturedAt: .now,
+                kindRawValue: detectKind(value),
+                expiresAt: Calendar.current.date(
+                    byAdding: .hour,
+                    value: temporaryRetentionHours,
+                    to: .now
+                ),
+                pasteboardChangeCount: pasteboardChangeCount
             )
-        }
+        )
 
         clips.sort { $0.capturedAt > $1.capturedAt }
         saveTemporaryInbox(Array(clips.prefix(maximumItems ?? maximumTemporaryItems)))
-        defaults?.set(pasteboardChangeCount, forKey: lastCapturedChangeCountKey)
         return true
     }
 
     static func loadTemporaryInbox() -> [SharedTemporaryClip] {
-        guard let url = temporaryInboxURL(),
-              let data = try? Data(contentsOf: url),
-              let clips = try? JSONDecoder().decode([SharedTemporaryClip].self, from: data) else {
-            return []
-        }
-        return clips
+        let fileClips: [SharedTemporaryClip] = decodeFile(at: temporaryInboxURL()) ?? []
+        let fallbackClips: [SharedTemporaryClip] = decodeDefaults(forKey: temporaryFallbackKey) ?? []
+        return mergeTemporary(fileClips + fallbackClips)
             .filter { $0.expiresAt.map { $0 > .now } ?? true }
             .sorted { $0.capturedAt > $1.capturedAt }
     }
@@ -292,9 +282,38 @@ enum SharedClipboardStore {
     }
 
     private static func saveTemporaryInbox(_ clips: [SharedTemporaryClip]) {
-        guard let url = temporaryInboxURL(),
-              let data = try? JSONEncoder().encode(clips) else { return }
+        encodeFile(clips, at: temporaryInboxURL())
+        encodeDefaults(clips, forKey: temporaryFallbackKey)
+    }
+
+    private static func mergeSaved(_ clips: [SharedClipboardClip]) -> [SharedClipboardClip] {
+        Dictionary(grouping: clips, by: \.id)
+            .compactMap { $0.value.max(by: { $0.updatedAt < $1.updatedAt }) }
+    }
+
+    private static func mergeTemporary(_ clips: [SharedTemporaryClip]) -> [SharedTemporaryClip] {
+        Dictionary(grouping: clips, by: \.id)
+            .compactMap { $0.value.max(by: { $0.capturedAt < $1.capturedAt }) }
+    }
+
+    private static func decodeFile<Value: Decodable>(at url: URL?) -> Value? {
+        guard let url, let data = try? Data(contentsOf: url) else { return nil }
+        return try? JSONDecoder().decode(Value.self, from: data)
+    }
+
+    private static func encodeFile<Value: Encodable>(_ value: Value, at url: URL?) {
+        guard let url, let data = try? JSONEncoder().encode(value) else { return }
         try? data.write(to: url, options: .atomic)
+    }
+
+    private static func decodeDefaults<Value: Decodable>(forKey key: String) -> Value? {
+        guard let data = UserDefaults.standard.data(forKey: key) else { return nil }
+        return try? JSONDecoder().decode(Value.self, from: data)
+    }
+
+    private static func encodeDefaults<Value: Encodable>(_ value: Value, forKey key: String) {
+        guard let data = try? JSONEncoder().encode(value) else { return }
+        UserDefaults.standard.set(data, forKey: key)
     }
 
     private static func detectKind(_ text: String) -> String {
@@ -310,4 +329,5 @@ enum SharedClipboardStore {
         return "text"
     }
 }
+
 
