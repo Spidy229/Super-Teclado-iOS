@@ -61,4 +61,55 @@ final class ClipboardRetentionPolicyTests: XCTestCase {
         XCTAssertTrue(item.isPermanent)
         XCTAssertNil(item.expiresAt)
     }
+
+    func testTemporaryClipboardKeepsSeveralCopyEvents() {
+        SharedClipboardStore.clearTemporaryInbox()
+        defer { SharedClipboardStore.clearTemporaryInbox() }
+
+        XCTAssertTrue(
+            SharedClipboardStore.captureTemporaryText(
+                "primera copia",
+                pasteboardChangeCount: 91_001,
+                maximumItems: 10
+            )
+        )
+        XCTAssertTrue(
+            SharedClipboardStore.captureTemporaryText(
+                "segunda copia",
+                pasteboardChangeCount: 91_002,
+                maximumItems: 10
+            )
+        )
+        XCTAssertTrue(
+            SharedClipboardStore.captureTemporaryText(
+                "primera copia",
+                pasteboardChangeCount: 91_003,
+                maximumItems: 10
+            )
+        )
+
+        let clips = SharedClipboardStore.loadTemporaryInbox()
+        XCTAssertEqual(clips.count, 3)
+        XCTAssertEqual(clips.filter { $0.text == "primera copia" }.count, 2)
+    }
+
+    func testSamePasteboardEventIsCapturedOnlyOnce() {
+        SharedClipboardStore.clearTemporaryInbox()
+        defer { SharedClipboardStore.clearTemporaryInbox() }
+
+        XCTAssertTrue(
+            SharedClipboardStore.captureTemporaryText(
+                "evento único",
+                pasteboardChangeCount: 92_001
+            )
+        )
+        XCTAssertFalse(
+            SharedClipboardStore.captureTemporaryText(
+                "evento único",
+                pasteboardChangeCount: 92_001
+            )
+        )
+        XCTAssertEqual(SharedClipboardStore.loadTemporaryInbox().count, 1)
+    }
 }
+
