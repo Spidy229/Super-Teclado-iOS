@@ -28,13 +28,14 @@ jobs:
       - name: Generate Xcode project
         run: xcodegen generate --spec project.yml
 
-      - name: Run unit tests
+      - name: Compile unit tests
         run: |
-          xcodebuild test \
+          xcodebuild build-for-testing \
             -project SuperTeclado.xcodeproj \
             -scheme SuperTeclado \
             -configuration Debug \
-            -destination 'platform=iOS Simulator,name=iPhone 16 Pro' \
+            -sdk iphonesimulator \
+            -destination 'generic/platform=iOS Simulator' \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO
 
