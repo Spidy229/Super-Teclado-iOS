@@ -112,6 +112,9 @@ final class KeyboardViewController: UIInputViewController {
                 SharedClipboardStore.promoteTemporary(id: clip.id)
                 self?.reload()
             },
+            insertText: { [weak self] text in
+                self?.textDocumentProxy.insertText(text)
+            },
             toggleFavorite: { [weak self] clip in
                 guard self?.hasFullAccess == true else { return }
                 SharedClipboardStore.toggleFavorite(id: clip.id)
@@ -145,6 +148,17 @@ private enum KeyboardSection: String, CaseIterable, Identifiable {
     case saved = "Guardados"
 
     var id: Self { self }
+}
+
+private enum KeyboardMode {
+    case typing
+    case clipboard
+}
+
+private enum KeyboardPage {
+    case letters
+    case numbers
+    case symbols
 }
 
 private enum KeyboardFilter: String, CaseIterable, Identifiable {
@@ -202,6 +216,7 @@ private struct SuperTecladoView: View {
     let insertSaved: (SharedClipboardClip) -> Void
     let insertTemporary: (SharedTemporaryClip) -> Void
     let saveTemporary: (SharedTemporaryClip) -> Void
+    let insertText: (String) -> Void
     let toggleFavorite: (SharedClipboardClip) -> Void
     let refresh: () -> Void
     let paste: () -> Void
@@ -210,6 +225,9 @@ private struct SuperTecladoView: View {
     let insertReturn: () -> Void
     let nextKeyboard: () -> Void
 
+    @State private var mode: KeyboardMode = .typing
+    @State private var page: KeyboardPage = .letters
+    @State private var isShifted = false
     @State private var section: KeyboardSection = .temporary
     @State private var filter: KeyboardFilter = .all
     @AppStorage(
@@ -264,10 +282,14 @@ private struct SuperTecladoView: View {
     var body: some View {
         VStack(spacing: 8) {
             header
-            sectionPicker
-            if section == .saved { savedFilterPicker }
-            clipList
-            controls
+            if mode == .clipboard {
+                sectionPicker
+                if section == .saved { savedFilterPicker }
+                clipList
+                clipboardControls
+            } else {
+                typingKeyboard
+            }
         }
         .padding(.horizontal, 8)
         .padding(.top, 7)
@@ -279,37 +301,133 @@ private struct SuperTecladoView: View {
         HStack(spacing: 8) {
             Image(systemName: "clipboard.fill")
                 .foregroundStyle(.cyan)
-            Text("Portapapeles")
+            Text(mode == .typing ? "Super Teclado" : "Portapapeles")
                 .font(.subheadline.weight(.semibold))
                 .lineLimit(1)
             Spacer(minLength: 0)
+            Button {
+                mode = mode == .typing ? .clipboard : .typing
+            } label: {
+                Image(systemName: mode == .typing ? "clipboard" : "keyboard")
+                    .frame(width: 32, height: 28)
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(.cyan)
+            .accessibilityLabel(mode == .typing ? "Abrir portapapeles" : "Volver al teclado")
             if !hasFullAccess {
                 Image(systemName: "lock.fill")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .accessibilityLabel("Acceso total desactivado")
             }
-            Menu {
-                Picker("Tipo de contenido", selection: $contentFilterRawValue) {
-                    ForEach(KeyboardContentFilter.allCases) { item in
-                        Label(item.title, systemImage: item.symbol)
-                            .tag(item.rawValue)
+            if mode == .clipboard {
+                Menu {
+                    Picker("Tipo de contenido", selection: $contentFilterRawValue) {
+                        ForEach(KeyboardContentFilter.allCases) { item in
+                            Label(item.title, systemImage: item.symbol)
+                                .tag(item.rawValue)
+                        }
                     }
+                } label: {
+                    Image(systemName: contentFilter.symbol)
+                        .frame(width: 32, height: 28)
                 }
-            } label: {
-                Image(systemName: contentFilter.symbol)
-                    .frame(width: 32, height: 28)
+                .buttonStyle(.bordered)
+                .tint(contentFilter == .all ? .secondary : .cyan)
+                .accessibilityLabel("Filtrar por tipo de contenido")
+                if section == .saved { organizationMenu }
+                Button(action: refresh) {
+                    Image(systemName: "arrow.clockwise")
+                        .frame(width: 32, height: 28)
+                }
+                .buttonStyle(.bordered)
             }
-            .buttonStyle(.bordered)
-            .tint(contentFilter == .all ? .secondary : .cyan)
-            .accessibilityLabel("Filtrar por tipo de contenido")
-            if section == .saved { organizationMenu }
-            Button(action: refresh) {
-                Image(systemName: "arrow.clockwise")
-                    .frame(width: 32, height: 28)
-            }
-            .buttonStyle(.bordered)
         }
+    }
+
+    private var typingKeyboard: some View {
+        VStack(spacing: 7) {
+            if page == .letters {
+                characterRow(Array("qwertyuiop").map(String.init))
+                characterRow(Array("asdfghjklñ").map(String.init))
+                HStack(spacing: 5) {
+                    specialKey(isShifted ? "shift.fill" : "shift") {
+                        isShifted.toggle()
+                    }
+                    ForEach(Array("zxcvbnm").map(String.init), id: \.self) { character in
+                        characterKey(character)
+                    }
+                    specialKey("delete.left", action: delete)
+                }
+            } else {
+                characterRow(["1", "2", "3", "4", "5", "6", "7", "8", "9", "0"])
+                characterRow(page == .numbers
+                    ? ["@", "#", "€", "_", "&", "-", "+", "(", ")", "/"]
+                    : ["~", "`", "|", "•", "√", "π", "÷", "×", "{", "}"])
+                HStack(spacing: 5) {
+                    Button(page == .numbers ? "#+=" : "123") {
+                        page = page == .numbers ? .symbols : .numbers
+                    }
+                    .frame(minWidth: 44, minHeight: 40)
+                    .buttonStyle(.bordered)
+                    ForEach(page == .numbers
+                        ? ["*", "\"", "'", ":", ";", "!", "?"]
+                        : ["%", "©", "®", "™", "[", "]", "<", ">"], id: \.self) { character in
+                        characterKey(character)
+                    }
+                    specialKey("delete.left", action: delete)
+                }
+            }
+
+            HStack(spacing: 5) {
+                specialKey("globe", action: nextKeyboard)
+                Button(page == .letters ? "?123" : "ABC") {
+                    page = page == .letters ? .numbers : .letters
+                }
+                .frame(minWidth: 46, minHeight: 38)
+                .buttonStyle(.bordered)
+                characterKey(",", compact: true)
+                Button(action: insertSpace) {
+                    Text("Español")
+                        .frame(maxWidth: .infinity, minHeight: 38)
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(.cyan)
+                characterKey(".", compact: true)
+                specialKey("return", action: insertReturn)
+            }
+        }
+        .frame(maxHeight: .infinity)
+    }
+
+    private func characterRow(_ characters: [String]) -> some View {
+        HStack(spacing: 5) {
+            ForEach(characters, id: \.self) { character in
+                characterKey(character)
+            }
+        }
+    }
+
+    private func characterKey(_ character: String, compact: Bool = false) -> some View {
+        Button {
+            let output = isShifted ? character.uppercased() : character
+            insertText(output)
+            if isShifted { isShifted = false }
+        } label: {
+            Text(isShifted ? character.uppercased() : character)
+                .font(.title3)
+                .frame(maxWidth: compact ? 42 : .infinity, minHeight: 40)
+        }
+        .buttonStyle(.bordered)
+        .tint(.primary)
+    }
+
+    private func specialKey(_ symbol: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: symbol)
+                .frame(minWidth: 38, minHeight: 40)
+        }
+        .buttonStyle(.bordered)
     }
 
     private var sectionPicker: some View {
@@ -516,7 +634,7 @@ private struct SuperTecladoView: View {
         }
     }
 
-    private var controls: some View {
+    private var clipboardControls: some View {
         HStack(spacing: 5) {
             keyboardButton("globe", action: nextKeyboard)
             keyboardButton("doc.on.clipboard", action: paste)
@@ -540,3 +658,4 @@ private struct SuperTecladoView: View {
         .buttonStyle(.bordered)
     }
 }
+
