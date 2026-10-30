@@ -153,11 +153,10 @@ final class KeyboardViewController: UIInputViewController {
 
     /// Sustituciones de texto y nombres de contactos que iOS comparte con los teclados.
     private func requestLexicon() {
-        requestSupplementaryLexicon { @Sendable [weak self] lexicon in
+        requestSupplementaryLexicon { [weak self] lexicon in
+            // UILexicon está aislado al hilo principal; UIKit entrega el resultado allí.
             let entries = lexicon.entries.map { (input: $0.userInput, replacement: $0.documentText) }
-            Task { @MainActor in
-                self?.engine.setLexicon(entries)
-            }
+            self?.engine.setLexicon(entries)
         }
     }
 }
