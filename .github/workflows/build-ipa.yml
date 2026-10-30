@@ -2,7 +2,7 @@ name: Build unsigned IPA
 
 on:
   push:
-    branches: [main, "codex/**"]
+    branches: [main, "codex/**", "claude/**"]
   workflow_dispatch:
 
 permissions:

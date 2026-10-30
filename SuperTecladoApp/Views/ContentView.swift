@@ -112,6 +112,7 @@ struct ContentView: View {
                 KeyboardHistorySync.synchronize(with: modelContext)
                 performMaintenance()
                 captureAutomaticallyIfNeeded()
+                await recognizeImportedImages()
             }
             .onChange(of: scenePhase) { _, phase in
                 guard phase == .active else { return }
@@ -119,6 +120,7 @@ struct ContentView: View {
                 KeyboardHistorySync.synchronize(with: modelContext)
                 performMaintenance()
                 captureAutomaticallyIfNeeded()
+                Task { await recognizeImportedImages() }
             }
             .onChange(of: showingSettings) { _, isShowing in
                 if !isShowing { reloadFolders(); performMaintenance() }
@@ -373,9 +375,20 @@ struct ContentView: View {
     }
 
     private func delete(_ item: ClipboardItem) {
-        modelContext.delete(item)
+        KeyboardHistorySync.delete(item, from: modelContext)
         save()
         showToast("Eliminado")
+    }
+
+    /// Extrae el texto de las capturas copiadas desde el teclado para poder buscarlas.
+    private func recognizeImportedImages() async {
+        let pending = items.filter { $0.kind == .image && $0.recognizedText == nil && $0.imageData != nil }
+        guard !pending.isEmpty else { return }
+        for item in pending {
+            guard let data = item.imageData else { continue }
+            item.recognizedText = await OCRService.recognizeText(in: data) ?? ""
+        }
+        save()
     }
 
     private func performMaintenance() {
@@ -391,13 +404,13 @@ struct ContentView: View {
             expiresAt: item.expiresAt,
             at: now
         ) {
-            modelContext.delete(item)
+            KeyboardHistorySync.delete(item, from: modelContext)
             changed = true
         }
         if autoDeleteDays > 0,
            let threshold = Calendar.current.date(byAdding: .day, value: -autoDeleteDays, to: now) {
             for item in items where item.isPermanent && item.updatedAt < threshold && !item.isFavorite && !item.isPinned {
-                modelContext.delete(item)
+                KeyboardHistorySync.delete(item, from: modelContext)
                 changed = true
             }
         }
@@ -412,20 +425,19 @@ struct ContentView: View {
 
         let temporaryItems = storedItems.filter(\.isTemporary)
         let temporaryOverflow = max(0, temporaryItems.count - max(1, maximumTemporaryItems))
-        for item in temporaryItems.prefix(temporaryOverflow) { modelContext.delete(item) }
+        for item in temporaryItems.prefix(temporaryOverflow) { KeyboardHistorySync.delete(item, from: modelContext) }
 
         let permanentItems = storedItems.filter(\.isPermanent)
         let permanentOverflow = max(0, permanentItems.count - max(1, maximumItems))
         let removable = permanentItems.filter { !$0.isPinned && !$0.isFavorite }
-        for item in removable.prefix(permanentOverflow) { modelContext.delete(item) }
+        for item in removable.prefix(permanentOverflow) { KeyboardHistorySync.delete(item, from: modelContext) }
 
         if temporaryOverflow > 0 || permanentOverflow > 0 { save() }
     }
 
     private func save() {
         do {
-            try modelContext.save()
-            KeyboardHistorySync.publishAppHistory(from: modelContext)
+            try KeyboardHistorySync.commit(modelContext)
         } catch {
             showToast("No se pudieron guardar los cambios")
         }

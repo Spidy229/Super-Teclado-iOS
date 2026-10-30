@@ -127,21 +127,26 @@ struct SettingsView: View {
                 }
 
                 Section {
+                    NavigationLink {
+                        KeyboardSettingsView()
+                    } label: {
+                        Label("Ajustes del teclado", systemImage: "keyboard")
+                    }
                     Button {
                         if let url = URL(string: UIApplication.openSettingsURLString) {
                             UIApplication.shared.open(url)
                         }
                     } label: {
-                        Label("Abrir ajustes para activar el teclado", systemImage: "keyboard")
+                        Label("Abrir ajustes para activar el teclado", systemImage: "gear")
                     }
                 } header: {
                     Text("Teclado")
                 } footer: {
-                    Text("Añade Super Teclado en Teclados y activa Acceso total. Mientras el teclado esté visible, el contenido copiado aparecerá automáticamente en Temporales; toca el pin para conservarlo.")
+                    Text("Añade Super Teclado en Teclados y activa Acceso total. Lo que copies aparecerá en Recientes del portapapeles del teclado; mantén pulsado un elemento para fijarlo.")
                 }
 
                 Section("Acerca de") {
-                    LabeledContent("Versión", value: "1.0")
+                    LabeledContent("Versión", value: appVersion)
                     Text("Los datos se guardan únicamente en el dispositivo.")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
@@ -183,6 +188,10 @@ struct SettingsView: View {
         }
     }
 
+    private var appVersion: String {
+        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "2.0"
+    }
+
     private func addFolder() {
         guard SharedClipboardStore.addFolder(newFolderName) != nil else { return }
         folders = SharedClipboardStore.loadFolders()
@@ -197,23 +206,21 @@ struct SettingsView: View {
             }
             SharedClipboardStore.removeFolder(name)
         }
-        try? modelContext.save()
-        KeyboardHistorySync.publishAppHistory(from: modelContext)
+        try? KeyboardHistorySync.commit(modelContext)
         folders = SharedClipboardStore.loadFolders()
     }
 
     private func deleteUnprotectedItems() {
         for item in items where item.isPermanent && !item.isFavorite && !item.isPinned {
-            modelContext.delete(item)
+            KeyboardHistorySync.delete(item, from: modelContext)
         }
-        try? modelContext.save()
-        KeyboardHistorySync.publishAppHistory(from: modelContext)
+        try? KeyboardHistorySync.commit(modelContext)
     }
 
     private func deleteTemporaryItems() {
         for item in items where item.isTemporary {
-            modelContext.delete(item)
+            KeyboardHistorySync.delete(item, from: modelContext)
         }
-        try? modelContext.save()
+        try? KeyboardHistorySync.commit(modelContext)
     }
 }
