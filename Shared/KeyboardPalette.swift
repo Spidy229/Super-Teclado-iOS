@@ -17,7 +17,11 @@ struct KeyboardPalette {
     let chip: Color
     let separator: Color
 
-    static func make(theme: KeyboardThemeOption, systemIsDark: Bool) -> KeyboardPalette {
+    static func make(
+        theme: KeyboardThemeOption,
+        systemIsDark: Bool,
+        custom: CustomThemeColors = CustomThemeColors()
+    ) -> KeyboardPalette {
         switch theme {
         case .system: systemIsDark ? dark : light
         case .light: light
@@ -57,7 +61,34 @@ struct KeyboardPalette {
                 accent: rgb(0.45, 0.31, 0.85)
             )
         case .photo: photo
+        case .custom: customPalette(custom)
         }
+    }
+
+    static func color(_ value: RGBColor) -> Color {
+        rgb(value.red, value.green, value.blue)
+    }
+
+    /// Paleta a partir de los cuatro colores que elige el usuario.
+    private static func customPalette(_ colors: CustomThemeColors) -> KeyboardPalette {
+        let text = color(colors.text)
+        let key = color(colors.key)
+        let darkText = colors.text.luminance < 0.5
+        return KeyboardPalette(
+            background: color(colors.background),
+            key: key,
+            specialKey: key.opacity(0.62),
+            keyPressed: text.opacity(0.28),
+            text: text,
+            secondaryText: text.opacity(0.65),
+            accent: color(colors.accent),
+            accentText: colors.accent.luminance > 0.55 ? rgb(0.08, 0.09, 0.11) : .white,
+            shadow: Color.black.opacity(darkText ? 0.18 : 0.4),
+            popup: key,
+            tile: key.opacity(0.9),
+            chip: key.opacity(0.7),
+            separator: text.opacity(0.16)
+        )
     }
 
     private static func rgb(_ red: Double, _ green: Double, _ blue: Double) -> Color {

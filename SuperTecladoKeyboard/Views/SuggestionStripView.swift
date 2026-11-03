@@ -116,7 +116,7 @@ struct SuggestionStripView: View {
                     engine.toggleOneHandedMode()
                 }
                 Spacer(minLength: 0)
-                StripButton(symbol: "paintpalette", label: "Tema") { engine.cycleTheme() }
+                StripButton(symbol: "paintpalette", label: "Temas") { engine.open(.themes) }
                 Spacer(minLength: 0)
                 StripButton(
                     symbol: engine.preferences.incognito ? "eye.slash.fill" : "eye.slash",

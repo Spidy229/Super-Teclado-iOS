@@ -50,7 +50,8 @@ final class KeyboardEngine: ObservableObject {
     var ownPasteboardChangeCount: Int?
 
     private let suggestionEngine = SuggestionEngine()
-    private lazy var feedbackGenerator = UIImpactFeedbackGenerator(style: .light)
+    private var feedbackGenerator: UIImpactFeedbackGenerator?
+    private var feedbackGeneratorStyle: HapticStyleOption?
     private var lastShiftTap = Date.distantPast
     private var lastSpaceTap = Date.distantPast
     private var pendingAutocorrection: (original: String, replacement: String, suffix: String)?
@@ -155,7 +156,9 @@ final class KeyboardEngine: ObservableObject {
 
     func updateAppearance() {
         let dark: Bool
-        if let fixed = preferences.theme.isDark {
+        if preferences.theme == .custom {
+            dark = preferences.customColors.isDark
+        } else if let fixed = preferences.theme.isDark {
             dark = fixed
         } else {
             switch proxy?.keyboardAppearance ?? .default {
@@ -608,13 +611,16 @@ final class KeyboardEngine: ObservableObject {
         afterEdit()
     }
 
-    func cycleTheme() {
-        let theme = preferences.theme.next(includingPhoto: KeyboardBackgroundStore.hasImage)
+    func setTheme(_ theme: KeyboardThemeOption) {
         preferences.theme = theme
         KeyboardPreferences.setTheme(theme)
         updateAppearance()
         loadBackgroundIfNeeded()
-        showToast("Tema: \(theme.title)")
+    }
+
+    func setKeyBorders(_ enabled: Bool) {
+        preferences.keyBorders = enabled
+        KeyboardPreferences.setKeyBorders(enabled)
     }
 
     func toggleIncognito() {
@@ -954,7 +960,10 @@ final class KeyboardEngine: ObservableObject {
 
     func keyFeedback(_ kind: KeyFeedbackKind) {
         if preferences.haptics, hasFullAccess {
-            feedbackGenerator.impactOccurred(intensity: kind == .character ? 0.55 : 0.75)
+            let strength = preferences.hapticsStrength
+            // Las teclas especiales vibran algo más, como en Gboard.
+            let intensity = kind == .character ? strength : min(1, strength + 0.2)
+            hapticGenerator().impactOccurred(intensity: CGFloat(intensity))
         }
         if preferences.sound {
             let sound: SystemSoundID = switch kind {
@@ -964,6 +973,18 @@ final class KeyboardEngine: ObservableObject {
             }
             AudioServicesPlaySystemSound(sound)
         }
+    }
+
+    /// Generador de vibración del tipo elegido; se recrea solo si cambia el tipo.
+    private func hapticGenerator() -> UIImpactFeedbackGenerator {
+        if let feedbackGenerator, feedbackGeneratorStyle == preferences.hapticsStyle {
+            return feedbackGenerator
+        }
+        let generator = UIImpactFeedbackGenerator(style: preferences.hapticsStyle.feedbackStyle)
+        generator.prepare()
+        feedbackGenerator = generator
+        feedbackGeneratorStyle = preferences.hapticsStyle
+        return generator
     }
 
     func showToast(_ message: String, actionTitle: String? = nil, action: (() -> Void)? = nil) {

@@ -146,10 +146,16 @@ struct SettingsView: View {
                 }
 
                 Section {
+                    KeyboardStatusView()
                     NavigationLink {
                         KeyboardSettingsView()
                     } label: {
                         Label("Ajustes del teclado", systemImage: "keyboard")
+                    }
+                    NavigationLink {
+                        KeyboardThemesView()
+                    } label: {
+                        Label("Temas del teclado", systemImage: "paintpalette")
                     }
                     Button {
                         if let url = URL(string: UIApplication.openSettingsURLString) {
@@ -211,7 +217,7 @@ struct SettingsView: View {
     }
 
     private var appVersion: String {
-        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "2.3"
+        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "2.4"
     }
 
     private func addFolder() {

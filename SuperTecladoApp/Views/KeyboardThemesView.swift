@@ -15,6 +15,7 @@ struct KeyboardThemesView: View {
     @State private var photo: UIImage?
     @State private var isSavingPhoto = false
     @State private var errorMessage: String?
+    @State private var customColors = CustomThemeColors.load()
 
     private let columns = [GridItem(.adaptive(minimum: 100), spacing: 14)]
 
@@ -35,6 +36,21 @@ struct KeyboardThemesView: View {
                 Text("Temas")
             } footer: {
                 Text("«Automático» sigue el modo claro u oscuro del sistema y de cada app. También puedes cambiar de tema desde la paleta de la barra del teclado.")
+            }
+
+            Section {
+                ColorPicker("Fondo", selection: colorBinding(\.background), supportsOpacity: false)
+                ColorPicker("Teclas", selection: colorBinding(\.key), supportsOpacity: false)
+                ColorPicker("Letras", selection: colorBinding(\.text), supportsOpacity: false)
+                ColorPicker("Acento (intro y selección)", selection: colorBinding(\.accent), supportsOpacity: false)
+                Button("Restablecer colores") {
+                    customColors = CustomThemeColors()
+                    customColors.save()
+                }
+            } header: {
+                Text("Tema personalizado")
+            } footer: {
+                Text("Al cambiar un color se activa el tema «Personalizado». Las teclas especiales usan un tono más suave del color de las teclas.")
             }
 
             Section {
@@ -69,10 +85,32 @@ struct KeyboardThemesView: View {
         }
     }
 
+    private func colorBinding(_ keyPath: WritableKeyPath<CustomThemeColors, RGBColor>) -> Binding<Color> {
+        Binding(
+            get: { KeyboardPalette.color(customColors[keyPath: keyPath]) },
+            set: { newValue in
+                var red: CGFloat = 0
+                var green: CGFloat = 0
+                var blue: CGFloat = 0
+                var alpha: CGFloat = 0
+                UIColor(newValue).getRed(&red, green: &green, blue: &blue, alpha: &alpha)
+                customColors[keyPath: keyPath] = RGBColor(red: Double(red), green: Double(green), blue: Double(blue))
+                customColors.save()
+                theme = .custom
+            }
+        )
+    }
+
     private func themeButton(_ option: KeyboardThemeOption) -> some View {
         Button { theme = option } label: {
             VStack(spacing: 6) {
-                ThemePreview(option: option, systemIsDark: colorScheme == .dark, photo: photo, dim: backgroundDim)
+                KeyboardThemePreview(
+                    option: option,
+                    systemIsDark: colorScheme == .dark,
+                    custom: customColors,
+                    photo: photo,
+                    dim: backgroundDim
+                )
                     .frame(height: 74)
                     .overlay {
                         RoundedRectangle(cornerRadius: 12, style: .continuous)
@@ -105,43 +143,5 @@ struct KeyboardThemesView: View {
         photo = nil
         photoItem = nil
         if theme == .photo { theme = .system }
-    }
-}
-
-/// Miniatura de un teclado con los colores del tema.
-private struct ThemePreview: View {
-    let option: KeyboardThemeOption
-    let systemIsDark: Bool
-    let photo: UIImage?
-    let dim: Double
-
-    var body: some View {
-        let palette = KeyboardPalette.make(theme: option, systemIsDark: systemIsDark)
-        ZStack {
-            if option == .photo, let photo {
-                Image(uiImage: photo)
-                    .resizable()
-                    .scaledToFill()
-                    .overlay(Color.black.opacity(dim))
-            } else {
-                palette.background
-            }
-            VStack(spacing: 4) {
-                ForEach(0..<3, id: \.self) { row in
-                    HStack(spacing: 3) {
-                        ForEach(0..<(row == 2 ? 5 : 6), id: \.self) { _ in
-                            RoundedRectangle(cornerRadius: 2).fill(palette.key)
-                        }
-                    }
-                }
-                HStack(spacing: 3) {
-                    RoundedRectangle(cornerRadius: 2).fill(palette.specialKey).frame(width: 14)
-                    RoundedRectangle(cornerRadius: 2).fill(palette.key)
-                    RoundedRectangle(cornerRadius: 2).fill(palette.accent).frame(width: 14)
-                }
-            }
-            .padding(7)
-        }
-        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
     }
 }

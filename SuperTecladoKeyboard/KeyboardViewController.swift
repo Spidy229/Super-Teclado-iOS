@@ -32,6 +32,10 @@ final class KeyboardViewController: UIInputViewController {
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
         engine.hasFullAccess = hasFullAccess
+        if hasFullAccess {
+            // La app lo usa para mostrar que el teclado está activado y con acceso total.
+            SharedClipboardStore.sharedDefaults?.set(Date().timeIntervalSince1970, forKey: KeyboardPreferenceKey.lastActive)
+        }
         engine.loadPreferences()
         engine.setTraitStyle(traitCollection.userInterfaceStyle)
         updateMetrics()

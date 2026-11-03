@@ -23,7 +23,9 @@ struct CharacterKeyView: View {
     private var displayValue: String { engine.displayText(for: value, caseSensitive: caseSensitive) }
     private var popupHeight: CGFloat { max(36, size.height - 8) }
     private var optionWidth: CGFloat { max(30, min(44, size.width - 6)) }
-    private var fontSize: CGFloat { min(25, size.height * 0.46) * (value.count > 2 ? 0.7 : 1) }
+    private var fontSize: CGFloat {
+        min(25, size.height * 0.46) * (value.count > 2 ? 0.7 : 1) * CGFloat(engine.preferences.keyLabelSize.scale)
+    }
 
     var body: some View {
         ZStack(alignment: .topTrailing) {

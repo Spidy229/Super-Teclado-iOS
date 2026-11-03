@@ -26,11 +26,19 @@ struct KeyboardSettingsView: View {
     @AppStorage(KeyboardPreferenceKey.englishSecondLanguage, store: UserDefaults(suiteName: SharedClipboardStore.appGroupID)) private var englishSecondLanguage = false
     @AppStorage(KeyboardPreferenceKey.incognito, store: UserDefaults(suiteName: SharedClipboardStore.appGroupID)) private var incognito = false
 
+    @AppStorage(KeyboardPreferenceKey.hapticsStrength, store: UserDefaults(suiteName: SharedClipboardStore.appGroupID)) private var hapticsStrength = 0.6
+    @AppStorage(KeyboardPreferenceKey.hapticsStyle, store: UserDefaults(suiteName: SharedClipboardStore.appGroupID)) private var hapticsStyle: HapticStyleOption = .light
+    @AppStorage(KeyboardPreferenceKey.keyLabelSize, store: UserDefaults(suiteName: SharedClipboardStore.appGroupID)) private var keyLabelSize: KeyLabelSize = .normal
+
     @State private var testText = ""
     @State private var showClearWordsConfirmation = false
 
     var body: some View {
         Form {
+            Section {
+                KeyboardStatusView()
+            }
+
             Section {
                 setupStep(1, "Abre Ajustes › Super Teclado › Teclados.")
                 setupStep(2, "Activa «Super Teclado» y «Permitir acceso total».")
@@ -58,7 +66,9 @@ struct KeyboardSettingsView: View {
                 Toggle("Mostrar símbolos con pulsación larga", isOn: $longPressSymbols)
                 Toggle("Ventana emergente al pulsar teclas", isOn: $keyPopups)
                 Toggle("Sonido al pulsar teclas", isOn: $sound)
-                Toggle("Vibración al pulsar teclas", isOn: $haptics)
+                Picker("Tamaño de las letras", selection: $keyLabelSize) {
+                    ForEach(KeyLabelSize.allCases) { size in Text(size.title).tag(size) }
+                }
                 Picker("Modo una mano", selection: $oneHandedMode) {
                     ForEach(OneHandedMode.allCases) { mode in Text(mode.title).tag(mode) }
                 }
@@ -70,6 +80,40 @@ struct KeyboardSettingsView: View {
                     Text("Normal").tag(330)
                     Text("Largo").tag(500)
                 }
+            }
+
+            Section {
+                Toggle("Vibración al pulsar teclas", isOn: $haptics)
+                if haptics {
+                    Picker("Tipo de vibración", selection: $hapticsStyle) {
+                        ForEach(HapticStyleOption.allCases) { style in Text(style.title).tag(style) }
+                    }
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack {
+                            Text("Intensidad")
+                            Spacer()
+                            Text("\(Int((hapticsStrength * 100).rounded())) %")
+                                .foregroundStyle(.secondary)
+                                .monospacedDigit()
+                        }
+                        Slider(value: $hapticsStrength, in: 0.1...1, step: 0.05) {
+                            Text("Intensidad")
+                        } minimumValueLabel: {
+                            Image(systemName: "iphone.radiowaves.left.and.right").imageScale(.small)
+                        } maximumValueLabel: {
+                            Image(systemName: "iphone.radiowaves.left.and.right").imageScale(.large)
+                        } onEditingChanged: { editing in
+                            if !editing { testHaptic() }
+                        }
+                    }
+                    Button(action: testHaptic) {
+                        Label("Probar vibración", systemImage: "hand.tap")
+                    }
+                }
+            } header: {
+                Text("Vibración")
+            } footer: {
+                Text("El teclado necesita «Permitir acceso total» para vibrar. Las teclas especiales (borrar, mayúsculas, intro) vibran un poco más fuerte.")
             }
 
             Section {
@@ -161,6 +205,12 @@ struct KeyboardSettingsView: View {
             Button("Borrar", role: .destructive) { KeyboardPreferences.clearLearnedWords() }
             Button("Cancelar", role: .cancel) {}
         }
+    }
+
+    private func testHaptic() {
+        let generator = UIImpactFeedbackGenerator(style: hapticsStyle.feedbackStyle)
+        generator.prepare()
+        generator.impactOccurred(intensity: hapticsStrength)
     }
 
     private func setupStep(_ number: Int, _ text: String) -> some View {

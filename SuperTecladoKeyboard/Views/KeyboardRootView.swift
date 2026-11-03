@@ -4,7 +4,11 @@ struct KeyboardRootView: View {
     @ObservedObject var engine: KeyboardEngine
 
     var body: some View {
-        let palette = KeyboardPalette.make(theme: engine.preferences.theme, systemIsDark: engine.isDark)
+        let palette = KeyboardPalette.make(
+            theme: engine.preferences.theme,
+            systemIsDark: engine.isDark,
+            custom: engine.preferences.customColors
+        )
         VStack(spacing: 0) {
             topStrip
                 .frame(height: engine.metrics.stripHeight)
@@ -31,6 +35,7 @@ struct KeyboardRootView: View {
         case .emojiSearch: EmojiSearchBarView()
         case .clipboardSearch: ClipboardSearchBarView()
         case .editing: PanelHeaderView(title: "Edición de texto")
+        case .themes: PanelHeaderView(title: "Temas")
         }
     }
 
@@ -47,6 +52,7 @@ struct KeyboardRootView: View {
                 TypingKeyboardView()
             }
         case .editing: TextEditingPanelView()
+        case .themes: ThemePickerPanelView()
         }
     }
 

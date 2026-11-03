@@ -17,6 +17,8 @@ enum KeyboardPanel: Equatable {
     /// Búsqueda en el portapapeles, también escrita con el teclado.
     case clipboardSearch
     case editing
+    /// Selector de temas dentro del teclado.
+    case themes
 }
 
 enum ShiftState {
