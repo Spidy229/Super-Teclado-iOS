@@ -137,7 +137,8 @@ final class KeyboardViewController: UIInputViewController {
             isPad: isPad,
             isLandscape: isLandscape,
             numberRow: engine.preferences.numberRow,
-            scale: engine.preferences.height.scale
+            scale: engine.preferences.height.scale,
+            favoritesRow: engine.preferences.favoritesRow
         )
         if metrics != engine.metrics { engine.metrics = metrics }
         if heightConstraint?.constant != metrics.totalHeight {

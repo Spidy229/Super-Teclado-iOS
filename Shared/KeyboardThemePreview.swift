@@ -18,6 +18,16 @@ struct KeyboardThemePreview: View {
                     .resizable()
                     .scaledToFill()
                     .overlay(Color.black.opacity(dim))
+            } else if let gradient = palette.gradient {
+                LinearGradient(colors: gradient, startPoint: .topLeading, endPoint: .bottomTrailing)
+            } else if option == .glass {
+                // Vista previa del cristal: un fondo translúcido sobre un patrón suave.
+                LinearGradient(
+                    colors: systemIsDark ? [Color(white: 0.25), Color(white: 0.12)] : [Color(white: 0.95), Color(white: 0.78)],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+                .overlay(.ultraThinMaterial)
             } else {
                 palette.background
             }

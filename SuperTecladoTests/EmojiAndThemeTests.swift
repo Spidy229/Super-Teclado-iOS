@@ -19,11 +19,11 @@ final class EmojiAndThemeTests: XCTestCase {
         XCTAssertEqual(index.name(for: "❤️"), "corazon rojo")
     }
 
-    func testThemeCycleSkipsPhotoWithoutImage() {
-        XCTAssertEqual(KeyboardThemeOption.system.next(includingPhoto: false), .light)
-        XCTAssertEqual(KeyboardThemeOption.lavender.next(includingPhoto: false), .system)
-        XCTAssertEqual(KeyboardThemeOption.lavender.next(includingPhoto: true), .photo)
+    func testThemeDarkness() {
         XCTAssertNil(KeyboardThemeOption.system.isDark)
+        XCTAssertNil(KeyboardThemeOption.glass.isDark)
+        XCTAssertEqual(KeyboardThemeOption.aurora.isDark, true)
+        XCTAssertEqual(KeyboardThemeOption.dawn.isDark, false)
         XCTAssertEqual(KeyboardThemeOption.rose.isDark, false)
         XCTAssertEqual(KeyboardThemeOption.photo.isDark, true)
     }
@@ -53,7 +53,9 @@ final class EmojiAndThemeTests: XCTestCase {
         let defaults = UserDefaults(suiteName: "super-teclado-tests-\(UUID().uuidString)")
         let preferences = KeyboardPreferences.load(from: defaults)
         XCTAssertFalse(preferences.incognito)
-        XCTAssertFalse(preferences.englishSecondLanguage)
+        XCTAssertNil(preferences.secondaryLanguage)
+        XCTAssertEqual(preferences.primaryLanguage, .spanish)
+        XCTAssertEqual(preferences.letterLayout, .spanish)
         XCTAssertEqual(preferences.theme, .system)
         XCTAssertEqual(preferences.backgroundDim, 0.35, accuracy: 0.001)
     }

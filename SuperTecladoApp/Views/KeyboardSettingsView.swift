@@ -1,3 +1,4 @@
+import AudioToolbox
 import SwiftUI
 import UIKit
 
@@ -23,12 +24,20 @@ struct KeyboardSettingsView: View {
     @AppStorage(KeyboardPreferenceKey.height, store: UserDefaults(suiteName: SharedClipboardStore.appGroupID)) private var height: KeyboardHeightOption = .normal
     @AppStorage(KeyboardPreferenceKey.longPressDelay, store: UserDefaults(suiteName: SharedClipboardStore.appGroupID)) private var longPressDelay = 330
 
-    @AppStorage(KeyboardPreferenceKey.englishSecondLanguage, store: UserDefaults(suiteName: SharedClipboardStore.appGroupID)) private var englishSecondLanguage = false
+    @AppStorage(KeyboardPreferenceKey.primaryLanguage, store: UserDefaults(suiteName: SharedClipboardStore.appGroupID)) private var primaryLanguage: KeyboardLanguage = .spanish
+    /// Código del segundo idioma o cadena vacía.
+    @AppStorage(KeyboardPreferenceKey.secondaryLanguage, store: UserDefaults(suiteName: SharedClipboardStore.appGroupID)) private var secondaryLanguageCode = ""
+    /// Distribución elegida o «auto».
+    @AppStorage(KeyboardPreferenceKey.layout, store: UserDefaults(suiteName: SharedClipboardStore.appGroupID)) private var layoutCode = "auto"
     @AppStorage(KeyboardPreferenceKey.incognito, store: UserDefaults(suiteName: SharedClipboardStore.appGroupID)) private var incognito = false
 
     @AppStorage(KeyboardPreferenceKey.hapticsStrength, store: UserDefaults(suiteName: SharedClipboardStore.appGroupID)) private var hapticsStrength = 0.6
     @AppStorage(KeyboardPreferenceKey.hapticsStyle, store: UserDefaults(suiteName: SharedClipboardStore.appGroupID)) private var hapticsStyle: HapticStyleOption = .light
     @AppStorage(KeyboardPreferenceKey.keyLabelSize, store: UserDefaults(suiteName: SharedClipboardStore.appGroupID)) private var keyLabelSize: KeyLabelSize = .normal
+
+    @AppStorage(KeyboardPreferenceKey.soundStyle, store: UserDefaults(suiteName: SharedClipboardStore.appGroupID)) private var soundStyle: KeySoundStyle = .modern
+    @AppStorage(KeyboardPreferenceKey.favoritesRow, store: UserDefaults(suiteName: SharedClipboardStore.appGroupID)) private var favoritesRow = false
+    @AppStorage(KeyboardPreferenceKey.favorites, store: UserDefaults(suiteName: SharedClipboardStore.appGroupID)) private var favorites = KeyboardPreferences.defaultFavorites
 
     @State private var testText = ""
     @State private var showClearWordsConfirmation = false
@@ -65,7 +74,6 @@ struct KeyboardSettingsView: View {
                 Toggle("Fila de números", isOn: $numberRow)
                 Toggle("Mostrar símbolos con pulsación larga", isOn: $longPressSymbols)
                 Toggle("Ventana emergente al pulsar teclas", isOn: $keyPopups)
-                Toggle("Sonido al pulsar teclas", isOn: $sound)
                 Picker("Tamaño de las letras", selection: $keyLabelSize) {
                     ForEach(KeyLabelSize.allCases) { size in Text(size.title).tag(size) }
                 }
@@ -80,6 +88,36 @@ struct KeyboardSettingsView: View {
                     Text("Normal").tag(330)
                     Text("Largo").tag(500)
                 }
+            }
+
+            Section {
+                Toggle("Sonido al pulsar teclas", isOn: $sound)
+                if sound {
+                    Picker("Tipo de sonido", selection: $soundStyle) {
+                        ForEach(KeySoundStyle.allCases) { style in Text(style.title).tag(style) }
+                    }
+                    Button(action: testSound) {
+                        Label("Probar sonido", systemImage: "speaker.wave.2")
+                    }
+                }
+            } header: {
+                Text("Sonido")
+            } footer: {
+                Text("El volumen sigue al de los sonidos del sistema y no suena con el modo silencio.")
+            }
+
+            Section {
+                Toggle("Fila de favoritos", isOn: $favoritesRow)
+                if favoritesRow {
+                    TextField("Emojis y símbolos", text: $favorites, axis: .vertical)
+                        .lineLimit(1...3)
+                        .font(.title3)
+                    Button("Restablecer favoritos") { favorites = KeyboardPreferences.defaultFavorites }
+                }
+            } header: {
+                Text("Favoritos")
+            } footer: {
+                Text("Una fila encima de las teclas con tus emojis y símbolos más usados. Escríbelos o pégalos seguidos; si la dejas vacía, muestra tus emojis recientes.")
             }
 
             Section {
@@ -139,12 +177,23 @@ struct KeyboardSettingsView: View {
             }
 
             Section {
-                LabeledContent("Idioma principal", value: "Español")
-                Toggle("Inglés como segundo idioma", isOn: $englishSecondLanguage)
+                Picker("Idioma principal", selection: $primaryLanguage) {
+                    ForEach(KeyboardLanguage.allCases) { language in Text(language.title).tag(language) }
+                }
+                Picker("Segundo idioma", selection: $secondaryLanguageCode) {
+                    Text("Ninguno").tag("")
+                    ForEach(KeyboardLanguage.allCases.filter { $0 != primaryLanguage }) { language in
+                        Text(language.title).tag(language.rawValue)
+                    }
+                }
+                Picker("Distribución", selection: $layoutCode) {
+                    Text("Automática (\(primaryLanguage.defaultLayout.title))").tag("auto")
+                    ForEach(LetterLayout.allCases) { layout in Text(layout.title).tag(layout.rawValue) }
+                }
             } header: {
                 Text("Idiomas")
             } footer: {
-                Text("Con el inglés activado, el teclado sugiere, corrige y reconoce trazos en los dos idiomas a la vez.")
+                Text("Con dos idiomas, el teclado sugiere, corrige y reconoce trazos en ambos a la vez. Los acentos y letras de cada idioma (ñ, ç, ß…) están en la pulsación larga.")
             }
 
             Section {
@@ -196,6 +245,10 @@ struct KeyboardSettingsView: View {
             }
         }
         .navigationTitle("Teclado")
+        .onChange(of: primaryLanguage) { _, language in
+            if secondaryLanguageCode == language.rawValue { secondaryLanguageCode = "" }
+        }
+        .onAppear(perform: migrateSecondLanguage)
         .navigationBarTitleDisplayMode(.inline)
         .confirmationDialog(
             "¿Borrar las palabras aprendidas?",
@@ -205,6 +258,18 @@ struct KeyboardSettingsView: View {
             Button("Borrar", role: .destructive) { KeyboardPreferences.clearLearnedWords() }
             Button("Cancelar", role: .cancel) {}
         }
+    }
+
+    /// La versión 2.2 guardaba «inglés como segundo idioma» como un interruptor.
+    private func migrateSecondLanguage() {
+        let defaults = SharedClipboardStore.sharedDefaults
+        guard defaults?.object(forKey: KeyboardPreferenceKey.secondaryLanguage) == nil,
+              defaults?.bool(forKey: KeyboardPreferenceKey.englishSecondLanguage) == true else { return }
+        secondaryLanguageCode = KeyboardLanguage.english.rawValue
+    }
+
+    private func testSound() {
+        AudioServicesPlaySystemSound(SystemSoundID(soundStyle.soundID(isDelete: false, isModifier: false)))
     }
 
     private func testHaptic() {

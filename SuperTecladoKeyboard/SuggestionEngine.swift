@@ -31,7 +31,9 @@ struct SuggestionResult {
 @MainActor
 final class SuggestionEngine {
     private let checker = UITextChecker()
-    private let language: String
+    private var language: String
+    /// Distribución activa, para saber qué teclas están al lado al corregir erratas.
+    var layout: LetterLayout = .spanish
     private(set) var dictionary: WordDictionary?
     private var lexiconShortcuts: [String: String] = [:]
     private var lexiconWords: Set<String> = []
@@ -45,12 +47,22 @@ final class SuggestionEngine {
     private let typoThreshold = 8.0
 
     init() {
-        let available = UITextChecker.availableLanguages
-        language = available.first { $0 == "es_ES" }
-            ?? available.first { $0.hasPrefix("es") }
-            ?? available.first
-            ?? "es_ES"
+        language = Self.checkerLanguage(for: "es_ES")
         reloadPersonalData()
+    }
+
+    /// Idioma del corrector de iOS (UITextChecker) más parecido al pedido.
+    func setLanguage(_ code: String) {
+        language = Self.checkerLanguage(for: code)
+    }
+
+    private static func checkerLanguage(for code: String) -> String {
+        let available = UITextChecker.availableLanguages
+        let prefix = String(code.prefix(2))
+        return available.first { $0 == code }
+            ?? available.first { $0.hasPrefix(prefix) }
+            ?? available.first
+            ?? code
     }
 
     func setDictionary(_ dictionary: WordDictionary) {
@@ -124,7 +136,7 @@ final class SuggestionEngine {
                 .forEach(append)
         }
         if !isKnown, correction == nil, let dictionary {
-            TypoCorrector.candidates(for: lower, in: dictionary, limit: 2).forEach { append($0.word) }
+            TypoCorrector.candidates(for: lower, in: dictionary, layout: layout, limit: 2).forEach { append($0.word) }
         }
 
         let typed = SuggestionItem(text: word, kind: .typed)
@@ -164,7 +176,7 @@ final class SuggestionEngine {
                 return form
             }
             if lower.count >= 3,
-               let candidate = TypoCorrector.candidates(for: lower, in: dictionary, limit: 1).first,
+               let candidate = TypoCorrector.candidates(for: lower, in: dictionary, layout: layout, limit: 1).first,
                candidate.score >= typoThreshold {
                 return candidate.word
             }

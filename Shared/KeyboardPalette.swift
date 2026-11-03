@@ -16,6 +16,12 @@ struct KeyboardPalette {
     let tile: Color
     let chip: Color
     let separator: Color
+    /// Colores del fondo en degradado (de arriba a la izquierda hacia abajo a la derecha).
+    var gradient: [Color]? = nil
+    /// Fondo opaco para paneles que tapan el teclado cuando el fondo es transparente.
+    var solidBackground: Color? = nil
+
+    var opaqueBackground: Color { solidBackground ?? gradient?.first ?? background }
 
     static func make(
         theme: KeyboardThemeOption,
@@ -62,6 +68,15 @@ struct KeyboardPalette {
             )
         case .photo: photo
         case .custom: customPalette(custom)
+        case .glass: systemIsDark ? darkGlass : lightGlass
+        case .aurora:
+            gradientPalette([rgb(0.23, 0.11, 0.44), rgb(0.12, 0.31, 0.61)], dark: true, accent: rgb(0.8, 0.65, 1))
+        case .dawn:
+            gradientPalette([rgb(0.97, 0.47, 0.49), rgb(0.98, 0.84, 0.53)], dark: false, accent: rgb(0.72, 0.2, 0.3))
+        case .mint:
+            gradientPalette([rgb(0.04, 0.45, 0.42), rgb(0.18, 0.63, 0.45)], dark: true, accent: rgb(0.75, 1, 0.85))
+        case .night:
+            gradientPalette([rgb(0.06, 0.13, 0.15), rgb(0.17, 0.33, 0.39)], dark: true, accent: rgb(0.55, 0.85, 0.95))
         }
     }
 
@@ -87,7 +102,8 @@ struct KeyboardPalette {
             popup: key,
             tile: key.opacity(0.9),
             chip: key.opacity(0.7),
-            separator: text.opacity(0.16)
+            separator: text.opacity(0.16),
+            gradient: colors.backgroundEnd.map { [color(colors.background), color($0)] }
         )
     }
 
@@ -159,6 +175,60 @@ struct KeyboardPalette {
         chip: Color.white.opacity(0.16),
         separator: Color.white.opacity(0.22)
     )
+
+    /// Cristal: fondo transparente sobre el fondo translúcido del sistema.
+    private static let darkGlass = KeyboardPalette(
+        background: .clear,
+        key: Color.white.opacity(0.16),
+        specialKey: Color.white.opacity(0.07),
+        keyPressed: Color.white.opacity(0.34),
+        text: .white,
+        secondaryText: Color.white.opacity(0.7),
+        accent: rgb(0.541, 0.706, 0.973),
+        accentText: rgb(0.08, 0.09, 0.11),
+        shadow: Color.black.opacity(0.2),
+        popup: rgb(0.27, 0.28, 0.3),
+        tile: Color.white.opacity(0.14),
+        chip: Color.white.opacity(0.12),
+        separator: Color.white.opacity(0.2),
+        solidBackground: rgb(0.16, 0.17, 0.19)
+    )
+
+    private static let lightGlass = KeyboardPalette(
+        background: .clear,
+        key: Color.white.opacity(0.62),
+        specialKey: Color.white.opacity(0.3),
+        keyPressed: Color.white.opacity(0.9),
+        text: rgb(0.1, 0.1, 0.12),
+        secondaryText: rgb(0.32, 0.33, 0.36),
+        accent: rgb(0.102, 0.451, 0.91),
+        accentText: .white,
+        shadow: Color.black.opacity(0.12),
+        popup: .white,
+        tile: Color.white.opacity(0.6),
+        chip: Color.white.opacity(0.45),
+        separator: Color.black.opacity(0.1),
+        solidBackground: rgb(0.9, 0.91, 0.93)
+    )
+
+    private static func gradientPalette(_ colors: [Color], dark: Bool, accent: Color) -> KeyboardPalette {
+        KeyboardPalette(
+            background: colors.first ?? .black,
+            key: Color.white.opacity(dark ? 0.2 : 0.62),
+            specialKey: Color.white.opacity(dark ? 0.1 : 0.32),
+            keyPressed: Color.white.opacity(dark ? 0.38 : 0.9),
+            text: dark ? .white : rgb(0.18, 0.1, 0.12),
+            secondaryText: dark ? Color.white.opacity(0.7) : rgb(0.4, 0.28, 0.3),
+            accent: accent,
+            accentText: dark ? rgb(0.08, 0.09, 0.11) : .white,
+            shadow: Color.black.opacity(dark ? 0.25 : 0.12),
+            popup: dark ? rgb(0.25, 0.25, 0.3) : .white,
+            tile: Color.white.opacity(dark ? 0.16 : 0.6),
+            chip: Color.white.opacity(dark ? 0.12 : 0.45),
+            separator: dark ? Color.white.opacity(0.2) : Color.black.opacity(0.1),
+            gradient: colors
+        )
+    }
 
     private static func tinted(background: Color, key: Color, specialKey: Color, accent: Color) -> KeyboardPalette {
         KeyboardPalette(

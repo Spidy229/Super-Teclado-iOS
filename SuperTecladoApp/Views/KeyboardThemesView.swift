@@ -35,7 +35,7 @@ struct KeyboardThemesView: View {
             } header: {
                 Text("Temas")
             } footer: {
-                Text("«Automático» sigue el modo claro u oscuro del sistema y de cada app. También puedes cambiar de tema desde la paleta de la barra del teclado.")
+                Text("«Automático» y «Cristal» siguen el modo claro u oscuro del sistema. «Cristal» deja ver el fondo translúcido de iOS. También puedes cambiar de tema desde la paleta de la barra del teclado.")
             }
 
             Section {
@@ -43,6 +43,23 @@ struct KeyboardThemesView: View {
                 ColorPicker("Teclas", selection: colorBinding(\.key), supportsOpacity: false)
                 ColorPicker("Letras", selection: colorBinding(\.text), supportsOpacity: false)
                 ColorPicker("Acento (intro y selección)", selection: colorBinding(\.accent), supportsOpacity: false)
+                Toggle("Fondo degradado", isOn: Binding(
+                    get: { customColors.backgroundEnd != nil },
+                    set: { enabled in
+                        customColors.backgroundEnd = enabled
+                            ? RGBColor(
+                                red: min(customColors.background.red + 0.25, 1),
+                                green: customColors.background.green,
+                                blue: min(customColors.background.blue + 0.3, 1)
+                            )
+                            : nil
+                        customColors.save()
+                        theme = .custom
+                    }
+                ))
+                if customColors.backgroundEnd != nil {
+                    ColorPicker("Segundo color del fondo", selection: endColorBinding, supportsOpacity: false)
+                }
                 Button("Restablecer colores") {
                     customColors = CustomThemeColors()
                     customColors.save()
@@ -95,6 +112,22 @@ struct KeyboardThemesView: View {
                 var alpha: CGFloat = 0
                 UIColor(newValue).getRed(&red, green: &green, blue: &blue, alpha: &alpha)
                 customColors[keyPath: keyPath] = RGBColor(red: Double(red), green: Double(green), blue: Double(blue))
+                customColors.save()
+                theme = .custom
+            }
+        )
+    }
+
+    private var endColorBinding: Binding<Color> {
+        Binding(
+            get: { KeyboardPalette.color(customColors.backgroundEnd ?? customColors.background) },
+            set: { newValue in
+                var red: CGFloat = 0
+                var green: CGFloat = 0
+                var blue: CGFloat = 0
+                var alpha: CGFloat = 0
+                UIColor(newValue).getRed(&red, green: &green, blue: &blue, alpha: &alpha)
+                customColors.backgroundEnd = RGBColor(red: Double(red), green: Double(green), blue: Double(blue))
                 customColors.save()
                 theme = .custom
             }

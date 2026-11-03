@@ -2,7 +2,7 @@
 
 ## Diccionario de frecuencias en español
 
-`SuperTecladoKeyboard/Resources/es-palabras.txt` se ha generado a partir de la lista
+`SuperTecladoKeyboard/Resources/words-es.txt` se ha generado a partir de la lista
 `es_50k.txt` de [FrequencyWords](https://github.com/hermitdave/FrequencyWords), de Hermit Dave,
 calculada sobre el corpus OpenSubtitles 2018.
 
@@ -13,9 +13,12 @@ calculada sobre el corpus OpenSubtitles 2018.
   limita a las 40 000 palabras más frecuentes.
 - El archivo derivado se distribuye con la misma licencia CC BY-SA 4.0.
 
-`SuperTecladoKeyboard/Resources/en-words.txt` procede de la lista `en_50k.txt` del mismo
-proyecto, con las mismas condiciones (CC BY-SA 4.0). Se conservan solo palabras formadas por
-letras y se limita a las 30 000 más frecuentes.
+Los demás diccionarios (`words-en.txt`, `words-ca.txt`, `words-pt.txt`, `words-fr.txt`,
+`words-it.txt` y `words-de.txt`) proceden de las listas `en_50k.txt`, `ca_50k.txt`,
+`pt_br_50k.txt`, `fr_50k.txt`, `it_50k.txt` y `de_50k.txt` del mismo proyecto, con las mismas
+condiciones (CC BY-SA 4.0). Se conservan solo palabras formadas por letras, se eliminan las
+variantes sin tilde de palabras que casi siempre la llevan y se limitan a las 30 000 más
+frecuentes.
 
 ## Nombres de emojis en español
 

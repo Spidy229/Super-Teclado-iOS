@@ -568,7 +568,7 @@ struct ClipboardPanelView: View {
             }
             .padding(10)
         }
-        .background(palette.background)
+        .background(palette.opaqueBackground)
         .transition(.opacity)
     }
 

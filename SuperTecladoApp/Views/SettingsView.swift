@@ -34,6 +34,7 @@ struct SettingsView: View {
     ) private var sensitiveMode: SensitiveClipMode = .mask
 
     @State private var showDeleteConfirmation = false
+    @State private var showOnboarding = false
     @State private var showClearTemporaryConfirmation = false
     @State private var folders: [String] = []
     @State private var newFolderName = ""
@@ -158,6 +159,11 @@ struct SettingsView: View {
                         Label("Temas del teclado", systemImage: "paintpalette")
                     }
                     Button {
+                        showOnboarding = true
+                    } label: {
+                        Label("Ver la guía de bienvenida", systemImage: "sparkles")
+                    }
+                    Button {
                         if let url = URL(string: UIApplication.openSettingsURLString) {
                             UIApplication.shared.open(url)
                         }
@@ -181,6 +187,7 @@ struct SettingsView: View {
                 }
             }
             .navigationTitle("Ajustes")
+            .sheet(isPresented: $showOnboarding) { OnboardingView() }
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Listo") { dismiss() }
@@ -217,7 +224,7 @@ struct SettingsView: View {
     }
 
     private var appVersion: String {
-        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "2.4"
+        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "2.5"
     }
 
     private func addFolder() {

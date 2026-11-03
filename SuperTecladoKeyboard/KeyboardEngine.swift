@@ -68,8 +68,8 @@ final class KeyboardEngine: ObservableObject {
     private var lastGlide: (word: String, alternatives: [String])?
     /// Espacio añadido automáticamente tras elegir una sugerencia (se quita ante un signo).
     private var autoSpaceInserted = false
-    /// Idiomas del diccionario cargado (`nil` mientras no se ha cargado ninguno).
-    private var loadedEnglish: Bool?
+    /// Idiomas del diccionario cargado, p. ej. «es+en» (`nil` mientras no se ha cargado ninguno).
+    private var loadedLanguages: String?
     private var backgroundDate: Date?
     private var emojiIndex: EmojiSearchIndex?
     private var emojiIndexLoadStarted = false
@@ -107,8 +107,11 @@ final class KeyboardEngine: ObservableObject {
 
     var spaceBarTitle: String {
         if preferences.incognito { return "Incógnito" }
-        return preferences.englishSecondLanguage ? "Español · English" : "Español"
+        let primary = preferences.primaryLanguage.nativeName
+        return preferences.secondaryLanguage.map { "\(primary) · \($0.nativeName)" } ?? primary
     }
+
+    var letterLayout: LetterLayout { preferences.letterLayout }
 
     // MARK: Contexto
 
@@ -176,16 +179,20 @@ final class KeyboardEngine: ObservableObject {
 
     /// Carga el diccionario de frecuencias en segundo plano, y otra vez si cambian los idiomas.
     private func loadDictionaryIfNeeded() {
-        let english = preferences.englishSecondLanguage
-        guard loadedEnglish != english,
-              let url = Bundle.main.url(forResource: "es-palabras", withExtension: "txt") else { return }
-        loadedEnglish = english
-        let englishURL = english ? Bundle.main.url(forResource: "en-words", withExtension: "txt") : nil
+        let primary = preferences.primaryLanguage
+        let secondary = preferences.secondaryLanguage
+        let languages = "\(primary.rawValue)+\(secondary?.rawValue ?? "")"
+        suggestionEngine.layout = letterLayout
+        guard loadedLanguages != languages,
+              let url = Bundle.main.url(forResource: primary.dictionaryResource, withExtension: "txt") else { return }
+        loadedLanguages = languages
+        suggestionEngine.setLanguage(primary.spellCheckerLanguage)
+        let secondaryURL = secondary.flatMap { Bundle.main.url(forResource: $0.dictionaryResource, withExtension: "txt") }
         Task { [weak self] in
             let dictionary = await Task.detached(priority: .userInitiated) {
-                WordDictionary.load(from: url, secondary: englishURL, secondaryWeight: 0.6)
+                WordDictionary.load(from: url, secondary: secondaryURL, secondaryWeight: 0.6)
             }.value
-            guard let self, let dictionary, self.loadedEnglish == english else { return }
+            guard let self, let dictionary, self.loadedLanguages == languages else { return }
             self.suggestionEngine.setDictionary(dictionary)
             self.refreshSuggestions()
         }
@@ -507,7 +514,7 @@ final class KeyboardEngine: ObservableObject {
         guard GlideDecoder.length(of: path) >= Double(geometry.unit) * 0.9 else { return false }
         guard let proxy, let dictionary = suggestionEngine.dictionary else { return true }
 
-        let decoder = GlideDecoder(keyCenters: geometry.letterCenters(), keyWidth: geometry.unit)
+        let decoder = GlideDecoder(keyCenters: geometry.letterCenters(layout: letterLayout), keyWidth: geometry.unit)
         let candidates = decoder.decode(
             path: path,
             dictionary: dictionary,
@@ -576,6 +583,15 @@ final class KeyboardEngine: ObservableObject {
         pendingAutocorrection = nil
         autoSpaceInserted = false
         rememberEmoji(emoji)
+        afterEdit()
+    }
+
+    /// Inserta un elemento de la fila de favoritos (emoji o símbolo).
+    func insertFavorite(_ item: String) {
+        proxy?.insertText(item)
+        pendingAutocorrection = nil
+        autoSpaceInserted = false
+        if item.unicodeScalars.contains(where: { $0.value >= 0x2190 }) { rememberEmoji(item) }
         afterEdit()
     }
 
@@ -966,12 +982,8 @@ final class KeyboardEngine: ObservableObject {
             hapticGenerator().impactOccurred(intensity: CGFloat(intensity))
         }
         if preferences.sound {
-            let sound: SystemSoundID = switch kind {
-            case .character: 1104
-            case .delete: 1155
-            case .modifier: 1156
-            }
-            AudioServicesPlaySystemSound(sound)
+            let sound = preferences.soundStyle.soundID(isDelete: kind == .delete, isModifier: kind == .modifier)
+            AudioServicesPlaySystemSound(SystemSoundID(sound))
         }
     }
 

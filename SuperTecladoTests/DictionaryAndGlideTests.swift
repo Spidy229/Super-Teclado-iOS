@@ -36,7 +36,7 @@ final class DictionaryAndGlideTests: XCTestCase {
     func testGlideDecoderRecognisesIdealPaths() {
         let unit: CGFloat = 37.5
         var centers: [Character: CGPoint] = [:]
-        for (letter, position) in QwertyGeometry.unitPositions {
+        for (letter, position) in LetterLayout.spanish.unitPositions {
             centers[letter] = CGPoint(x: CGFloat(position.x) * unit, y: CGFloat(position.y) * 54)
         }
         let decoder = GlideDecoder(keyCenters: centers, keyWidth: unit)

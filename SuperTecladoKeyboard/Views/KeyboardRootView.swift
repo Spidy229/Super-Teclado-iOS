@@ -9,12 +9,19 @@ struct KeyboardRootView: View {
             systemIsDark: engine.isDark,
             custom: engine.preferences.customColors
         )
+        let showsFavorites = engine.metrics.favoritesRowHeight > 0 && engine.panel == .typing
         VStack(spacing: 0) {
             topStrip
                 .frame(height: engine.metrics.stripHeight)
                 .zIndex(0)
+            if showsFavorites {
+                FavoritesRowView()
+                    .frame(height: engine.metrics.favoritesRowHeight)
+                    .zIndex(0)
+            }
+            // Sin la fila de favoritos (otros paneles), el panel ocupa también su altura.
             panel
-                .frame(height: engine.metrics.keyAreaHeight)
+                .frame(height: engine.metrics.keyAreaHeight + (showsFavorites ? 0 : engine.metrics.favoritesRowHeight))
                 .zIndex(1)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
@@ -67,6 +74,8 @@ struct KeyboardRootView: View {
                     .clipped()
                     .overlay(Color.black.opacity(engine.preferences.backgroundDim))
             }
+        } else if let gradient = palette.gradient {
+            LinearGradient(colors: gradient, startPoint: .topLeading, endPoint: .bottomTrailing)
         } else {
             palette.background
         }

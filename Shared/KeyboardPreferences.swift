@@ -5,11 +5,16 @@ enum KeyboardThemeOption: String, CaseIterable, Identifiable {
     case light
     case dark
     case black
+    case glass
     case ocean
     case forest
     case sunset
     case rose
     case lavender
+    case aurora
+    case dawn
+    case mint
+    case night
     case photo
     case custom
 
@@ -21,11 +26,16 @@ enum KeyboardThemeOption: String, CaseIterable, Identifiable {
         case .light: "Claro"
         case .dark: "Oscuro"
         case .black: "Negro"
+        case .glass: "Cristal"
         case .ocean: "Océano"
         case .forest: "Bosque"
         case .sunset: "Atardecer"
         case .rose: "Rosa"
         case .lavender: "Lavanda"
+        case .aurora: "Aurora"
+        case .dawn: "Amanecer"
+        case .mint: "Menta"
+        case .night: "Noche"
         case .photo: "Mi foto"
         case .custom: "Personalizado"
         }
@@ -34,17 +44,10 @@ enum KeyboardThemeOption: String, CaseIterable, Identifiable {
     /// `nil` cuando depende del sistema (Automático) o de los colores elegidos (Personalizado).
     var isDark: Bool? {
         switch self {
-        case .system, .custom: nil
-        case .light, .rose, .lavender: false
-        case .dark, .black, .ocean, .forest, .sunset, .photo: true
+        case .system, .custom, .glass: nil
+        case .light, .rose, .lavender, .dawn: false
+        case .dark, .black, .ocean, .forest, .sunset, .photo, .aurora, .mint, .night: true
         }
-    }
-
-    /// Siguiente tema al tocar el botón de la barra (la foto solo si hay una elegida).
-    func next(includingPhoto: Bool) -> KeyboardThemeOption {
-        let options = Self.allCases.filter { $0 != .photo || includingPhoto }
-        guard let index = options.firstIndex(of: self) else { return .system }
-        return options[(index + 1) % options.count]
     }
 }
 
@@ -115,7 +118,17 @@ enum KeyboardPreferenceKey {
     static let height = "keyboardHeight"
     static let longPressDelay = "keyboardLongPressDelay"
     static let incognito = "keyboardIncognito"
+    /// Clave antigua (versión 2.2): inglés como segundo idioma.
     static let englishSecondLanguage = "keyboardEnglishSecondLanguage"
+    static let primaryLanguage = "keyboardPrimaryLanguage"
+    /// Código del segundo idioma, o cadena vacía si no hay.
+    static let secondaryLanguage = "keyboardSecondaryLanguage"
+    /// Distribución elegida, o «auto» para usar la del idioma principal.
+    static let layout = "keyboardLayout"
+    static let soundStyle = "keyboardSoundStyle"
+    static let favoritesRow = "keyboardFavoritesRow"
+    static let favorites = "keyboardFavorites"
+    static let customBackgroundEnd = "keyboardCustomBackgroundEnd"
     static let backgroundDim = "keyboardBackgroundDim"
     static let hapticsStrength = "keyboardHapticsStrength"
     static let hapticsStyle = "keyboardHapticsStyle"
@@ -152,7 +165,13 @@ struct KeyboardPreferences: Equatable {
     var longPressDelay = 330
     /// Sin aprender palabras ni guardar lo copiado.
     var incognito = false
-    var englishSecondLanguage = false
+    var primaryLanguage: KeyboardLanguage = .spanish
+    var secondaryLanguage: KeyboardLanguage?
+    /// `nil` usa la distribución del idioma principal.
+    var layoutOverride: LetterLayout?
+    var soundStyle: KeySoundStyle = .modern
+    var favoritesRow = false
+    var favorites = KeyboardPreferences.defaultFavorites
     /// Oscurecimiento de la foto de fondo (0 a 0,7).
     var backgroundDim = 0.35
     /// Intensidad de la vibración de 0,1 a 1.
@@ -194,10 +213,22 @@ struct KeyboardPreferences: Equatable {
         let delay = defaults.integer(forKey: KeyboardPreferenceKey.longPressDelay)
         preferences.longPressDelay = delay > 0 ? delay : fallback.longPressDelay
         preferences.incognito = bool(KeyboardPreferenceKey.incognito, fallback.incognito)
-        preferences.englishSecondLanguage = bool(
-            KeyboardPreferenceKey.englishSecondLanguage,
-            fallback.englishSecondLanguage
-        )
+        preferences.primaryLanguage = defaults.string(forKey: KeyboardPreferenceKey.primaryLanguage)
+            .flatMap(KeyboardLanguage.init(rawValue:)) ?? fallback.primaryLanguage
+        if let code = defaults.string(forKey: KeyboardPreferenceKey.secondaryLanguage) {
+            preferences.secondaryLanguage = KeyboardLanguage(rawValue: code)
+        } else if defaults.bool(forKey: KeyboardPreferenceKey.englishSecondLanguage) {
+            preferences.secondaryLanguage = .english
+        }
+        if preferences.secondaryLanguage == preferences.primaryLanguage { preferences.secondaryLanguage = nil }
+        preferences.layoutOverride = defaults.string(forKey: KeyboardPreferenceKey.layout)
+            .flatMap(LetterLayout.init(rawValue:))
+        preferences.soundStyle = defaults.string(forKey: KeyboardPreferenceKey.soundStyle)
+            .flatMap(KeySoundStyle.init(rawValue:)) ?? fallback.soundStyle
+        preferences.favoritesRow = bool(KeyboardPreferenceKey.favoritesRow, fallback.favoritesRow)
+        if let favorites = defaults.string(forKey: KeyboardPreferenceKey.favorites) {
+            preferences.favorites = favorites
+        }
         if defaults.object(forKey: KeyboardPreferenceKey.backgroundDim) != nil {
             preferences.backgroundDim = min(max(defaults.double(forKey: KeyboardPreferenceKey.backgroundDim), 0), 0.7)
         }
@@ -210,6 +241,16 @@ struct KeyboardPreferences: Equatable {
             .flatMap(KeyLabelSize.init(rawValue:)) ?? fallback.keyLabelSize
         preferences.customColors = CustomThemeColors.load(from: defaults)
         return preferences
+    }
+
+    static let defaultFavorites = "😂❤️👍🙏😍🔥✨😊🎉👏@#€¿¡"
+
+    /// Distribución en uso: la elegida o la del idioma principal.
+    var letterLayout: LetterLayout { layoutOverride ?? primaryLanguage.defaultLayout }
+
+    /// Emojis y símbolos de la fila de favoritos.
+    var favoriteItems: [String] {
+        favorites.filter { !$0.isWhitespace }.map(String.init)
     }
 
     static func setKeyBorders(_ enabled: Bool) {
@@ -321,7 +362,13 @@ struct CustomThemeColors: Equatable {
     var text = RGBColor(red: 1, green: 1, blue: 1)
     var accent = RGBColor(red: 1, green: 0.72, blue: 0.3)
 
-    var isDark: Bool { background.luminance < 0.5 }
+    /// Segundo color del fondo para un degradado (`nil` = color liso).
+    var backgroundEnd: RGBColor?
+
+    var isDark: Bool {
+        let end = backgroundEnd?.luminance ?? background.luminance
+        return (background.luminance + end) / 2 < 0.5
+    }
 
     static func load(from defaults: UserDefaults? = SharedClipboardStore.sharedDefaults) -> CustomThemeColors {
         var colors = CustomThemeColors()
@@ -330,6 +377,7 @@ struct CustomThemeColors: Equatable {
         if let value = color(KeyboardPreferenceKey.customKey) { colors.key = value }
         if let value = color(KeyboardPreferenceKey.customText) { colors.text = value }
         if let value = color(KeyboardPreferenceKey.customAccent) { colors.accent = value }
+        colors.backgroundEnd = color(KeyboardPreferenceKey.customBackgroundEnd)
         return colors
     }
 
@@ -338,5 +386,42 @@ struct CustomThemeColors: Equatable {
         defaults?.set(key.hex, forKey: KeyboardPreferenceKey.customKey)
         defaults?.set(text.hex, forKey: KeyboardPreferenceKey.customText)
         defaults?.set(accent.hex, forKey: KeyboardPreferenceKey.customAccent)
+        defaults?.set(backgroundEnd?.hex ?? "", forKey: KeyboardPreferenceKey.customBackgroundEnd)
+    }
+}
+
+/// Sonido de las teclas (sonidos del sistema de iOS).
+enum KeySoundStyle: String, CaseIterable, Identifiable {
+    case modern
+    case classic
+    case crystal
+    case phone
+
+    var id: Self { self }
+
+    var title: String {
+        switch self {
+        case .modern: "Moderno"
+        case .classic: "Clásico"
+        case .crystal: "Cristal"
+        case .phone: "Teléfono"
+        }
+    }
+
+    /// Identificador de `SystemSoundID` para cada tipo de tecla.
+    func soundID(isDelete: Bool, isModifier: Bool) -> UInt32 {
+        switch self {
+        case .modern:
+            return isDelete ? 1155 : (isModifier ? 1156 : 1123)
+        case .classic:
+            return 1104
+        case .crystal:
+            return isDelete || isModifier ? 1104 : 1103
+        case .phone:
+            // Tonos de marcación: un dígito al azar para las letras, # y * para el resto.
+            if isDelete { return 1210 }
+            if isModifier { return 1211 }
+            return 1200 + UInt32.random(in: 0...9)
+        }
     }
 }

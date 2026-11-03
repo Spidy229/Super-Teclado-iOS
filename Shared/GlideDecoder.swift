@@ -1,30 +1,5 @@
 import Foundation
 
-/// Posición de las letras en el QWERTY español, en unidades de tecla.
-enum QwertyGeometry {
-    static let rows = ["qwertyuiop", "asdfghjklñ", "zxcvbnm"]
-    /// La tercera fila empieza tras la tecla de mayúsculas (1,5 teclas).
-    static let rowOffsets: [Double] = [0, 0, 1.5]
-    static let alphabet: [Character] = Array("abcdefghijklmnopqrstuvwxyzñ")
-
-    static let unitPositions: [Character: (x: Double, y: Double)] = {
-        var positions: [Character: (x: Double, y: Double)] = [:]
-        for (row, letters) in rows.enumerated() {
-            for (column, letter) in letters.enumerated() {
-                positions[letter] = (rowOffsets[row] + Double(column) + 0.5, Double(row) + 0.5)
-            }
-        }
-        return positions
-    }()
-
-    static func areNeighbors(_ first: Character, _ second: Character) -> Bool {
-        guard let a = unitPositions[first], let b = unitPositions[second] else { return false }
-        let dx = a.x - b.x
-        let dy = a.y - b.y
-        return (dx * dx + dy * dy).squareRoot() <= 1.5
-    }
-}
-
 /// Corrección de erratas por distancia de edición 1, dando más peso a las teclas vecinas.
 enum TypoCorrector {
     struct Candidate: Equatable {
@@ -32,9 +7,18 @@ enum TypoCorrector {
         let score: Double
     }
 
-    static func candidates(for typed: String, in dictionary: WordDictionary, limit: Int = 3) -> [Candidate] {
-        let letters = WordDictionary.keyLetters(typed)
-        guard letters.count >= 2, letters.allSatisfy({ QwertyGeometry.unitPositions[$0] != nil }) else { return [] }
+    static func candidates(
+        for typed: String,
+        in dictionary: WordDictionary,
+        layout: LetterLayout = .spanish,
+        limit: Int = 3
+    ) -> [Candidate] {
+        let positions = layout.unitPositions
+        let alphabet = layout.alphabet
+        let letters = WordDictionary.keyLetters(typed).map { letter in
+            positions[letter] == nil ? LetterLayout.fallbackKey(for: letter) ?? letter : letter
+        }
+        guard letters.count >= 2, letters.allSatisfy({ positions[$0] != nil }) else { return [] }
 
         var best: [String: Double] = [:]
         func consider(_ edit: [Character], weight: Double) {
@@ -55,14 +39,15 @@ enum TypoCorrector {
                 consider(transposition, weight: 0.9)
             }
 
-            for letter in QwertyGeometry.alphabet where letter != letters[index] {
+            for letter in alphabet where letter != letters[index] {
                 var substitution = letters
                 substitution[index] = letter
-                consider(substitution, weight: QwertyGeometry.areNeighbors(letter, letters[index]) ? 1 : 0.3)
+                let isNeighbor = LetterLayout.areNeighbors(letter, letters[index], in: positions)
+                consider(substitution, weight: isNeighbor ? 1 : 0.3)
             }
         }
         for index in 0...letters.count {
-            for letter in QwertyGeometry.alphabet {
+            for letter in alphabet {
                 var insertion = letters
                 insertion.insert(letter, at: index)
                 let doubled = (index > 0 && letters[index - 1] == letter)
@@ -131,7 +116,11 @@ struct GlideDecoder {
     func cost(of word: String, sampled: [CGPoint]) -> Double? {
         var points: [CGPoint] = []
         for letter in WordDictionary.keyLetters(word) {
-            guard let center = keyCenters[letter] else { return nil }
+            // Letras sin tecla propia (ñ en QWERTY, ç en español…) se escriben en su tecla base.
+            guard let center = keyCenters[letter] ?? LetterLayout.fallbackKey(for: letter).flatMap({ keyCenters[$0] }) else {
+                if letter == "'" { continue }
+                return nil
+            }
             if points.last != center { points.append(center) }
         }
         guard points.count >= 2 else { return nil }

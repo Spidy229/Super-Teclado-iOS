@@ -115,30 +115,34 @@ final class WordDictionary: Sendable {
 
     // MARK: Normalización
 
-    /// Quita tildes, diéresis y la tilde de la «ñ».
+    /// Quita tildes, diéresis, la tilde de la «ñ» y la cedilla.
     static func fold(_ text: String) -> String {
         String(text.map { character -> Character in
             switch character {
-            case "á", "à", "ä", "â", "ã": "a"
+            case "á", "à", "ä", "â", "ã", "å": "a"
             case "é", "è", "ë", "ê": "e"
             case "í", "ì", "ï", "î": "i"
             case "ó", "ò", "ö", "ô", "õ": "o"
             case "ú", "ù", "ü", "û": "u"
             case "ñ": "n"
+            case "ç": "c"
+            case "ÿ": "y"
             default: character
             }
         })
     }
 
-    /// Teclas que hay que recorrer para escribir la palabra (la «ñ» tiene tecla propia).
+    /// Teclas que hay que recorrer para escribir la palabra (la «ñ» y la «ç» tienen tecla propia
+    /// en las distribuciones que las incluyen).
     static func keyLetters(_ word: String) -> [Character] {
         word.lowercased().map { character -> Character in
             switch character {
-            case "á", "à", "ä", "â", "ã": "a"
+            case "á", "à", "ä", "â", "ã", "å": "a"
             case "é", "è", "ë", "ê": "e"
             case "í", "ì", "ï", "î": "i"
             case "ó", "ò", "ö", "ô", "õ": "o"
             case "ú", "ù", "ü", "û": "u"
+            case "ÿ": "y"
             default: character
             }
         }

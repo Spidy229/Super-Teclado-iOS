@@ -194,17 +194,19 @@ private struct KeyGridView: View {
                 )
             })
         }
-        for (index, letters) in KeyboardLayout.letterRows.enumerated() {
+        for (index, letters) in engine.letterLayout.rows.enumerated() {
             // Con fila de números, los dígitos de la primera fila sobran (como en Gboard).
             let includeHint = engine.preferences.longPressSymbols && !(engine.preferences.numberRow && index == 0)
-            var row = letters.map { letter in
-                KeySpec(
+            var row = letters.enumerated().map { column, character in
+                let letter = String(character)
+                let hint = includeHint ? KeyboardLayout.hint(row: index, column: column) : nil
+                return KeySpec(
                     id: "l-\(letter)",
                     kind: .character(letter),
                     units: 1,
-                    hint: includeHint ? KeyboardLayout.letterHints[letter] : nil,
-                    alternates: KeyboardLayout.letterAlternates(for: letter, includeHint: includeHint),
-                    isLetter: true
+                    hint: hint,
+                    alternates: KeyboardLayout.letterAlternates(for: letter, hint: hint),
+                    isLetter: character.isLetter
                 )
             }
             if index == 2 {

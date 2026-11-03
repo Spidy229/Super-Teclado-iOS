@@ -29,7 +29,6 @@ enum ShiftState {
 
 /// Distribución QWERTY española al estilo Gboard, con símbolos en pulsación larga.
 enum KeyboardLayout {
-    static let letterRows: [[String]] = QwertyGeometry.rows.map { $0.map(String.init) }
 
     static let numberRow = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "0"]
 
@@ -45,12 +44,17 @@ enum KeyboardLayout {
         ["%", "©", "®", "™", "✓", "[", "]"]
     ]
 
-    /// Símbolo que aparece en la esquina de cada letra (igual que la página ?123).
-    static let letterHints: [String: String] = [
-        "q": "1", "w": "2", "e": "3", "r": "4", "t": "5", "y": "6", "u": "7", "i": "8", "o": "9", "p": "0",
-        "a": "@", "s": "#", "d": "€", "f": "_", "g": "&", "h": "-", "j": "+", "k": "(", "l": ")", "ñ": "/",
-        "z": "*", "x": "\"", "c": "'", "v": ":", "b": ";", "n": "!", "m": "?"
+    /// Símbolos de la esquina de cada letra según su posición (como la página ?123).
+    static let positionHints: [[String]] = [
+        ["1", "2", "3", "4", "5", "6", "7", "8", "9", "0"],
+        ["@", "#", "€", "_", "&", "-", "+", "(", ")", "/"],
+        ["*", "\"", "'", ":", ";", "!", "?"]
     ]
+
+    static func hint(row: Int, column: Int) -> String? {
+        guard positionHints.indices.contains(row), positionHints[row].indices.contains(column) else { return nil }
+        return positionHints[row][column]
+    }
 
     static let accents: [String: [String]] = [
         "a": ["á", "à", "ä", "â", "ã", "å", "æ", "ª"],
@@ -63,7 +67,7 @@ enum KeyboardLayout {
         "s": ["ß", "ś", "š"],
         "y": ["ý", "ÿ"],
         "z": ["ž", "ź", "ż"],
-        "l": ["ł"]
+        "l": ["ł", "l·l"]
     ]
 
     static let symbolAlternates: [String: [String]] = [
@@ -95,10 +99,11 @@ enum KeyboardLayout {
     static let commaAlternates = ["¿", "¡", ";", ":", "'", "\"", "-"]
     static let webAlternates = [".com", ".es", ".org", ".net", ".mx", "/", ":"]
 
-    static func letterAlternates(for key: String, includeHint: Bool) -> [String] {
+    static func letterAlternates(for key: String, hint: String?) -> [String] {
         var options: [String] = []
-        if includeHint, let hint = letterHints[key] { options.append(hint) }
+        if let hint { options.append(hint) }
         options += accents[key] ?? []
+        if key == "'" { options += ["’", "‘", "\""] }
         return options
     }
 }
@@ -127,10 +132,18 @@ struct KeyboardMetrics: Equatable {
     var rowHeight: CGFloat
     var stripHeight: CGFloat
     var keyAreaHeight: CGFloat
+    /// Fila de emojis y símbolos favoritos encima de las teclas (0 si está desactivada).
+    var favoritesRowHeight: CGFloat = 0
 
-    var totalHeight: CGFloat { stripHeight + keyAreaHeight }
+    var totalHeight: CGFloat { stripHeight + favoritesRowHeight + keyAreaHeight }
 
-    static func make(isPad: Bool, isLandscape: Bool, numberRow: Bool, scale: Double = 1) -> KeyboardMetrics {
+    static func make(
+        isPad: Bool,
+        isLandscape: Bool,
+        numberRow: Bool,
+        scale: Double = 1,
+        favoritesRow: Bool = false
+    ) -> KeyboardMetrics {
         let baseRowHeight: CGFloat = isPad ? (isLandscape ? 66 : 58) : (isLandscape ? 40 : 54)
         let rowHeight = (baseRowHeight * CGFloat(scale)).rounded()
         let stripHeight: CGFloat = (isLandscape && !isPad) ? 36 : 44
@@ -138,7 +151,8 @@ struct KeyboardMetrics: Equatable {
         return KeyboardMetrics(
             rowHeight: rowHeight,
             stripHeight: stripHeight,
-            keyAreaHeight: (rowHeight * rows).rounded() + 8
+            keyAreaHeight: (rowHeight * rows).rounded() + 8,
+            favoritesRowHeight: favoritesRow ? ((isLandscape && !isPad) ? 30 : 38) : 0
         )
     }
 }
@@ -173,14 +187,14 @@ struct KeyGridGeometry {
     }
 
     /// Centro de cada letra en la página de letras, en coordenadas de la cuadrícula.
-    func letterCenters() -> [Character: CGPoint] {
+    func letterCenters(layout: LetterLayout) -> [Character: CGPoint] {
         var centers: [Character: CGPoint] = [:]
         let firstLetterRow = showsNumberRow ? 1 : 0
-        for (row, letters) in QwertyGeometry.rows.enumerated() {
+        for (row, letters) in layout.rows.enumerated() {
             let rowIndex = firstLetterRow + row
             let y = originY(ofRow: rowIndex) + height(ofRow: rowIndex) / 2
             for (column, letter) in letters.enumerated() {
-                let offset = CGFloat(QwertyGeometry.rowOffsets[row]) + CGFloat(column) + 0.5
+                let offset = CGFloat(layout.offset(ofRow: row)) + CGFloat(column) + 0.5
                 centers[letter] = CGPoint(x: Self.horizontalPadding + offset * unit, y: y)
             }
         }
