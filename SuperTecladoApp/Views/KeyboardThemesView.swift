@@ -19,6 +19,8 @@ struct KeyboardThemesView: View {
     private let columns = [GridItem(.adaptive(minimum: 100), spacing: 14)]
 
     var body: some View {
+        // La etiqueta de PhotosPicker es un cierre Sendable: no puede leer el estado de la vista.
+        let pickerTitle = photo == nil ? "Elegir una foto" : "Cambiar foto"
         Form {
             Section {
                 LazyVGrid(columns: columns, spacing: 16) {
@@ -37,7 +39,7 @@ struct KeyboardThemesView: View {
 
             Section {
                 PhotosPicker(selection: $photoItem, matching: .images) {
-                    Label(photo == nil ? "Elegir una foto" : "Cambiar foto", systemImage: "photo.on.rectangle")
+                    Label(pickerTitle, systemImage: "photo.on.rectangle")
                 }
                 if isSavingPhoto {
                     ProgressView()
