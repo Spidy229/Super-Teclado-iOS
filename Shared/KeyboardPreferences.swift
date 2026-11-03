@@ -4,6 +4,13 @@ enum KeyboardThemeOption: String, CaseIterable, Identifiable {
     case system
     case light
     case dark
+    case black
+    case ocean
+    case forest
+    case sunset
+    case rose
+    case lavender
+    case photo
 
     var id: Self { self }
 
@@ -12,15 +19,30 @@ enum KeyboardThemeOption: String, CaseIterable, Identifiable {
         case .system: "Automático"
         case .light: "Claro"
         case .dark: "Oscuro"
+        case .black: "Negro"
+        case .ocean: "Océano"
+        case .forest: "Bosque"
+        case .sunset: "Atardecer"
+        case .rose: "Rosa"
+        case .lavender: "Lavanda"
+        case .photo: "Mi foto"
         }
     }
 
-    var next: KeyboardThemeOption {
+    /// `nil` cuando el tema sigue el modo claro u oscuro del sistema.
+    var isDark: Bool? {
         switch self {
-        case .system: .light
-        case .light: .dark
-        case .dark: .system
+        case .system: nil
+        case .light, .rose, .lavender: false
+        case .dark, .black, .ocean, .forest, .sunset, .photo: true
         }
+    }
+
+    /// Siguiente tema al tocar el botón de la barra (la foto solo si hay una elegida).
+    func next(includingPhoto: Bool) -> KeyboardThemeOption {
+        let options = Self.allCases.filter { $0 != .photo || includingPhoto }
+        guard let index = options.firstIndex(of: self) else { return .system }
+        return options[(index + 1) % options.count]
     }
 }
 
@@ -90,6 +112,9 @@ enum KeyboardPreferenceKey {
     static let emojiSuggestions = "keyboardEmojiSuggestions"
     static let height = "keyboardHeight"
     static let longPressDelay = "keyboardLongPressDelay"
+    static let incognito = "keyboardIncognito"
+    static let englishSecondLanguage = "keyboardEnglishSecondLanguage"
+    static let backgroundDim = "keyboardBackgroundDim"
 }
 
 /// Ajustes del teclado compartidos entre la app y la extensión mediante el App Group.
@@ -114,6 +139,11 @@ struct KeyboardPreferences: Equatable {
     var height: KeyboardHeightOption = .normal
     /// Milisegundos hasta mostrar acentos y símbolos al mantener una tecla.
     var longPressDelay = 330
+    /// Sin aprender palabras ni guardar lo copiado.
+    var incognito = false
+    var englishSecondLanguage = false
+    /// Oscurecimiento de la foto de fondo (0 a 0,7).
+    var backgroundDim = 0.35
 
     static func load(from defaults: UserDefaults? = SharedClipboardStore.sharedDefaults) -> KeyboardPreferences {
         let fallback = KeyboardPreferences()
@@ -147,11 +177,23 @@ struct KeyboardPreferences: Equatable {
             .flatMap(KeyboardHeightOption.init(rawValue:)) ?? fallback.height
         let delay = defaults.integer(forKey: KeyboardPreferenceKey.longPressDelay)
         preferences.longPressDelay = delay > 0 ? delay : fallback.longPressDelay
+        preferences.incognito = bool(KeyboardPreferenceKey.incognito, fallback.incognito)
+        preferences.englishSecondLanguage = bool(
+            KeyboardPreferenceKey.englishSecondLanguage,
+            fallback.englishSecondLanguage
+        )
+        if defaults.object(forKey: KeyboardPreferenceKey.backgroundDim) != nil {
+            preferences.backgroundDim = min(max(defaults.double(forKey: KeyboardPreferenceKey.backgroundDim), 0), 0.7)
+        }
         return preferences
     }
 
     static func setTheme(_ theme: KeyboardThemeOption) {
         SharedClipboardStore.sharedDefaults?.set(theme.rawValue, forKey: KeyboardPreferenceKey.theme)
+    }
+
+    static func setIncognito(_ enabled: Bool) {
+        SharedClipboardStore.sharedDefaults?.set(enabled, forKey: KeyboardPreferenceKey.incognito)
     }
 
     static func setOneHandedMode(_ mode: OneHandedMode) {

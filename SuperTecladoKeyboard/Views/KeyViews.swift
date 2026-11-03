@@ -368,8 +368,10 @@ struct SpaceKeyView: View {
                 .font(.system(size: 15, weight: .semibold))
                 .foregroundStyle(palette.accent)
             } else {
-                Text("Español")
+                Text(engine.spaceBarTitle)
                     .font(.system(size: min(15, size.height * 0.3)))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
                     .foregroundStyle(palette.secondaryText)
             }
         }

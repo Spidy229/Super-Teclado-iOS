@@ -78,6 +78,7 @@ final class KeyboardViewController: UIInputViewController {
         guard changeCount != lastSeenChangeCount else { return }
         lastSeenChangeCount = changeCount
         guard engine.ownPasteboardChangeCount != changeCount,
+              !engine.isIncognito,
               SharedClipboardStore.automaticCaptureEnabled else { return }
 
         var captured = false

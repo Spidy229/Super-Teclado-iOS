@@ -37,6 +37,10 @@ final class KeyboardEngine: ObservableObject {
     @Published var recentEmojis: [String] = []
     @Published var isCursorMode = false
     @Published private(set) var isGliding = false
+    @Published private(set) var backgroundImage: UIImage?
+    @Published private(set) var emojiSearchQuery = ""
+    @Published private(set) var emojiSearchResults: [String] = []
+    @Published private(set) var emojiTones: [String: String] = [:]
 
     let glideTrail = GlideTrail()
 
@@ -57,11 +61,18 @@ final class KeyboardEngine: ObservableObject {
     private var lastGlide: (word: String, alternatives: [String])?
     /// Espacio añadido automáticamente tras elegir una sugerencia (se quita ante un signo).
     private var autoSpaceInserted = false
-    private var dictionaryLoadStarted = false
+    /// Idiomas del diccionario cargado (`nil` mientras no se ha cargado ninguno).
+    private var loadedEnglish: Bool?
+    private var backgroundDate: Date?
+    private var emojiIndex: EmojiSearchIndex?
+    private var emojiIndexLoadStarted = false
     private static let recentEmojisKey = "super-teclado-recent-emojis"
+    private static let emojiTonesKey = "super-teclado-emoji-tones"
+    private static let searchableEmojis = EmojiCatalog.categories.flatMap(\.emojis)
 
     init() {
         recentEmojis = UserDefaults.standard.stringArray(forKey: Self.recentEmojisKey) ?? []
+        emojiTones = UserDefaults.standard.dictionary(forKey: Self.emojiTonesKey) as? [String: String] ?? [:]
     }
 
     private var proxy: (any UITextDocumentProxy)? { controller?.textDocumentProxy }
@@ -76,6 +87,19 @@ final class KeyboardEngine: ObservableObject {
 
     var isEmailField: Bool { keyboardType == .emailAddress }
 
+    /// Modo incógnito elegido por el usuario o campo sensible (contraseñas, códigos, tarjetas).
+    var isIncognito: Bool {
+        if preferences.incognito { return true }
+        let contentType: UITextContentType? = proxy?.textContentType ?? nil
+        guard let contentType else { return false }
+        return [.password, .newPassword, .oneTimeCode, .creditCardNumber].contains(contentType)
+    }
+
+    var spaceBarTitle: String {
+        if preferences.incognito { return "Incógnito" }
+        return preferences.englishSecondLanguage ? "Español · English" : "Español"
+    }
+
     // MARK: Contexto
 
     func loadPreferences() {
@@ -84,6 +108,20 @@ final class KeyboardEngine: ObservableObject {
         suggestionEngine.reloadPersonalData()
         updateAppearance()
         loadDictionaryIfNeeded()
+        loadBackgroundIfNeeded()
+    }
+
+    /// Carga la foto del tema «Mi foto» solo cuando se usa y cuando ha cambiado.
+    private func loadBackgroundIfNeeded() {
+        guard preferences.theme == .photo else {
+            if backgroundImage != nil { backgroundImage = nil }
+            backgroundDate = nil
+            return
+        }
+        let date = KeyboardBackgroundStore.modificationDate
+        guard date != backgroundDate || backgroundImage == nil else { return }
+        backgroundDate = date
+        backgroundImage = KeyboardBackgroundStore.load(maxPixelSize: 1_400)
     }
 
     func refreshContext() {
@@ -108,12 +146,9 @@ final class KeyboardEngine: ObservableObject {
 
     func updateAppearance() {
         let dark: Bool
-        switch preferences.theme {
-        case .light:
-            dark = false
-        case .dark:
-            dark = true
-        case .system:
+        if let fixed = preferences.theme.isDark {
+            dark = fixed
+        } else {
             switch proxy?.keyboardAppearance ?? .default {
             case .dark: dark = true
             case .light: dark = false
@@ -127,16 +162,18 @@ final class KeyboardEngine: ObservableObject {
         suggestionEngine.setLexicon(entries)
     }
 
-    /// Carga el diccionario de frecuencias en segundo plano la primera vez.
+    /// Carga el diccionario de frecuencias en segundo plano, y otra vez si cambian los idiomas.
     private func loadDictionaryIfNeeded() {
-        guard !dictionaryLoadStarted,
+        let english = preferences.englishSecondLanguage
+        guard loadedEnglish != english,
               let url = Bundle.main.url(forResource: "es-palabras", withExtension: "txt") else { return }
-        dictionaryLoadStarted = true
+        loadedEnglish = english
+        let englishURL = english ? Bundle.main.url(forResource: "en-words", withExtension: "txt") : nil
         Task { [weak self] in
             let dictionary = await Task.detached(priority: .userInitiated) {
-                WordDictionary.load(from: url)
+                WordDictionary.load(from: url, secondary: englishURL, secondaryWeight: 0.6)
             }.value
-            guard let self, let dictionary else { return }
+            guard let self, let dictionary, self.loadedEnglish == english else { return }
             self.suggestionEngine.setDictionary(dictionary)
             self.refreshSuggestions()
         }
@@ -179,6 +216,10 @@ final class KeyboardEngine: ObservableObject {
     }
 
     private func updateShiftState() {
+        if panel == .emojiSearch {
+            if shift != .off { shift = .off }
+            return
+        }
         guard shift != .locked else { return }
         let capitalize = KeyboardTextLogic.shouldCapitalize(
             context: proxy?.documentContextBeforeInput,
@@ -220,7 +261,7 @@ final class KeyboardEngine: ObservableObject {
 
     /// Aprende la palabra y el par «palabra anterior → palabra» para predecir.
     private func recordWord(_ word: String, context: String?) {
-        guard suggestionsAllowed, !word.isEmpty else { return }
+        guard suggestionsAllowed, !isIncognito, !word.isEmpty else { return }
         suggestionEngine.learn(word)
         if preferences.nextWordPrediction, let previous = KeyboardTextLogic.previousWord(before: context) {
             suggestionEngine.learnBigram(previous: previous, word: word)
@@ -240,6 +281,10 @@ final class KeyboardEngine: ObservableObject {
     }
 
     func insertCharacter(_ value: String, caseSensitive: Bool) {
+        if panel == .emojiSearch {
+            setEmojiSearchQuery(emojiSearchQuery + value.lowercased())
+            return
+        }
         guard let proxy else { return }
         let output = displayText(for: value, caseSensitive: caseSensitive)
         showsToolbar = false
@@ -266,6 +311,12 @@ final class KeyboardEngine: ObservableObject {
     }
 
     func insertSpace() {
+        if panel == .emojiSearch {
+            if !emojiSearchQuery.isEmpty, !emojiSearchQuery.hasSuffix(" ") {
+                setEmojiSearchQuery(emojiSearchQuery + " ")
+            }
+            return
+        }
         guard let proxy else { return }
         autoSpaceInserted = false
         let now = Date()
@@ -284,6 +335,10 @@ final class KeyboardEngine: ObservableObject {
     }
 
     func insertReturn() {
+        if panel == .emojiSearch {
+            if let first = emojiSearchResults.first { insertSearchedEmoji(first) }
+            return
+        }
         autoSpaceInserted = false
         proxy?.insertText("\n")
         pendingAutocorrection = nil
@@ -310,6 +365,10 @@ final class KeyboardEngine: ObservableObject {
     }
 
     func deleteBackward() {
+        if panel == .emojiSearch {
+            setEmojiSearchQuery(String(emojiSearchQuery.dropLast()))
+            return
+        }
         guard let proxy else { return }
         autoSpaceInserted = false
         if let glide = lastGlide, proxy.documentContextBeforeInput?.hasSuffix(glide.word) == true {
@@ -326,7 +385,7 @@ final class KeyboardEngine: ObservableObject {
             // Igual que Gboard: borrar justo después de una corrección la deshace.
             for _ in 0..<(pending.replacement.count + pending.suffix.count) { proxy.deleteBackward() }
             proxy.insertText(pending.original)
-            suggestionEngine.reject(pending.original)
+            suggestionEngine.reject(pending.original, persist: !isIncognito)
         } else {
             proxy.deleteBackward()
         }
@@ -335,6 +394,11 @@ final class KeyboardEngine: ObservableObject {
     }
 
     func deleteWordBackward() {
+        if panel == .emojiSearch {
+            let count = KeyboardTextLogic.wordDeletionLength(context: emojiSearchQuery)
+            setEmojiSearchQuery(String(emojiSearchQuery.dropLast(max(count, 1))))
+            return
+        }
         guard let proxy else { return }
         let count = max(1, KeyboardTextLogic.wordDeletionLength(context: proxy.documentContextBeforeInput))
         for _ in 0..<count { proxy.deleteBackward() }
@@ -382,7 +446,7 @@ final class KeyboardEngine: ObservableObject {
         case .typed, .correction, .completion:
             for _ in 0..<word.count { proxy.deleteBackward() }
             proxy.insertText(item.text + " ")
-            if item.kind == .typed { suggestionEngine.reject(item.text) }
+            if item.kind == .typed { suggestionEngine.reject(item.text, persist: !isIncognito) }
             recordWord(item.text, context: context)
             lastGlide = nil
             autoSpaceInserted = true
@@ -500,6 +564,7 @@ final class KeyboardEngine: ObservableObject {
     }
 
     private func rememberEmoji(_ emoji: String) {
+        guard !isIncognito else { return }
         var recents = recentEmojis.filter { $0 != emoji }
         recents.insert(emoji, at: 0)
         recentEmojis = Array(recents.prefix(32))
@@ -531,11 +596,75 @@ final class KeyboardEngine: ObservableObject {
     }
 
     func cycleTheme() {
-        let theme = preferences.theme.next
+        let theme = preferences.theme.next(includingPhoto: KeyboardBackgroundStore.hasImage)
         preferences.theme = theme
         KeyboardPreferences.setTheme(theme)
         updateAppearance()
+        loadBackgroundIfNeeded()
         showToast("Tema: \(theme.title)")
+    }
+
+    func toggleIncognito() {
+        preferences.incognito.toggle()
+        KeyboardPreferences.setIncognito(preferences.incognito)
+        showToast(preferences.incognito
+            ? "Modo incógnito: no se aprenden palabras ni se guarda lo copiado"
+            : "Modo incógnito desactivado")
+    }
+
+    // MARK: Emojis
+
+    func openEmojiSearch() {
+        loadEmojiIndexIfNeeded()
+        emojiSearchQuery = ""
+        updateEmojiSearchResults()
+        page = .letters
+        shift = .off
+        panel = .emojiSearch
+    }
+
+    func insertSearchedEmoji(_ emoji: String) {
+        keyFeedback(.character)
+        insertEmoji(preferredVariant(of: emoji))
+    }
+
+    func preferredVariant(of emoji: String) -> String {
+        emojiTones[EmojiSkinTone.baseKey(emoji)] ?? emoji
+    }
+
+    func setPreferredVariant(_ variant: String, for emoji: String) {
+        emojiTones[EmojiSkinTone.baseKey(emoji)] = variant
+        UserDefaults.standard.set(emojiTones, forKey: Self.emojiTonesKey)
+    }
+
+    private func setEmojiSearchQuery(_ query: String) {
+        emojiSearchQuery = query
+        updateEmojiSearchResults()
+    }
+
+    private func updateEmojiSearchResults() {
+        let query = emojiSearchQuery.trimmingCharacters(in: .whitespaces)
+        if query.isEmpty {
+            var seen = Set<String>()
+            emojiSearchResults = (recentEmojis + EmojiSkinTone.popular)
+                .filter { seen.insert(EmojiSkinTone.baseKey($0)).inserted }
+        } else {
+            emojiSearchResults = emojiIndex?.search(query, in: Self.searchableEmojis) ?? []
+        }
+    }
+
+    private func loadEmojiIndexIfNeeded() {
+        guard !emojiIndexLoadStarted,
+              let url = Bundle.main.url(forResource: "es-emojis", withExtension: "txt") else { return }
+        emojiIndexLoadStarted = true
+        Task { [weak self] in
+            let index = await Task.detached(priority: .userInitiated) {
+                EmojiSearchIndex.load(from: url)
+            }.value
+            guard let self, let index else { return }
+            self.emojiIndex = index
+            self.updateEmojiSearchResults()
+        }
     }
 
     func setOneHandedMode(_ mode: OneHandedMode) {

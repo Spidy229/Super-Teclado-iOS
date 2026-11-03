@@ -111,3 +111,34 @@ enum EmojiKeywords {
         "espana": "🇪🇸", "mexico": "🇲🇽", "argentina": "🇦🇷", "colombia": "🇨🇴", "chile": "🇨🇱", "peru": "🇵🇪"
     ]
 }
+
+/// Tonos de piel de los emojis de personas y manos, como al mantener pulsado en Gboard.
+enum EmojiSkinTone {
+    static let modifiers: [Unicode.Scalar] = [
+        "\u{1F3FB}", "\u{1F3FC}", "\u{1F3FD}", "\u{1F3FE}", "\u{1F3FF}"
+    ]
+
+    /// Clave del emoji base, sin selector de variación ni tono.
+    static func baseKey(_ emoji: String) -> String {
+        String(String.UnicodeScalarView(emoji.unicodeScalars.filter {
+            $0.value != 0xFE0F && !modifiers.contains($0)
+        }))
+    }
+
+    static func supportsTones(_ emoji: String) -> Bool {
+        let scalars = baseKey(emoji).unicodeScalars
+        guard scalars.count == 1, let first = scalars.first else { return false }
+        return first.properties.isEmojiModifierBase
+    }
+
+    /// El emoji original seguido de sus cinco tonos.
+    static func variants(of emoji: String) -> [String] {
+        guard supportsTones(emoji) else { return [emoji] }
+        let base = baseKey(emoji)
+        return [emoji] + modifiers.map { base + String($0) }
+    }
+
+    static let popular = Array(
+        "😂❤️🤣👍😭🙏😘🥰😍😊🎉😁💕🥺😅🔥☺️🤦🙄😆🤗😉🎂🤔👏🙂😳😎💪✨"
+    ).map(String.init)
+}

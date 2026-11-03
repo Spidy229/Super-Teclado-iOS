@@ -4,7 +4,7 @@ struct KeyboardRootView: View {
     @ObservedObject var engine: KeyboardEngine
 
     var body: some View {
-        let palette = KeyboardPalette.make(dark: engine.isDark)
+        let palette = KeyboardPalette.make(theme: engine.preferences.theme, systemIsDark: engine.isDark)
         VStack(spacing: 0) {
             topStrip
                 .frame(height: engine.metrics.stripHeight)
@@ -14,7 +14,7 @@ struct KeyboardRootView: View {
                 .zIndex(1)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        .background(palette.background)
+        .background { background(palette: palette) }
         .overlay(alignment: .top) { toast(palette: palette) }
         .environment(\.keyboardPalette, palette)
         .environment(\.colorScheme, engine.isDark ? .dark : .light)
@@ -28,6 +28,7 @@ struct KeyboardRootView: View {
         case .typing: SuggestionStripView()
         case .clipboard: ClipboardHeaderView()
         case .emoji: EmojiHeaderView()
+        case .emojiSearch: EmojiSearchBarView()
         case .editing: PanelHeaderView(title: "Edición de texto")
         }
     }
@@ -38,7 +39,24 @@ struct KeyboardRootView: View {
         case .typing: TypingKeyboardView()
         case .clipboard: ClipboardPanelView()
         case .emoji: EmojiPanelView()
+        case .emojiSearch: TypingKeyboardView()
         case .editing: TextEditingPanelView()
+        }
+    }
+
+    @ViewBuilder
+    private func background(palette: KeyboardPalette) -> some View {
+        if engine.preferences.theme == .photo, let image = engine.backgroundImage {
+            GeometryReader { proxy in
+                Image(uiImage: image)
+                    .resizable()
+                    .scaledToFill()
+                    .frame(width: proxy.size.width, height: proxy.size.height)
+                    .clipped()
+                    .overlay(Color.black.opacity(engine.preferences.backgroundDim))
+            }
+        } else {
+            palette.background
         }
     }
 

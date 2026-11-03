@@ -50,20 +50,35 @@ final class WordDictionary: Sendable {
 
     /// Lee líneas con el formato «palabra frecuencia».
     static func parse(_ text: String) -> WordDictionary {
+        WordDictionary(entries: entries(from: text))
+    }
+
+    static func entries(from text: String, weight: Double = 1) -> [(word: String, count: Int)] {
         var entries: [(word: String, count: Int)] = []
         entries.reserveCapacity(40_000)
         for line in text.split(whereSeparator: \.isNewline) {
             let parts = line.split(separator: " ", maxSplits: 1)
             guard let word = parts.first else { continue }
             let count = parts.count > 1 ? Int(parts[1]) ?? 1 : 1
-            entries.append((String(word), count))
+            entries.append((String(word), max(1, Int(Double(count) * weight))))
         }
-        return WordDictionary(entries: entries)
+        return entries
     }
 
     static func load(from url: URL) -> WordDictionary? {
         guard let text = try? String(contentsOf: url, encoding: .utf8) else { return nil }
         return parse(text)
+    }
+
+    /// Combina el diccionario principal con un segundo idioma. Las frecuencias del segundo se
+    /// reducen para que, ante la duda, gane el idioma principal.
+    static func load(from url: URL, secondary: URL?, secondaryWeight: Double) -> WordDictionary? {
+        guard let text = try? String(contentsOf: url, encoding: .utf8) else { return nil }
+        var combined = entries(from: text)
+        if let secondary, let secondaryText = try? String(contentsOf: secondary, encoding: .utf8) {
+            combined += entries(from: secondaryText, weight: secondaryWeight)
+        }
+        return WordDictionary(entries: combined)
     }
 
     var isEmpty: Bool { words.isEmpty }

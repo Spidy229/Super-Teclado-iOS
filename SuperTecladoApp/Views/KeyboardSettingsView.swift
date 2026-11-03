@@ -3,7 +3,6 @@ import UIKit
 
 struct KeyboardSettingsView: View {
     @AppStorage(KeyboardPreferenceKey.theme, store: UserDefaults(suiteName: SharedClipboardStore.appGroupID)) private var theme: KeyboardThemeOption = .system
-    @AppStorage(KeyboardPreferenceKey.keyBorders, store: UserDefaults(suiteName: SharedClipboardStore.appGroupID)) private var keyBorders = true
     @AppStorage(KeyboardPreferenceKey.sound, store: UserDefaults(suiteName: SharedClipboardStore.appGroupID)) private var sound = false
     @AppStorage(KeyboardPreferenceKey.haptics, store: UserDefaults(suiteName: SharedClipboardStore.appGroupID)) private var haptics = true
     @AppStorage(KeyboardPreferenceKey.autocorrect, store: UserDefaults(suiteName: SharedClipboardStore.appGroupID)) private var autocorrect = true
@@ -23,6 +22,9 @@ struct KeyboardSettingsView: View {
     @AppStorage(KeyboardPreferenceKey.emojiSuggestions, store: UserDefaults(suiteName: SharedClipboardStore.appGroupID)) private var emojiSuggestions = true
     @AppStorage(KeyboardPreferenceKey.height, store: UserDefaults(suiteName: SharedClipboardStore.appGroupID)) private var height: KeyboardHeightOption = .normal
     @AppStorage(KeyboardPreferenceKey.longPressDelay, store: UserDefaults(suiteName: SharedClipboardStore.appGroupID)) private var longPressDelay = 330
+
+    @AppStorage(KeyboardPreferenceKey.englishSecondLanguage, store: UserDefaults(suiteName: SharedClipboardStore.appGroupID)) private var englishSecondLanguage = false
+    @AppStorage(KeyboardPreferenceKey.incognito, store: UserDefaults(suiteName: SharedClipboardStore.appGroupID)) private var incognito = false
 
     @State private var testText = ""
     @State private var showClearWordsConfirmation = false
@@ -81,14 +83,30 @@ struct KeyboardSettingsView: View {
             }
 
             Section {
-                Picker("Tema", selection: $theme) {
-                    ForEach(KeyboardThemeOption.allCases) { option in Text(option.title).tag(option) }
+                NavigationLink {
+                    KeyboardThemesView()
+                } label: {
+                    LabeledContent {
+                        Text(theme.title)
+                    } label: {
+                        Label("Tema", systemImage: "paintpalette")
+                    }
                 }
-                Toggle("Bordes de las teclas", isOn: $keyBorders)
+            }
+
+            Section {
+                LabeledContent("Idioma principal", value: "Español")
+                Toggle("Inglés como segundo idioma", isOn: $englishSecondLanguage)
             } header: {
-                Text("Tema")
+                Text("Idiomas")
             } footer: {
-                Text("«Automático» sigue el modo claro u oscuro del sistema y de cada app.")
+                Text("Con el inglés activado, el teclado sugiere, corrige y reconoce trazos en los dos idiomas a la vez.")
+            }
+
+            Section {
+                Toggle("Modo incógnito", isOn: $incognito)
+            } footer: {
+                Text("En incógnito el teclado no aprende palabras ni guarda lo que copias. Se activa solo en campos de contraseñas, códigos y tarjetas. También puedes cambiarlo con el icono del ojo en la barra del teclado.")
             }
 
             Section {

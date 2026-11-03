@@ -7,10 +7,19 @@ struct EmojiHeaderView: View {
     var body: some View {
         HStack(spacing: 4) {
             StripButton(symbol: "arrow.left", label: "Volver al teclado") { engine.closePanel() }
-            Text("Emojis")
-                .font(.system(size: 16, weight: .semibold))
-                .foregroundStyle(palette.text)
-            Spacer(minLength: 0)
+            Button { engine.openEmojiSearch() } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: "magnifyingglass")
+                    Text("Buscar emojis")
+                    Spacer(minLength: 0)
+                }
+                .font(.system(size: 15))
+                .foregroundStyle(palette.secondaryText)
+                .padding(.horizontal, 12)
+                .frame(maxWidth: .infinity, minHeight: 32)
+                .background(palette.chip, in: Capsule())
+            }
+            .buttonStyle(.plain)
             StripButton(symbol: "clipboard", label: "Portapapeles") { engine.open(.clipboard) }
         }
         .padding(.horizontal, 4)
@@ -22,6 +31,7 @@ struct EmojiPanelView: View {
     @EnvironmentObject private var engine: KeyboardEngine
     @Environment(\.keyboardPalette) private var palette
     @State private var selectedCategory = ""
+    @State private var toneEmoji: String?
 
     private var categories: [EmojiCategory] {
         var result: [EmojiCategory] = []
@@ -47,17 +57,7 @@ struct EmojiPanelView: View {
                                 .id(category.id)
                             LazyVGrid(columns: [GridItem(.adaptive(minimum: 42), spacing: 0)], spacing: 0) {
                                 ForEach(Array(category.emojis.enumerated()), id: \.offset) { _, emoji in
-                                    Button {
-                                        engine.keyFeedback(.character)
-                                        engine.insertEmoji(emoji)
-                                    } label: {
-                                        Text(emoji)
-                                            .font(.system(size: 30))
-                                            .frame(maxWidth: .infinity)
-                                            .frame(height: 44)
-                                            .contentShape(Rectangle())
-                                    }
-                                    .buttonStyle(EmojiButtonStyle())
+                                    emojiCell(emoji)
                                 }
                             }
                             .padding(.horizontal, 4)
@@ -68,7 +68,70 @@ struct EmojiPanelView: View {
 
                 categoryBar(sections: sections, reader: reader)
             }
+            .overlay(alignment: .top) {
+                if let toneEmoji { tonePicker(for: toneEmoji) }
+            }
         }
+    }
+
+    /// Toca para insertar; mantén pulsado en personas y manos para elegir el tono de piel.
+    private func emojiCell(_ emoji: String) -> some View {
+        let shown = engine.preferredVariant(of: emoji)
+        return Text(shown)
+            .font(.system(size: 30))
+            .frame(maxWidth: .infinity)
+            .frame(height: 44)
+            .overlay(alignment: .bottomTrailing) {
+                if EmojiSkinTone.supportsTones(emoji) {
+                    Image(systemName: "arrowtriangle.down.fill")
+                        .font(.system(size: 5))
+                        .foregroundStyle(palette.secondaryText)
+                        .padding(4)
+                }
+            }
+            .contentShape(Rectangle())
+            .onTapGesture {
+                engine.keyFeedback(.character)
+                engine.insertEmoji(shown)
+            }
+            .onLongPressGesture(minimumDuration: 0.35) {
+                guard EmojiSkinTone.supportsTones(emoji) else { return }
+                engine.keyFeedback(.modifier)
+                toneEmoji = emoji
+            }
+            .accessibilityLabel(shown)
+            .accessibilityAddTraits(.isButton)
+    }
+
+    private func tonePicker(for emoji: String) -> some View {
+        ZStack(alignment: .top) {
+            Color.black.opacity(0.25)
+                .onTapGesture { toneEmoji = nil }
+            HStack(spacing: 2) {
+                ForEach(EmojiSkinTone.variants(of: emoji), id: \.self) { variant in
+                    Button {
+                        engine.setPreferredVariant(variant, for: emoji)
+                        engine.keyFeedback(.character)
+                        engine.insertEmoji(variant)
+                        toneEmoji = nil
+                    } label: {
+                        Text(variant)
+                            .font(.system(size: 32))
+                            .frame(width: 46, height: 50)
+                            .background(
+                                engine.preferredVariant(of: emoji) == variant ? palette.chip : Color.clear,
+                                in: RoundedRectangle(cornerRadius: 10)
+                            )
+                    }
+                    .buttonStyle(EmojiButtonStyle())
+                }
+            }
+            .padding(6)
+            .background(palette.popup, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .shadow(color: .black.opacity(0.3), radius: 8, y: 3)
+            .padding(.top, 10)
+        }
+        .transition(.opacity)
     }
 
     private func categoryBar(sections: [EmojiCategory], reader: ScrollViewProxy) -> some View {
@@ -112,5 +175,55 @@ private struct EmojiButtonStyle: ButtonStyle {
         configuration.label
             .scaleEffect(configuration.isPressed ? 1.25 : 1)
             .animation(.easeOut(duration: 0.08), value: configuration.isPressed)
+    }
+}
+
+/// Barra de búsqueda de emojis: lo que se escribe con el teclado va al buscador.
+struct EmojiSearchBarView: View {
+    @EnvironmentObject private var engine: KeyboardEngine
+    @Environment(\.keyboardPalette) private var palette
+
+    var body: some View {
+        HStack(spacing: 4) {
+            StripButton(symbol: "arrow.left", label: "Volver a los emojis") { engine.open(.emoji) }
+            HStack(spacing: 4) {
+                Image(systemName: "magnifyingglass")
+                    .foregroundStyle(palette.secondaryText)
+                Text(engine.emojiSearchQuery.isEmpty ? "Buscar emojis" : engine.emojiSearchQuery)
+                    .foregroundStyle(engine.emojiSearchQuery.isEmpty ? palette.secondaryText : palette.text)
+                    .lineLimit(1)
+                    .truncationMode(.head)
+                RoundedRectangle(cornerRadius: 1)
+                    .fill(palette.accent)
+                    .frame(width: 2, height: 18)
+                Spacer(minLength: 0)
+            }
+            .font(.system(size: 15))
+            .padding(.horizontal, 10)
+            .frame(width: 140, height: 32)
+            .background(palette.chip, in: Capsule())
+
+            if engine.emojiSearchResults.isEmpty {
+                Text(engine.emojiSearchQuery.isEmpty ? "" : "Sin resultados")
+                    .font(.system(size: 13))
+                    .foregroundStyle(palette.secondaryText)
+                    .frame(maxWidth: .infinity)
+            } else {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    LazyHStack(spacing: 0) {
+                        ForEach(Array(engine.emojiSearchResults.enumerated()), id: \.offset) { _, emoji in
+                            Button { engine.insertSearchedEmoji(emoji) } label: {
+                                Text(engine.preferredVariant(of: emoji))
+                                    .font(.system(size: 26))
+                                    .frame(width: 40, height: 40)
+                            }
+                            .buttonStyle(EmojiButtonStyle())
+                        }
+                    }
+                }
+            }
+        }
+        .padding(.horizontal, 4)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }

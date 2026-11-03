@@ -213,10 +213,11 @@ final class SuggestionEngine {
     }
 
     /// El usuario deshizo una corrección o eligió lo que había escrito: se respeta su palabra.
-    func reject(_ word: String) {
+    func reject(_ word: String, persist: Bool = true) {
         let lower = word.lowercased()
         guard !lower.isEmpty else { return }
         rejected.insert(lower)
+        guard persist else { return }
         UITextChecker.learnWord(lower)
         learned[lower, default: 0] += 2
         scheduleSave()
