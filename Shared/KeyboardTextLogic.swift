@@ -80,6 +80,23 @@ enum KeyboardTextLogic {
         return previous.unicodeScalars.contains { $0.properties.isEmojiPresentation }
     }
 
+    /// Palabra anterior a la que se está escribiendo, si entre ambas solo hay espacios
+    /// (tras un punto o una coma no hay relación que aprender).
+    static func previousWord(before context: String?) -> String? {
+        guard let context else { return nil }
+        let characters = Array(context)
+        var end = characters.count
+        while end > 0, isWordCharacter(characters[end - 1]) { end -= 1 }
+        var spaceEnd = end
+        while spaceEnd > 0, characters[spaceEnd - 1] == " " { spaceEnd -= 1 }
+        guard spaceEnd < end else { return nil }
+        var start = spaceEnd
+        while start > 0, isWordCharacter(characters[start - 1]) { start -= 1 }
+        guard start < spaceEnd else { return nil }
+        let word = String(characters[start..<spaceEnd])
+        return word.contains(where: \.isLetter) ? word : nil
+    }
+
     /// Caracteres que se borran al eliminar una palabra hacia atrás.
     static func wordDeletionLength(context: String?) -> Int {
         guard let context, !context.isEmpty else { return 0 }

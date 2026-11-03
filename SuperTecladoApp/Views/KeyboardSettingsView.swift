@@ -17,6 +17,13 @@ struct KeyboardSettingsView: View {
     @AppStorage(KeyboardPreferenceKey.oneHandedMode, store: UserDefaults(suiteName: SharedClipboardStore.appGroupID)) private var oneHandedMode: OneHandedMode = .off
     @AppStorage(SharedClipboardStore.automaticCaptureKey, store: UserDefaults(suiteName: SharedClipboardStore.appGroupID)) private var clipboardEnabled = true
 
+    @AppStorage(KeyboardPreferenceKey.glideTyping, store: UserDefaults(suiteName: SharedClipboardStore.appGroupID)) private var glideTyping = true
+    @AppStorage(KeyboardPreferenceKey.glideTrail, store: UserDefaults(suiteName: SharedClipboardStore.appGroupID)) private var glideTrail = true
+    @AppStorage(KeyboardPreferenceKey.nextWordPrediction, store: UserDefaults(suiteName: SharedClipboardStore.appGroupID)) private var nextWordPrediction = true
+    @AppStorage(KeyboardPreferenceKey.emojiSuggestions, store: UserDefaults(suiteName: SharedClipboardStore.appGroupID)) private var emojiSuggestions = true
+    @AppStorage(KeyboardPreferenceKey.height, store: UserDefaults(suiteName: SharedClipboardStore.appGroupID)) private var height: KeyboardHeightOption = .normal
+    @AppStorage(KeyboardPreferenceKey.longPressDelay, store: UserDefaults(suiteName: SharedClipboardStore.appGroupID)) private var longPressDelay = 330
+
     @State private var testText = ""
     @State private var showClearWordsConfirmation = false
 
@@ -53,6 +60,24 @@ struct KeyboardSettingsView: View {
                 Picker("Modo una mano", selection: $oneHandedMode) {
                     ForEach(OneHandedMode.allCases) { mode in Text(mode.title).tag(mode) }
                 }
+                Picker("Altura del teclado", selection: $height) {
+                    ForEach(KeyboardHeightOption.allCases) { option in Text(option.title).tag(option) }
+                }
+                Picker("Retraso de la pulsación larga", selection: $longPressDelay) {
+                    Text("Corto").tag(220)
+                    Text("Normal").tag(330)
+                    Text("Largo").tag(500)
+                }
+            }
+
+            Section {
+                Toggle("Escritura deslizando", isOn: $glideTyping)
+                Toggle("Mostrar el trazo", isOn: $glideTrail)
+                    .disabled(!glideTyping)
+            } header: {
+                Text("Escritura deslizando")
+            } footer: {
+                Text("Desliza el dedo de letra en letra sin levantarlo para escribir una palabra. Si no es la que querías, elige otra en la barra o pulsa borrar para quitarla entera.")
             }
 
             Section {
@@ -72,6 +97,15 @@ struct KeyboardSettingsView: View {
                     .disabled(!suggestions)
                 Toggle("Mayúsculas automáticas", isOn: $autocapitalize)
                 Toggle("Punto con doble espacio", isOn: $doubleSpacePeriod)
+                Toggle("Predecir la siguiente palabra", isOn: $nextWordPrediction)
+                    .disabled(!suggestions)
+                Toggle("Sugerencias de emojis", isOn: $emojiSuggestions)
+                    .disabled(!suggestions)
+                NavigationLink {
+                    PersonalDictionaryView()
+                } label: {
+                    Label("Diccionario personal", systemImage: "character.book.closed")
+                }
                 Button("Borrar palabras aprendidas", role: .destructive) {
                     showClearWordsConfirmation = true
                 }
@@ -95,6 +129,7 @@ struct KeyboardSettingsView: View {
                 gestureRow("arrow.left.and.right", "Desliza sobre la barra espaciadora para mover el cursor.")
                 gestureRow("delete.left", "Mantén borrar para repetir o desliza a la izquierda para borrar palabras.")
                 gestureRow("hand.tap", "Mantén una tecla para ver acentos y símbolos.")
+                gestureRow("scribble", "Desliza de letra en letra para escribir sin levantar el dedo.")
                 gestureRow("shift", "Toca dos veces mayúsculas para bloquearlas.")
             }
         }

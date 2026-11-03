@@ -37,6 +37,7 @@ final class KeyboardViewController: UIInputViewController {
         updateMetrics()
         engine.reloadClips()
         checkPasteboard()
+        engine.prepareForNewField()
         engine.refreshContext()
         startClipboardMonitoring()
     }
@@ -141,7 +142,8 @@ final class KeyboardViewController: UIInputViewController {
         let metrics = KeyboardMetrics.make(
             isPad: isPad,
             isLandscape: isLandscape,
-            numberRow: engine.preferences.numberRow
+            numberRow: engine.preferences.numberRow,
+            scale: engine.preferences.height.scale
         )
         if metrics != engine.metrics { engine.metrics = metrics }
         if heightConstraint?.constant != metrics.totalHeight {

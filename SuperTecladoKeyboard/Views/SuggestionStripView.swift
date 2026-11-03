@@ -6,8 +6,10 @@ struct SuggestionStripView: View {
     @Environment(\.keyboardPalette) private var palette
 
     var body: some View {
+        let quickPaste = engine.currentWord.isEmpty ? engine.quickPaste : nil
+        let hasContent = engine.hasSuggestions || quickPaste != nil
         HStack(spacing: 0) {
-            if engine.hasSuggestions {
+            if hasContent {
                 StripButton(
                     symbol: engine.showsToolbar ? "chevron.left" : "square.grid.2x2",
                     label: engine.showsToolbar ? "Ver sugerencias" : "Ver herramientas"
@@ -16,14 +18,15 @@ struct SuggestionStripView: View {
                 }
             }
 
-            if engine.hasSuggestions && !engine.showsToolbar {
-                suggestionsRow
-            } else if let clip = engine.quickPaste, engine.currentWord.isEmpty, !engine.showsToolbar {
-                quickPasteChip(clip)
+            if engine.showsToolbar || !hasContent {
+                toolbarIcons(compact: false)
+            } else if let quickPaste {
+                // Lo recién copiado tiene prioridad sobre la predicción de la siguiente palabra.
+                quickPasteChip(quickPaste)
                 Spacer(minLength: 4)
                 toolbarIcons(compact: true)
             } else {
-                toolbarIcons(compact: false)
+                suggestionsRow
             }
         }
         .padding(.horizontal, 4)
@@ -42,7 +45,10 @@ struct SuggestionStripView: View {
                     if let item { engine.selectSuggestion(item) }
                 } label: {
                     Text(item.map { title(for: $0) } ?? "")
-                        .font(.system(size: 17, weight: item?.kind == .correction ? .semibold : .regular))
+                        .font(.system(
+                            size: item?.kind == .emoji ? 22 : 17,
+                            weight: item?.kind == .correction ? .semibold : .regular
+                        ))
                         .foregroundStyle(item?.kind == .correction ? palette.accent : palette.text)
                         .lineLimit(1)
                         .minimumScaleFactor(0.6)

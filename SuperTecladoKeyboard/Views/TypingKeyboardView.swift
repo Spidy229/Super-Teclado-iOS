@@ -47,20 +47,20 @@ private struct KeyGridView: View {
     let width: CGFloat
     let height: CGFloat
 
-    private let horizontalPadding: CGFloat = 3
-    private let verticalPadding: CGFloat = 4
-
     var body: some View {
         let rows = makeRows()
-        let showsNumberRow = engine.page == .letters && engine.preferences.numberRow
-        let available = height - verticalPadding * 2
-        let rowHeight = showsNumberRow ? available / 4.78 : available / CGFloat(max(rows.count, 1))
-        let unit = (width - horizontalPadding * 2) / 10
+        let geometry = KeyGridGeometry(
+            size: CGSize(width: width, height: height),
+            showsNumberRow: engine.page == .letters && engine.preferences.numberRow,
+            rowCount: rows.count
+        )
+        let horizontalPadding = KeyGridGeometry.horizontalPadding
+        let unit = geometry.unit
 
         VStack(spacing: 0) {
             ForEach(Array(rows.enumerated()), id: \.offset) { index, row in
-                let isNumberRow = showsNumberRow && index == 0
-                let currentHeight = isNumberRow ? rowHeight * 0.78 : rowHeight
+                let currentHeight = geometry.height(ofRow: index)
+                let originY = geometry.originY(ofRow: index)
                 let rowWidth = row.reduce(0) { $0 + $1.units } * unit
                 let inset = max(0, (width - horizontalPadding * 2 - rowWidth) / 2)
                 HStack(spacing: 0) {
@@ -70,7 +70,7 @@ private struct KeyGridView: View {
                         keyView(
                             for: spec,
                             size: CGSize(width: spec.units * unit, height: currentHeight),
-                            originX: originX
+                            origin: CGPoint(x: originX, y: originY)
                         )
                     }
                 }
@@ -80,12 +80,17 @@ private struct KeyGridView: View {
             }
         }
         .padding(.horizontal, horizontalPadding)
-        .padding(.vertical, verticalPadding)
+        .padding(.vertical, KeyGridGeometry.verticalPadding)
         .frame(width: width, height: height)
+        .overlay {
+            if engine.preferences.glideTrail {
+                GlideTrailView(trail: engine.glideTrail, color: palette.accent)
+            }
+        }
     }
 
     @ViewBuilder
-    private func keyView(for spec: KeySpec, size: CGSize, originX: CGFloat) -> some View {
+    private func keyView(for spec: KeySpec, size: CGSize, origin: CGPoint) -> some View {
         switch spec.kind {
         case .character(let value):
             CharacterKeyView(
@@ -94,8 +99,8 @@ private struct KeyGridView: View {
                 alternates: spec.alternates,
                 caseSensitive: spec.isLetter,
                 size: size,
-                originX: originX,
-                containerWidth: width
+                origin: origin,
+                gridSize: CGSize(width: width, height: height)
             )
         case .shift:
             FunctionKeyView(

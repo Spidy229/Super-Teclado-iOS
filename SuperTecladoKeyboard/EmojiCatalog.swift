@@ -70,3 +70,44 @@ enum EmojiCatalog {
         return value.map(String.init).filter { seen.insert($0).inserted }
     }
 }
+
+/// Emojis que se sugieren en la barra al escribir ciertas palabras, como en Gboard.
+enum EmojiKeywords {
+    static func emoji(for word: String) -> String? {
+        map[WordDictionary.fold(word.lowercased())]
+    }
+
+    private static let map: [String: String] = [
+        "jaja": "😂", "jajaja": "😂", "jajajaja": "😂", "lol": "😂", "risa": "😂", "jeje": "😄", "xd": "😆",
+        "feliz": "😊", "contento": "😊", "contenta": "😊", "alegria": "😁", "sonrisa": "😊",
+        "triste": "😢", "pena": "😔", "llorar": "😭", "lloro": "😭",
+        "amor": "❤️", "corazon": "❤️", "quiero": "❤️", "amo": "😍", "guapo": "😍", "guapa": "😍", "bonito": "😍", "bonita": "😍",
+        "beso": "😘", "besos": "😘", "besito": "😘", "abrazo": "🤗", "abrazos": "🤗",
+        "gracias": "🙏", "porfa": "🙏", "favor": "🙏",
+        "hola": "👋", "adios": "👋", "chao": "👋", "chau": "👋",
+        "ok": "👌", "vale": "👌", "perfecto": "👌", "bien": "👍", "genial": "🙌", "guay": "😎", "cool": "😎",
+        "fiesta": "🎉", "felicidades": "🎉", "enhorabuena": "👏", "aplausos": "👏", "bravo": "👏",
+        "cumpleanos": "🎂", "tarta": "🎂", "pastel": "🍰", "regalo": "🎁", "regalos": "🎁",
+        "fuego": "🔥", "dinero": "💰", "pasta": "🍝", "pizza": "🍕", "hamburguesa": "🍔", "cafe": "☕",
+        "cerveza": "🍺", "cervezas": "🍻", "vino": "🍷", "comida": "🍽️", "comer": "🍴", "hambre": "😋",
+        "chocolate": "🍫", "helado": "🍦", "fresa": "🍓", "manzana": "🍎", "platano": "🍌", "pollo": "🍗",
+        "pan": "🍞", "queso": "🧀", "huevo": "🥚", "taco": "🌮", "tacos": "🌮", "sushi": "🍣", "agua": "💧",
+        "sueno": "😴", "dormir": "😴", "cansado": "😩", "cansada": "😩",
+        "enfadado": "😠", "enfadada": "😠", "enojado": "😠", "enojada": "😠",
+        "miedo": "😱", "susto": "😱", "omg": "😱", "sorpresa": "😮", "wow": "😮", "nervioso": "😬", "nerviosa": "😬",
+        "pensando": "🤔", "duda": "🤔", "hmm": "🤔", "loco": "🤪", "loca": "🤪", "secreto": "🤫", "silencio": "🤫",
+        "frio": "🥶", "calor": "🥵", "sol": "☀️", "lluvia": "🌧️", "nieve": "❄️", "playa": "🏖️", "mar": "🌊",
+        "luna": "🌙", "noche": "🌙", "estrella": "⭐", "flor": "🌸", "flores": "💐",
+        "casa": "🏠", "coche": "🚗", "carro": "🚗", "avion": "✈️", "viaje": "✈️", "vacaciones": "🌴", "tren": "🚆",
+        "musica": "🎵", "cancion": "🎶", "cine": "🎬", "pelicula": "🎬", "juego": "🎮", "jugar": "🎮",
+        "futbol": "⚽", "gol": "⚽", "baloncesto": "🏀", "gimnasio": "💪", "gym": "💪", "fuerza": "💪", "vamos": "💪",
+        "gato": "🐱", "perro": "🐶", "libro": "📚", "estudiar": "📚", "examen": "📝", "trabajo": "💼",
+        "telefono": "📱", "movil": "📱", "foto": "📷", "fotos": "📸", "ordenador": "💻", "correo": "📧",
+        "hora": "⏰", "tarde": "⏰", "ojos": "👀", "mira": "👀", "bebe": "👶", "familia": "👪",
+        "rey": "👑", "reina": "👑", "navidad": "🎄", "halloween": "🎃", "fantasma": "👻", "diablo": "😈", "angel": "😇",
+        "cien": "💯", "verdad": "💯", "exito": "🏆", "ganar": "🏆", "campeon": "🏆", "suerte": "🍀",
+        "enfermo": "🤒", "enferma": "🤒", "hospital": "🏥", "dolor": "🤕", "ayuda": "🆘", "peligro": "⚠️",
+        "listo": "✅", "hecho": "✅", "error": "❌", "mal": "👎",
+        "espana": "🇪🇸", "mexico": "🇲🇽", "argentina": "🇦🇷", "colombia": "🇨🇴", "chile": "🇨🇱", "peru": "🇵🇪"
+    ]
+}

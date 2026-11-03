@@ -36,6 +36,9 @@ final class KeyboardEngine: ObservableObject {
     @Published var toast: String?
     @Published var recentEmojis: [String] = []
     @Published var isCursorMode = false
+    @Published private(set) var isGliding = false
+
+    let glideTrail = GlideTrail()
 
     /// Cambio del portapapeles hecho por el propio teclado (para no volver a capturarlo).
     var ownPasteboardChangeCount: Int?
@@ -48,6 +51,13 @@ final class KeyboardEngine: ObservableObject {
     private var quickPasteDate = Date.distantPast
     private var traitStyle: UIUserInterfaceStyle = .unspecified
     private var toastTask: Task<Void, Never>?
+    private var glidePoints: [CGPoint] = []
+    private var glideGridSize: CGSize = .zero
+    /// Última palabra escrita deslizando y sus alternativas, para cambiarla desde la barra.
+    private var lastGlide: (word: String, alternatives: [String])?
+    /// Espacio añadido automáticamente tras elegir una sugerencia (se quita ante un signo).
+    private var autoSpaceInserted = false
+    private var dictionaryLoadStarted = false
     private static let recentEmojisKey = "super-teclado-recent-emojis"
 
     init() {
@@ -71,8 +81,9 @@ final class KeyboardEngine: ObservableObject {
     func loadPreferences() {
         let loaded = KeyboardPreferences.load()
         if loaded != preferences { preferences = loaded }
-        suggestionEngine.reloadLearnedWords()
+        suggestionEngine.reloadPersonalData()
         updateAppearance()
+        loadDictionaryIfNeeded()
     }
 
     func refreshContext() {
@@ -116,6 +127,29 @@ final class KeyboardEngine: ObservableObject {
         suggestionEngine.setLexicon(entries)
     }
 
+    /// Carga el diccionario de frecuencias en segundo plano la primera vez.
+    private func loadDictionaryIfNeeded() {
+        guard !dictionaryLoadStarted,
+              let url = Bundle.main.url(forResource: "es-palabras", withExtension: "txt") else { return }
+        dictionaryLoadStarted = true
+        Task { [weak self] in
+            let dictionary = await Task.detached(priority: .userInitiated) {
+                WordDictionary.load(from: url)
+            }.value
+            guard let self, let dictionary else { return }
+            self.suggestionEngine.setDictionary(dictionary)
+            self.refreshSuggestions()
+        }
+    }
+
+    /// Restablece la página al empezar a escribir en otro campo, como Gboard.
+    func prepareForNewField() {
+        page = Self.defaultPage(for: proxy?.keyboardType ?? keyboardType)
+        lastGlide = nil
+        autoSpaceInserted = false
+        pendingAutocorrection = nil
+    }
+
     private static func defaultPage(for type: UIKeyboardType) -> KeyboardPage {
         switch type {
         case .numberPad, .phonePad, .decimalPad, .asciiCapableNumberPad: .numberPad
@@ -156,14 +190,41 @@ final class KeyboardEngine: ObservableObject {
 
     private func refreshSuggestions() {
         let word = currentWord
+        if let glide = lastGlide, glide.word != word { lastGlide = nil }
+
         let newSuggestions: [SuggestionItem?]
-        if word.isEmpty || !suggestionsAllowed {
+        if let glide = lastGlide, glide.alternatives.count > 1 {
+            let others = glide.alternatives.filter { $0 != glide.word }
+                .map { SuggestionItem(text: $0, kind: .glide) }
+            newSuggestions = [others.first, SuggestionItem(text: glide.word, kind: .typed), others.dropFirst().first]
+        } else if !suggestionsAllowed {
             newSuggestions = []
+        } else if word.isEmpty {
+            newSuggestions = predictions()
         } else {
-            newSuggestions = suggestionEngine.suggestions(for: word).slots
+            newSuggestions = suggestionEngine.suggestions(
+                for: word,
+                includeEmoji: preferences.emojiSuggestions
+            ).slots
         }
         if newSuggestions != suggestions { suggestions = newSuggestions }
         if quickPaste != nil, Date().timeIntervalSince(quickPasteDate) > 180 { quickPaste = nil }
+    }
+
+    private func predictions() -> [SuggestionItem?] {
+        guard preferences.nextWordPrediction,
+              let context = proxy?.documentContextBeforeInput, context.hasSuffix(" "),
+              let previous = KeyboardTextLogic.previousWord(before: context) else { return [] }
+        return suggestionEngine.predictions(after: previous)
+    }
+
+    /// Aprende la palabra y el par «palabra anterior → palabra» para predecir.
+    private func recordWord(_ word: String, context: String?) {
+        guard suggestionsAllowed, !word.isEmpty else { return }
+        suggestionEngine.learn(word)
+        if preferences.nextWordPrediction, let previous = KeyboardTextLogic.previousWord(before: context) {
+            suggestionEngine.learnBigram(previous: previous, word: word)
+        }
     }
 
     private func afterEdit() {
@@ -182,7 +243,19 @@ final class KeyboardEngine: ObservableObject {
         guard let proxy else { return }
         let output = displayText(for: value, caseSensitive: caseSensitive)
         showsToolbar = false
-        if [".", ",", "?", "!", ";", ":"].contains(output), !currentWord.isEmpty {
+        let isPunctuation = [".", ",", "?", "!", ";", ":"].contains(output)
+        if isPunctuation, autoSpaceInserted, proxy.documentContextBeforeInput?.hasSuffix(" ") == true {
+            // «hola ,» → «hola, »: el signo se pega a la palabra elegida en la barra.
+            proxy.deleteBackward()
+            proxy.insertText(output + " ")
+            autoSpaceInserted = false
+            pendingAutocorrection = nil
+            if shift == .on { shift = .off }
+            afterEdit()
+            return
+        }
+        autoSpaceInserted = false
+        if isPunctuation, !currentWord.isEmpty {
             commitWord(separator: output)
         } else {
             proxy.insertText(output)
@@ -194,6 +267,7 @@ final class KeyboardEngine: ObservableObject {
 
     func insertSpace() {
         guard let proxy else { return }
+        autoSpaceInserted = false
         let now = Date()
         if preferences.doubleSpacePeriod,
            now.timeIntervalSince(lastSpaceTap) < 0.5,
@@ -210,6 +284,7 @@ final class KeyboardEngine: ObservableObject {
     }
 
     func insertReturn() {
+        autoSpaceInserted = false
         proxy?.insertText("\n")
         pendingAutocorrection = nil
         afterEdit()
@@ -218,23 +293,33 @@ final class KeyboardEngine: ObservableObject {
     private func commitWord(separator: String) {
         guard let proxy else { return }
         let word = currentWord
+        let context = proxy.documentContextBeforeInput
         if !word.isEmpty,
            autocorrectAllowed,
-           let correction = suggestionEngine.suggestions(for: word).autocorrection,
+           let correction = suggestionEngine.suggestions(for: word, includeEmoji: false).autocorrection,
            correction != word {
             for _ in 0..<word.count { proxy.deleteBackward() }
             proxy.insertText(correction + separator)
             pendingAutocorrection = (word, correction, separator)
-            suggestionEngine.learn(correction)
+            recordWord(correction, context: context)
         } else {
             proxy.insertText(separator)
             pendingAutocorrection = nil
-            if !word.isEmpty, suggestionsAllowed { suggestionEngine.learn(word) }
+            recordWord(word, context: context)
         }
     }
 
     func deleteBackward() {
         guard let proxy else { return }
+        autoSpaceInserted = false
+        if let glide = lastGlide, proxy.documentContextBeforeInput?.hasSuffix(glide.word) == true {
+            // Igual que Gboard: borrar justo después de deslizar elimina la palabra entera.
+            for _ in 0..<glide.word.count { proxy.deleteBackward() }
+            lastGlide = nil
+            pendingAutocorrection = nil
+            afterEdit()
+            return
+        }
         if let pending = pendingAutocorrection,
            let context = proxy.documentContextBeforeInput,
            context.hasSuffix(pending.replacement + pending.suffix) {
@@ -273,22 +358,115 @@ final class KeyboardEngine: ObservableObject {
     func selectSuggestion(_ item: SuggestionItem) {
         guard let proxy else { return }
         let word = currentWord
-        for _ in 0..<word.count { proxy.deleteBackward() }
-        proxy.insertText(item.text + " ")
-        if item.kind == .typed {
-            suggestionEngine.reject(item.text)
-        } else {
-            suggestionEngine.learn(item.text)
-        }
+        let context = proxy.documentContextBeforeInput
         pendingAutocorrection = nil
         lastSpaceTap = .distantPast
+
+        switch item.kind {
+        case .glide:
+            // Sustituye la palabra deslizada por la alternativa elegida.
+            guard let glide = lastGlide, context?.hasSuffix(glide.word) == true else { return }
+            for _ in 0..<glide.word.count { proxy.deleteBackward() }
+            proxy.insertText(item.text)
+            lastGlide = (item.text, glide.alternatives)
+        case .emoji:
+            proxy.insertText(word.isEmpty ? item.text + " " : " " + item.text + " ")
+            recordWord(word, context: context)
+            rememberEmoji(item.text)
+            lastGlide = nil
+            autoSpaceInserted = true
+        case .prediction:
+            proxy.insertText(item.text + " ")
+            recordWord(item.text, context: context)
+            autoSpaceInserted = true
+        case .typed, .correction, .completion:
+            for _ in 0..<word.count { proxy.deleteBackward() }
+            proxy.insertText(item.text + " ")
+            if item.kind == .typed { suggestionEngine.reject(item.text) }
+            recordWord(item.text, context: context)
+            lastGlide = nil
+            autoSpaceInserted = true
+        }
+        if shift == .on { shift = .off }
         afterEdit()
+    }
+
+    // MARK: Escritura deslizando
+
+    var canGlide: Bool {
+        preferences.glideTyping && panel == .typing && page == .letters
+            && !isWebField && !isEmailField && suggestionEngine.dictionary != nil
+    }
+
+    func beginGlide(at point: CGPoint, gridSize: CGSize) {
+        glidePoints = [point]
+        glideGridSize = gridSize
+        isGliding = true
+        if preferences.glideTrail { glideTrail.begin(at: point) }
+    }
+
+    func extendGlide(to point: CGPoint) {
+        guard isGliding, let last = glidePoints.last, GlideDecoder.distance(last, point) >= 2 else { return }
+        glidePoints.append(point)
+        if preferences.glideTrail { glideTrail.add(point) }
+    }
+
+    /// Devuelve `false` si el trazo fue tan corto que debe tratarse como una pulsación normal.
+    @discardableResult
+    func endGlide() -> Bool {
+        guard isGliding else { return true }
+        isGliding = false
+        glideTrail.finish()
+        let path = glidePoints
+        glidePoints = []
+        let geometry = KeyGridGeometry(
+            size: glideGridSize,
+            showsNumberRow: preferences.numberRow,
+            rowCount: preferences.numberRow ? 5 : 4
+        )
+        guard GlideDecoder.length(of: path) >= Double(geometry.unit) * 0.9 else { return false }
+        guard let proxy, let dictionary = suggestionEngine.dictionary else { return true }
+
+        let decoder = GlideDecoder(keyCenters: geometry.letterCenters(), keyWidth: geometry.unit)
+        let candidates = decoder.decode(
+            path: path,
+            dictionary: dictionary,
+            extraWords: suggestionEngine.glideExtraWords,
+            limit: 4
+        )
+        guard !candidates.isEmpty else {
+            keyFeedback(.modifier)
+            return true
+        }
+
+        let styled = candidates.map { applyShift($0) }
+        if let last = proxy.documentContextBeforeInput?.last,
+           !last.isWhitespace, !["¿", "¡", "(", "\"", "«", "@", "#", "/"].contains(last) {
+            proxy.insertText(" ")
+        }
+        proxy.insertText(styled[0])
+        pendingAutocorrection = nil
+        autoSpaceInserted = false
+        showsToolbar = false
+        lastGlide = (styled[0], styled)
+        if shift == .on { shift = .off }
+        afterEdit()
+        return true
+    }
+
+    private func applyShift(_ word: String) -> String {
+        switch shift {
+        case .locked: word.uppercased()
+        case .on: word.prefix(1).uppercased() + word.dropFirst()
+        case .off: word
+        }
     }
 
     func moveCursor(by offset: Int) {
         guard offset != 0 else { return }
         proxy?.adjustTextPosition(byCharacterOffset: offset)
         pendingAutocorrection = nil
+        autoSpaceInserted = false
         afterEdit()
     }
 
@@ -316,11 +494,16 @@ final class KeyboardEngine: ObservableObject {
     func insertEmoji(_ emoji: String) {
         proxy?.insertText(emoji)
         pendingAutocorrection = nil
+        autoSpaceInserted = false
+        rememberEmoji(emoji)
+        afterEdit()
+    }
+
+    private func rememberEmoji(_ emoji: String) {
         var recents = recentEmojis.filter { $0 != emoji }
         recents.insert(emoji, at: 0)
         recentEmojis = Array(recents.prefix(32))
         UserDefaults.standard.set(recentEmojis, forKey: Self.recentEmojisKey)
-        afterEdit()
     }
 
     func advanceToNextInputMode() {

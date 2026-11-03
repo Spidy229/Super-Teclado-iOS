@@ -150,6 +150,9 @@ struct SettingsView: View {
                     Text("Los datos se guardan únicamente en el dispositivo.")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
+                    Text("Diccionario de frecuencias basado en FrequencyWords de Hermit Dave (OpenSubtitles), con licencia CC BY-SA 4.0.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
                 }
             }
             .navigationTitle("Ajustes")
@@ -189,7 +192,7 @@ struct SettingsView: View {
     }
 
     private var appVersion: String {
-        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "2.0"
+        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "2.1"
     }
 
     private func addFolder() {

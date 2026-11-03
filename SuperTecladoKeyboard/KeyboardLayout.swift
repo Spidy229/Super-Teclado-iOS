@@ -23,11 +23,7 @@ enum ShiftState {
 
 /// Distribución QWERTY española al estilo Gboard, con símbolos en pulsación larga.
 enum KeyboardLayout {
-    static let letterRows: [[String]] = [
-        Array("qwertyuiop").map(String.init),
-        Array("asdfghjklñ").map(String.init),
-        Array("zxcvbnm").map(String.init)
-    ]
+    static let letterRows: [[String]] = QwertyGeometry.rows.map { $0.map(String.init) }
 
     static let numberRow = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "0"]
 
@@ -128,8 +124,9 @@ struct KeyboardMetrics: Equatable {
 
     var totalHeight: CGFloat { stripHeight + keyAreaHeight }
 
-    static func make(isPad: Bool, isLandscape: Bool, numberRow: Bool) -> KeyboardMetrics {
-        let rowHeight: CGFloat = isPad ? (isLandscape ? 66 : 58) : (isLandscape ? 40 : 54)
+    static func make(isPad: Bool, isLandscape: Bool, numberRow: Bool, scale: Double = 1) -> KeyboardMetrics {
+        let baseRowHeight: CGFloat = isPad ? (isLandscape ? 66 : 58) : (isLandscape ? 40 : 54)
+        let rowHeight = (baseRowHeight * CGFloat(scale)).rounded()
         let stripHeight: CGFloat = (isLandscape && !isPad) ? 36 : 44
         let rows: CGFloat = numberRow ? 4.78 : 4
         return KeyboardMetrics(
@@ -137,5 +134,50 @@ struct KeyboardMetrics: Equatable {
             stripHeight: stripHeight,
             keyAreaHeight: (rowHeight * rows).rounded() + 8
         )
+    }
+}
+
+/// Geometría de la cuadrícula de teclas. La usan tanto la vista como el reconocimiento de la
+/// escritura deslizando, para que el trazo y los centros de las teclas coincidan.
+struct KeyGridGeometry {
+    static let horizontalPadding: CGFloat = 3
+    static let verticalPadding: CGFloat = 4
+    static let numberRowScale: CGFloat = 0.78
+
+    let size: CGSize
+    let showsNumberRow: Bool
+    let rowCount: Int
+
+    var unit: CGFloat { (size.width - Self.horizontalPadding * 2) / 10 }
+
+    var rowHeight: CGFloat {
+        let available = size.height - Self.verticalPadding * 2
+        let rows = showsNumberRow
+            ? CGFloat(max(rowCount - 1, 1)) + Self.numberRowScale
+            : CGFloat(max(rowCount, 1))
+        return available / rows
+    }
+
+    func height(ofRow index: Int) -> CGFloat {
+        showsNumberRow && index == 0 ? rowHeight * Self.numberRowScale : rowHeight
+    }
+
+    func originY(ofRow index: Int) -> CGFloat {
+        (0..<index).reduce(Self.verticalPadding) { $0 + height(ofRow: $1) }
+    }
+
+    /// Centro de cada letra en la página de letras, en coordenadas de la cuadrícula.
+    func letterCenters() -> [Character: CGPoint] {
+        var centers: [Character: CGPoint] = [:]
+        let firstLetterRow = showsNumberRow ? 1 : 0
+        for (row, letters) in QwertyGeometry.rows.enumerated() {
+            let rowIndex = firstLetterRow + row
+            let y = originY(ofRow: rowIndex) + height(ofRow: rowIndex) / 2
+            for (column, letter) in letters.enumerated() {
+                let offset = CGFloat(QwertyGeometry.rowOffsets[row]) + CGFloat(column) + 0.5
+                centers[letter] = CGPoint(x: Self.horizontalPadding + offset * unit, y: y)
+            }
+        }
+        return centers
     }
 }

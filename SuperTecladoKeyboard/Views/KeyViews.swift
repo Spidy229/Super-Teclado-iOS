@@ -9,10 +9,12 @@ struct CharacterKeyView: View {
     let alternates: [String]
     let caseSensitive: Bool
     let size: CGSize
-    let originX: CGFloat
-    let containerWidth: CGFloat
+    /// Esquina superior izquierda de la tecla en la cuadrícula (para el trazo deslizado).
+    let origin: CGPoint
+    let gridSize: CGSize
 
     @State private var isPressed = false
+    @State private var isGliding = false
     @State private var showsAlternates = false
     @State private var selectedIndex = 0
     @State private var lastTouchX: CGFloat = 0
@@ -55,16 +57,37 @@ struct CharacterKeyView: View {
         DragGesture(minimumDistance: 0, coordinateSpace: .local)
             .onChanged { gesture in
                 lastTouchX = gesture.location.x
+                if isGliding {
+                    engine.extendGlide(to: gridPoint(gesture.location))
+                    return
+                }
                 if !isPressed {
                     isPressed = true
                     engine.keyFeedback(.character)
                     scheduleLongPress()
                 }
-                if showsAlternates { selectedIndex = alternateIndex(at: gesture.location.x) }
+                if showsAlternates {
+                    selectedIndex = alternateIndex(at: gesture.location.x)
+                } else if caseSensitive, engine.canGlide,
+                          GlideDecoder.distance(gesture.startLocation, gesture.location) > max(18, size.width * 0.6) {
+                    // El dedo ha salido de la tecla: empieza la escritura deslizando.
+                    longPressTask?.cancel()
+                    longPressTask = nil
+                    isPressed = false
+                    isGliding = true
+                    engine.beginGlide(at: gridPoint(gesture.startLocation), gridSize: gridSize)
+                    engine.extendGlide(to: gridPoint(gesture.location))
+                }
             }
             .onEnded { _ in
                 longPressTask?.cancel()
                 longPressTask = nil
+                if isGliding {
+                    isGliding = false
+                    // Un desliz corto al teclear rápido cuenta como pulsación normal.
+                    if !engine.endGlide() { engine.insertCharacter(value, caseSensitive: caseSensitive) }
+                    return
+                }
                 if showsAlternates {
                     if alternates.indices.contains(selectedIndex) {
                         engine.insertCharacter(alternates[selectedIndex], caseSensitive: caseSensitive)
@@ -82,22 +105,26 @@ struct CharacterKeyView: View {
         guard !alternates.isEmpty else { return }
         longPressTask?.cancel()
         longPressTask = Task { @MainActor in
-            try? await Task.sleep(for: .milliseconds(330))
-            guard !Task.isCancelled, isPressed else { return }
+            try? await Task.sleep(for: .milliseconds(engine.preferences.longPressDelay))
+            guard !Task.isCancelled, isPressed, !isGliding else { return }
             showsAlternates = true
             selectedIndex = alternateIndex(at: lastTouchX)
             engine.keyFeedback(.modifier)
         }
     }
 
+    private func gridPoint(_ location: CGPoint) -> CGPoint {
+        CGPoint(x: origin.x + location.x, y: origin.y + location.y)
+    }
+
     /// Posición horizontal de la barra de alternativas respecto al borde izquierdo de la tecla.
     private var alternatesStart: CGFloat {
         let barWidth = CGFloat(alternates.count) * optionWidth + 6
         var start = (size.width - optionWidth) / 2 - 3
-        if originX + start + barWidth > containerWidth - 2 {
-            start = containerWidth - 2 - barWidth - originX
+        if origin.x + start + barWidth > gridSize.width - 2 {
+            start = gridSize.width - 2 - barWidth - origin.x
         }
-        if originX + start < 2 { start = 2 - originX }
+        if origin.x + start < 2 { start = 2 - origin.x }
         return start
     }
 
@@ -380,5 +407,57 @@ struct SpaceKeyView: View {
         .accessibilityLabel("Espacio")
         .accessibilityAddTraits(.isKeyboardKey)
         .accessibilityAction { engine.insertSpace() }
+    }
+}
+
+/// Estela azul que sigue al dedo al escribir deslizando, como en Gboard.
+@MainActor
+final class GlideTrail: ObservableObject {
+    @Published private(set) var points: [CGPoint] = []
+    @Published private(set) var isFading = false
+    private var fadeTask: Task<Void, Never>?
+
+    func begin(at point: CGPoint) {
+        fadeTask?.cancel()
+        isFading = false
+        points = [point]
+    }
+
+    func add(_ point: CGPoint) {
+        points.append(point)
+        if points.count > 240 { points.removeFirst(points.count - 240) }
+    }
+
+    func finish() {
+        guard !points.isEmpty else { return }
+        isFading = true
+        fadeTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .milliseconds(260))
+            guard let self, !Task.isCancelled else { return }
+            self.points = []
+            self.isFading = false
+        }
+    }
+}
+
+struct GlideTrailView: View {
+    @ObservedObject var trail: GlideTrail
+    let color: Color
+
+    var body: some View {
+        let points = Array(trail.points.suffix(90))
+        Canvas { context, _ in
+            guard points.count > 1 else { return }
+            var path = Path()
+            path.addLines(points)
+            context.stroke(
+                path,
+                with: .color(color.opacity(0.75)),
+                style: StrokeStyle(lineWidth: 6, lineCap: .round, lineJoin: .round)
+            )
+        }
+        .opacity(trail.isFading ? 0 : 1)
+        .animation(.easeOut(duration: 0.25), value: trail.isFading)
+        .allowsHitTesting(false)
     }
 }
