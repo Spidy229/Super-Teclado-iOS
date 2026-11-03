@@ -1,5 +1,6 @@
 import Foundation
 import SwiftData
+import WidgetKit
 
 @MainActor
 enum KeyboardHistorySync {
@@ -79,6 +80,8 @@ enum KeyboardHistorySync {
         }
         SharedClipboardStore.replaceTemporaryInbox(temporary)
         SharedClipboardStore.pruneImages(keeping: referencedImages)
+        // El widget muestra los fijados: se actualiza cuando cambia el historial.
+        WidgetCenter.shared.reloadTimelines(ofKind: "PinnedClips")
     }
 
     private static func applyKeyboardDeletions(in context: ModelContext) {

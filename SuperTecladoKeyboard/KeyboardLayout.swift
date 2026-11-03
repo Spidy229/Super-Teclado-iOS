@@ -118,6 +118,8 @@ struct KeySpec: Identifiable {
         case globe
         case emoji
         case page(KeyboardPage, String)
+        /// Ocultar el teclado (fila inferior del iPad).
+        case dismiss
     }
 
     let id: String
@@ -134,6 +136,7 @@ struct KeyboardMetrics: Equatable {
     var keyAreaHeight: CGFloat
     /// Fila de emojis y símbolos favoritos encima de las teclas (0 si está desactivada).
     var favoritesRowHeight: CGFloat = 0
+    var isPad = false
 
     var totalHeight: CGFloat { stripHeight + favoritesRowHeight + keyAreaHeight }
 
@@ -152,7 +155,8 @@ struct KeyboardMetrics: Equatable {
             rowHeight: rowHeight,
             stripHeight: stripHeight,
             keyAreaHeight: (rowHeight * rows).rounded() + 8,
-            favoritesRowHeight: favoritesRow ? ((isLandscape && !isPad) ? 30 : 38) : 0
+            favoritesRowHeight: favoritesRow ? ((isLandscape && !isPad) ? 30 : 38) : 0,
+            isPad: isPad
         )
     }
 }
@@ -167,8 +171,6 @@ struct KeyGridGeometry {
     let size: CGSize
     let showsNumberRow: Bool
     let rowCount: Int
-
-    var unit: CGFloat { (size.width - Self.horizontalPadding * 2) / 10 }
 
     var rowHeight: CGFloat {
         let available = size.height - Self.verticalPadding * 2
@@ -185,19 +187,10 @@ struct KeyGridGeometry {
     func originY(ofRow index: Int) -> CGFloat {
         (0..<index).reduce(Self.verticalPadding) { $0 + height(ofRow: $1) }
     }
+}
 
-    /// Centro de cada letra en la página de letras, en coordenadas de la cuadrícula.
-    func letterCenters(layout: LetterLayout) -> [Character: CGPoint] {
-        var centers: [Character: CGPoint] = [:]
-        let firstLetterRow = showsNumberRow ? 1 : 0
-        for (row, letters) in layout.rows.enumerated() {
-            let rowIndex = firstLetterRow + row
-            let y = originY(ofRow: rowIndex) + height(ofRow: rowIndex) / 2
-            for (column, letter) in letters.enumerated() {
-                let offset = CGFloat(layout.offset(ofRow: row)) + CGFloat(column) + 0.5
-                centers[letter] = CGPoint(x: Self.horizontalPadding + offset * unit, y: y)
-            }
-        }
-        return centers
-    }
+/// Centros de las letras tal y como se dibujan, que la tecla pasa al motor al empezar a deslizar.
+struct GlideTarget {
+    let centers: [Character: CGPoint]
+    let keyWidth: CGFloat
 }

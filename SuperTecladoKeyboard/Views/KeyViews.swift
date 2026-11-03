@@ -12,6 +12,7 @@ struct CharacterKeyView: View {
     /// Esquina superior izquierda de la tecla en la cuadrícula (para el trazo deslizado).
     let origin: CGPoint
     let gridSize: CGSize
+    let glide: GlideTarget
 
     @State private var isPressed = false
     @State private var isGliding = false
@@ -77,7 +78,7 @@ struct CharacterKeyView: View {
                     longPressTask = nil
                     isPressed = false
                     isGliding = true
-                    engine.beginGlide(at: gridPoint(gesture.startLocation), gridSize: gridSize)
+                    engine.beginGlide(at: gridPoint(gesture.startLocation), target: glide)
                     engine.extendGlide(to: gridPoint(gesture.location))
                 }
             }
@@ -418,6 +419,8 @@ struct SpaceKeyView: View {
 @MainActor
 final class GlideTrail: ObservableObject {
     @Published private(set) var points: [CGPoint] = []
+    /// Palabra reconocida hasta ahora, para mostrarla en la barra mientras se desliza.
+    @Published var preview: String?
     @Published private(set) var isFading = false
     private var fadeTask: Task<Void, Never>?
 

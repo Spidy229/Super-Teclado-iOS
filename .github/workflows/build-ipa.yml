@@ -11,7 +11,7 @@ permissions:
 jobs:
   build:
     runs-on: macos-15
-    timeout-minutes: 30
+    timeout-minutes: 45
 
     steps:
       - name: Checkout
@@ -36,6 +36,26 @@ jobs:
             -configuration Debug \
             -sdk iphonesimulator \
             -destination 'generic/platform=iOS Simulator' \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO
+
+      - name: Run unit tests
+        run: |
+          # Usa el primer simulador de iPhone disponible en el runner.
+          UDID=$(xcrun simctl list devices available -j | python3 -c "
+          import json, sys
+          devices = json.load(sys.stdin)['devices']
+          print(next((d['udid'] for runtime, items in devices.items() if 'iOS' in runtime
+                      for d in items if d['name'].startswith('iPhone')), ''))
+          ")
+          if [ -z "$UDID" ]; then
+            echo "::warning::No hay simulador de iPhone disponible; se omiten las pruebas"
+            exit 0
+          fi
+          xcodebuild test-without-building \
+            -project SuperTeclado.xcodeproj \
+            -scheme SuperTeclado \
+            -destination "id=$UDID" \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO
 

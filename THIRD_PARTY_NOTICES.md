@@ -20,6 +20,14 @@ condiciones (CC BY-SA 4.0). Se conservan solo palabras formadas por letras, se e
 variantes sin tilde de palabras que casi siempre la llevan y se limitan a las 30 000 más
 frecuentes.
 
+## Pares de palabras para predecir la siguiente palabra
+
+Los archivos `SuperTecladoKeyboard/Resources/bigrams-*.txt` se han calculado a partir de las
+frases de [Tatoeba](https://tatoeba.org) (exportaciones por idioma de `downloads.tatoeba.org`),
+con licencia [Creative Commons Attribution 2.0 France](https://creativecommons.org/licenses/by/2.0/fr/).
+Contienen, para cada palabra, las cuatro palabras que más a menudo la siguen y las palabras
+con que suelen empezar las frases; se han quitado los nombres de los ejemplos (Tom, Mary…).
+
 ## Nombres de emojis en español
 
 `SuperTecladoKeyboard/Resources/es-emojis.txt` se ha generado a partir de las anotaciones en

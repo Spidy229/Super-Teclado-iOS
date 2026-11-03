@@ -34,6 +34,13 @@ codesign --force --sign - \
   --entitlements SuperTecladoShare/SuperTecladoShare.entitlements \
   "$SHARE_PATH"
 
+WIDGET_PATH="$APP_PATH/PlugIns/SuperTecladoWidget.appex"
+test -d "$WIDGET_PATH"
+
+codesign --force --sign - \
+  --entitlements SuperTecladoWidget/SuperTecladoWidget.entitlements \
+  "$WIDGET_PATH"
+
 codesign --force --sign - \
   --entitlements SuperTecladoApp/SuperTeclado.entitlements \
   "$APP_PATH"

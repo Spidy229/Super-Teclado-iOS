@@ -3,35 +3,40 @@ import Foundation
 /// Diccionario de palabras ordenado por frecuencia de uso. Es inmutable para poder cargarlo
 /// en segundo plano y compartirlo entre hilos.
 final class WordDictionary: Sendable {
+    /// Palabras de más a menos frecuentes. Los índices se guardan como `Int32` para que el
+    /// diccionario ocupe la mitad de memoria (los teclados de iOS tienen un límite estricto).
     let words: [String]
-    let counts: [Int]
-    /// Forma sin tildes ni «ñ» de cada palabra (para completar y corregir tildes).
-    private let foldedWords: [String]
-    private let indexByWord: [String: Int]
-    private let bestIndexByFolded: [String: Int]
-    private let indicesByFirstLetter: [Character: [Int]]
+    private let counts: [Int32]
+    private let indexByWord: [String: Int32]
+    /// Solo para palabras con tildes, «ñ» o «ç»: forma sin tildes → palabra más usada.
+    private let bestIndexByFolded: [String: Int32]
+    private let indicesByFirstLetter: [Character: [Int32]]
     /// Índices agrupados por la primera y la última tecla, para la escritura deslizando.
-    private let indicesByGlideEnds: [String: [Int]]
+    private let indicesByGlideEnds: [String: [Int32]]
 
     init(entries: [(word: String, count: Int)]) {
         var words: [String] = []
-        var counts: [Int] = []
-        var foldedWords: [String] = []
-        var indexByWord: [String: Int] = [:]
-        var bestIndexByFolded: [String: Int] = [:]
-        var indicesByFirstLetter: [Character: [Int]] = [:]
-        var indicesByGlideEnds: [String: [Int]] = [:]
+        var counts: [Int32] = []
+        var indexByWord: [String: Int32] = [:]
+        var bestIndexByFolded: [String: Int32] = [:]
+        var indicesByFirstLetter: [Character: [Int32]] = [:]
+        var indicesByGlideEnds: [String: [Int32]] = [:]
+        words.reserveCapacity(entries.count)
+        counts.reserveCapacity(entries.count)
+        indexByWord.reserveCapacity(entries.count)
 
         for entry in entries.sorted(by: { $0.count > $1.count }) {
             let word = entry.word.lowercased()
             guard !word.isEmpty, indexByWord[word] == nil else { continue }
-            let index = words.count
+            let index = Int32(words.count)
             let folded = Self.fold(word)
             words.append(word)
-            counts.append(max(entry.count, 1))
-            foldedWords.append(folded)
+            counts.append(Int32(clamping: max(entry.count, 1)))
             indexByWord[word] = index
-            if bestIndexByFolded[folded] == nil { bestIndexByFolded[folded] = index }
+            // Como van de más a menos usadas, si la forma sin tilde ya está, es más frecuente.
+            if folded != word, bestIndexByFolded[folded] == nil, indexByWord[folded] == nil {
+                bestIndexByFolded[folded] = index
+            }
             if let first = folded.first { indicesByFirstLetter[first, default: []].append(index) }
             let keys = Self.keyLetters(word)
             if keys.count >= 2, let first = keys.first, let last = keys.last {
@@ -41,7 +46,6 @@ final class WordDictionary: Sendable {
 
         self.words = words
         self.counts = counts
-        self.foldedWords = foldedWords
         self.indexByWord = indexByWord
         self.bestIndexByFolded = bestIndexByFolded
         self.indicesByFirstLetter = indicesByFirstLetter
@@ -72,11 +76,14 @@ final class WordDictionary: Sendable {
 
     /// Combina el diccionario principal con un segundo idioma. Las frecuencias del segundo se
     /// reducen para que, ante la duda, gane el idioma principal.
+    static let secondaryLimit = 20_000
+
     static func load(from url: URL, secondary: URL?, secondaryWeight: Double) -> WordDictionary? {
         guard let text = try? String(contentsOf: url, encoding: .utf8) else { return nil }
         var combined = entries(from: text)
         if let secondary, let secondaryText = try? String(contentsOf: secondary, encoding: .utf8) {
-            combined += entries(from: secondaryText, weight: secondaryWeight)
+            // El segundo idioma se limita a sus palabras más usadas para ahorrar memoria.
+            combined += entries(from: secondaryText, weight: secondaryWeight).prefix(secondaryLimit)
         }
         return WordDictionary(entries: combined)
     }
@@ -88,12 +95,18 @@ final class WordDictionary: Sendable {
     }
 
     func count(of word: String) -> Int? {
-        indexByWord[word.lowercased()].map { counts[$0] }
+        indexByWord[word.lowercased()].map { Int(counts[Int($0)]) }
     }
+
+    func word(at index: Int32) -> String { words[Int(index)] }
+
+    func count(at index: Int32) -> Int { Int(counts[Int(index)]) }
 
     /// Forma más usada que coincide sin tildes: «tambien» → «también», «manana» → «mañana».
     func bestForm(matching word: String) -> String? {
-        bestIndexByFolded[Self.fold(word.lowercased())].map { words[$0] }
+        let folded = Self.fold(word.lowercased())
+        if let index = bestIndexByFolded[folded] { return words[Int(index)] }
+        return indexByWord[folded] == nil ? nil : folded
     }
 
     /// Palabras que empiezan por el prefijo (sin distinguir tildes), de más a menos usadas.
@@ -101,15 +114,20 @@ final class WordDictionary: Sendable {
         let foldedPrefix = Self.fold(prefix.lowercased())
         guard let first = foldedPrefix.first, let candidates = indicesByFirstLetter[first] else { return [] }
         var result: [String] = []
-        for index in candidates where foldedWords[index].count > foldedPrefix.count {
-            guard foldedWords[index].hasPrefix(foldedPrefix) else { continue }
-            result.append(words[index])
+        for index in candidates {
+            let candidate = words[Int(index)]
+            guard candidate.count > foldedPrefix.count else { continue }
+            // Solo se quitan tildes cuando hace falta, para no crear cadenas en cada pulsación.
+            let matches = candidate.hasPrefix(foldedPrefix)
+                || (!candidate.allSatisfy(\.isASCII) && Self.fold(candidate).hasPrefix(foldedPrefix))
+            guard matches else { continue }
+            result.append(candidate)
             if result.count == limit { break }
         }
         return result
     }
 
-    func glideCandidates(first: Character, last: Character) -> [Int] {
+    func glideCandidates(first: Character, last: Character) -> [Int32] {
         indicesByGlideEnds[String([first, last])] ?? []
     }
 

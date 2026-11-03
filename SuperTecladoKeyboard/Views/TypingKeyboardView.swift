@@ -55,7 +55,10 @@ private struct KeyGridView: View {
             rowCount: rows.count
         )
         let horizontalPadding = KeyGridGeometry.horizontalPadding
-        let unit = geometry.unit
+        // El iPad tiene filas más largas (intro, comas, segunda tecla de mayúsculas…).
+        let totalUnits = max(10, rows.map { $0.reduce(0) { $0 + $1.units } }.max() ?? 10)
+        let unit = (width - horizontalPadding * 2) / totalUnits
+        let glideCenters = letterCenters(rows: rows, geometry: geometry, unit: unit)
 
         VStack(spacing: 0) {
             ForEach(Array(rows.enumerated()), id: \.offset) { index, row in
@@ -70,7 +73,8 @@ private struct KeyGridView: View {
                         keyView(
                             for: spec,
                             size: CGSize(width: spec.units * unit, height: currentHeight),
-                            origin: CGPoint(x: originX, y: originY)
+                            origin: CGPoint(x: originX, y: originY),
+                            glide: GlideTarget(centers: glideCenters, keyWidth: unit)
                         )
                     }
                 }
@@ -89,8 +93,28 @@ private struct KeyGridView: View {
         }
     }
 
+    /// Centro de cada letra tal y como se dibuja, para reconocer la escritura deslizando.
+    private func letterCenters(rows: [[KeySpec]], geometry: KeyGridGeometry, unit: CGFloat) -> [Character: CGPoint] {
+        guard engine.page == .letters else { return [:] }
+        var centers: [Character: CGPoint] = [:]
+        let horizontalPadding = KeyGridGeometry.horizontalPadding
+        for (index, row) in rows.enumerated() {
+            let rowWidth = row.reduce(0) { $0 + $1.units } * unit
+            var x = horizontalPadding + max(0, (width - horizontalPadding * 2 - rowWidth) / 2)
+            let y = geometry.originY(ofRow: index) + geometry.height(ofRow: index) / 2
+            for spec in row {
+                if case .character(let value) = spec.kind, value.count == 1, let letter = value.first,
+                   letter.isLetter || letter == "'" {
+                    centers[letter] = CGPoint(x: x + spec.units * unit / 2, y: y)
+                }
+                x += spec.units * unit
+            }
+        }
+        return centers
+    }
+
     @ViewBuilder
-    private func keyView(for spec: KeySpec, size: CGSize, origin: CGPoint) -> some View {
+    private func keyView(for spec: KeySpec, size: CGSize, origin: CGPoint, glide: GlideTarget) -> some View {
         switch spec.kind {
         case .character(let value):
             CharacterKeyView(
@@ -100,8 +124,15 @@ private struct KeyGridView: View {
                 caseSensitive: spec.isLetter,
                 size: size,
                 origin: origin,
-                gridSize: CGSize(width: width, height: height)
+                gridSize: CGSize(width: width, height: height),
+                glide: glide
             )
+        case .dismiss:
+            FunctionKeyView(size: size, accessibilityText: "Ocultar teclado", action: { engine.dismissKeyboard() }) {
+                Image(systemName: "keyboard.chevron.compact.down")
+                    .font(.system(size: min(19, size.height * 0.36)))
+                    .foregroundStyle(palette.text)
+            }
         case .shift:
             FunctionKeyView(
                 size: size,
@@ -209,14 +240,39 @@ private struct KeyGridView: View {
                     isLetter: character.isLetter
                 )
             }
-            if index == 2 {
+            if engine.metrics.isPad {
+                // Como el teclado grande de iPad: borrar e intro a la derecha, «,» «.» y dos mayúsculas.
+                switch index {
+                case 0:
+                    row.append(KeySpec(id: "delete", kind: .delete, units: 1.5))
+                case 1:
+                    row.append(KeySpec(id: "return", kind: .returnKey, units: 1.75))
+                default:
+                    row.insert(KeySpec(id: "shift", kind: .shift, units: 1.25), at: 0)
+                    row.append(contentsOf: [commaKey(), periodKey()])
+                    row.append(KeySpec(id: "shift2", kind: .shift, units: 1.25))
+                }
+            } else if index == 2 {
                 row.insert(KeySpec(id: "shift", kind: .shift, units: 1.5), at: 0)
                 row.append(KeySpec(id: "delete", kind: .delete, units: 1.5))
             }
             rows.append(row)
         }
-        rows.append(bottomRow())
+        rows.append(engine.metrics.isPad ? padBottomRow() : bottomRow())
         return rows
+    }
+
+    private func padBottomRow() -> [KeySpec] {
+        let switcher = engine.needsInputModeSwitchKey
+            ? KeySpec(id: "globe", kind: .globe, units: 1.25)
+            : KeySpec(id: "emoji", kind: .emoji, units: 1.25)
+        return [
+            KeySpec(id: "page", kind: .page(.numbers, "?123"), units: 1.5),
+            switcher,
+            KeySpec(id: "space", kind: .space, units: 5.5),
+            KeySpec(id: "page2", kind: .page(.numbers, "?123"), units: 1.5),
+            KeySpec(id: "dismiss", kind: .dismiss, units: 1.25)
+        ]
     }
 
     private func symbolPageRows(_ source: [[String]], toggle: KeySpec.Kind) -> [[KeySpec]] {
@@ -236,21 +292,18 @@ private struct KeyGridView: View {
         return rows
     }
 
-    private func bottomRow() -> [KeySpec] {
-        let pageKey = engine.page == .letters
-            ? KeySpec(id: "page", kind: .page(.numbers, "?123"), units: 1.5)
-            : KeySpec(id: "page", kind: .page(.letters, "ABC"), units: 1.5)
-
-        let comma: KeySpec
+    private func commaKey() -> KeySpec {
         if engine.isEmailField {
-            comma = KeySpec(id: "comma", kind: .character("@"), units: 1, alternates: ["_", "-", "+"])
-        } else if engine.isWebField {
-            comma = KeySpec(id: "comma", kind: .character("/"), units: 1, alternates: [":", "-", "_", "?"])
-        } else {
-            comma = KeySpec(id: "comma", kind: .character(","), units: 1, alternates: KeyboardLayout.commaAlternates)
+            return KeySpec(id: "comma", kind: .character("@"), units: 1, alternates: ["_", "-", "+"])
         }
+        if engine.isWebField {
+            return KeySpec(id: "comma", kind: .character("/"), units: 1, alternates: [":", "-", "_", "?"])
+        }
+        return KeySpec(id: "comma", kind: .character(","), units: 1, alternates: KeyboardLayout.commaAlternates)
+    }
 
-        let period = KeySpec(
+    private func periodKey() -> KeySpec {
+        KeySpec(
             id: "period",
             kind: .character("."),
             units: 1,
@@ -258,6 +311,14 @@ private struct KeyGridView: View {
                 ? KeyboardLayout.webAlternates
                 : KeyboardLayout.periodAlternates
         )
+    }
+
+    private func bottomRow() -> [KeySpec] {
+        let pageKey = engine.page == .letters
+            ? KeySpec(id: "page", kind: .page(.numbers, "?123"), units: 1.5)
+            : KeySpec(id: "page", kind: .page(.letters, "ABC"), units: 1.5)
+        let comma = commaKey()
+        let period = periodKey()
         let switcher = engine.needsInputModeSwitchKey
             ? KeySpec(id: "globe", kind: .globe, units: 1)
             : KeySpec(id: "emoji", kind: .emoji, units: 1)

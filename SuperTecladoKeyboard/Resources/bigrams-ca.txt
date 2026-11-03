@@ -1,0 +1,783 @@
+<s>	no 797|el 663|la 603|en 384|ell 253|els 227
+és	un 224|la 141|el 138|una 133
+el	meu 201|que 175|seu 138|teu 78
+a	la 361|les 79|casa 69|mi 37
+la	meva 192|seva 189|teva 87|vida 55
+de	la 316|les 75|fer 44|temps 32
+no	és 132|hi 88|puc 80|em 57
+per	a 140|què 100|la 65|al 19
+que	no 140|el 70|la 67|és 46
+hi	ha 220|havia 26|és 5|va 5
+es	va 139|pot 34|diu 27|van 15
+en	la 74|el 53|un 49|una 35
+va	ser 79|dir 61|fer 46|morir 24
+i	la 75|tot 42|el 42|no 22
+em	va 79|vaig 43|fa 30|sap 19
+amb	el 50|la 47|tu 31|un 30
+ell	va 59|és 47|no 24|té 15
+els	seus 53|meus 34|teus 25|diners 18
+una	mica 39|llengua 31|cosa 27|bona 22
+ella	va 56|és 25|no 19|es 14
+si	us 51|no 33|vols 11|és 9
+li	va 36|agrada 31|vaig 23|agraden 14
+del	món 30|que 29|seu 23|meu 21
+això	és 67|no 23|va 4|que 3
+les	seves 36|meves 26|coses 17|persones 16
+com	a 34|un 24|el 20|es 17
+al	seu 37|japó 23|meu 18|llit 17
+un	bon 24|llibre 23|gos 23|cotxe 23
+anar	a 54|al 23|de 8|amb 4
+vaig	veure 25|dir 24|anar 21|a 18
+més	que 27|gran 25|de 20|alt 11
+té	un 40|una 24|el 10|la 8
+tot	el 59|i 9|allò 7|per 6
+dir	que 60|res 8|això 7|a 6
+fins	i 40|a 20|que 13|ara 7
+què	no 33|està 16|és 14|vas 13
+ha	estat 26|de 20|una 15|un 15
+he	de 38|fet 14|vist 10|perdut 9
+ja	no 33|ha 17|he 9|has 9
+aquest	llibre 28|és 17|matí 14|problema 7
+crec	que 63|en 2
+us	plau 51|he 5|ha 4|va 3
+meva	mare 24|vida 15|germana 14|filla 10
+tots	els 46|dos 9|estaven 3|el 3
+meu	pare 22|germà 19|amic 10|cor 8
+encara	no 29|que 15|és 8|més 5
+tinc	un 26|temps 12|una 9|cap 9
+però	no 29|la 12|el 9|és 5
+molt	de 24|bé 13|difícil 10|més 8
+has	de 37|fet 9|dit 6|menjat 3
+fer	el 17|allò 13|una 12|això 12
+jo	no 22|sóc 18|també 7|era 6
+ho	he 16|fa 15|vaig 12|sap 9
+són	els 17|les 15|molt 10|dos 9
+mai	no 31|més 12|ha 4|de 4
+aquesta	nit 19|és 13|frase 11|tarda 8
+res	més 18|no 11|a 11|de 10
+qui	és 21|va 13|no 8|ho 6
+sé	que 18|què 12|si 11|parlar 6
+ser	una 17|un 15|la 8|el 7
+veure	la 17|el 15|que 9|una 5
+cada	dia 32|matí 8|país 3|nit 3
+alguna	cosa 37|revista 3|pregunta 3|oficina 3
+quan	era 15|va 11|el 10|la 8
+on	és 30|va 7|vas 4|vaig 3
+sobre	el 23|la 14|tot 3|racisme 3
+tant	de 19|en 14|com 6|si 3
+està	a 12|en 11|prohibit 10|molt 9
+cap	a 19|de 14|problema 5|i 4
+seu	nom 16|fill 9|pare 8|germà 8
+fa	molt 12|el 11|mal 10|tres 8
+començar	a 36|un 3|la 2
+abans	de 29|que 6|no 3|del 3
+era	un 16|jove 9|una 8|bisexual 7
+als	estats 15|meus 12|seus 7|nens 6
+hem	de 25|vist 5|fet 5|tingut 4
+val	la 26|més 8|tant 2|si 2
+totes	les 35|dues 3
+vull	anar 14|que 11|veure 6|un 6
+després	de 30|del 3|que 2|em 2
+dels	seus 17|altres 9|estats 6|meus 5
+quina	és 19|hora 11|posta 3|mena 3
+parlar	amb 21|sobre 6|francès 5|anglès 4
+et	vaig 17|puc 9|preocupis 6|fa 4
+entre	els 15|les 11|nosaltres 5|la 5
+quin	és 21|dia 6|color 5|tipus 3
+seva	vida 11|mare 10|dona 8|pròpia 5
+sap	greu 18|conduir 6|que 5|el 5
+puc	fer 15|dir 7|parlar 6|ajudar 6
+tornar	a 24|el 5|mai 2|cap 2
+ets	un 16|el 8|una 5|la 4
+ens	va 14|hem 8|podem 6|vam 5
+arribar	a 21|tard 6|als 4|deu 2
+ningú	no 21|que 4|em 4|pot 3
+cosa	que 10|per 10|més 9|a 3
+sóc	un 12|jo 7|el 7|de 5
+pot	ser 13|fer 8|parlar 5|dir 5
+des	de 14|del 11|que 6
+van	ser 13|dir 6|cantar 6|robar 5
+millor	que 20|amic 4|per 3|manera 3
+dos	quarts 13|anys 9|llibres 5|gats 3
+diu	que 18|el 6|la 3|ell 3
+ara	mateix 16|balla 6|que 4|he 4
+vida	és 17|no 6|sense 3|privada 3
+temps	que 11|per 9|a 6|passa 3
+perquè	no 14|el 6|tinc 5|és 4
+avui	és 9|fa 8|no 7|he 5
+allò	que 24|és 3|va 2
+tres	dies 9|anys 8|quarts 6|fills 5
+sabia	que 23|res 3|què 2
+pel	que 10|seu 9|camí 5|matí 4
+me	el 10|amb 8|un 5|que 5
+tota	la 20|una 3|sola 2|persona 2
+tan	sols 10|bon 7|difícil 5|bé 5
+sembla	que 21|una 4|molt 2
+casa	meva 9|és 7|a 7|té 4
+vas	fer 9|a 7|dir 6|tractar 4
+tu	ets 12|mateix 9|i 3|vols 2
+meus	pares 11|ulls 7|amics 5|llibres 3
+se	li 9|a 7|en 6|suposa 3
+perdre	la 10|el 8|les 4|els 3
+pare	és 9|va 8|es 5|no 3
+deu	minuts 10|haver 6|anys 6|ser 3
+o	no 11|una 5|la 4|bé 4
+gent	que 10|gran 6|sempre 4|no 4
+estic	segur 7|cansat 7|molt 6|malalt 4
+ells	van 8|són 8|varen 4|no 4
+dia	de 10|que 7|més 4|internacional 3
+seus	pares 7|fills 7|fans 5|amics 4
+sempre	em 10|està 6|a 4|és 3
+mica	de 15|més 4|massa 2|amb 2
+llengua	que 8|més 6|estrangera 5|en 4
+fet	un 7|de 6|això 6|a 4
+estats	units 23
+deixar	de 12|el 5|la 4|un 2
+bon	gust 8|dia 6|punt 5|temps 4
+agrada	la 9|el 7|molt 4|veure 3
+quant	de 13|val 4|temps 3|et 2
+mare	li 8|va 6|sap 4|que 4
+així	que 11|és 7|va 2|no 2
+només	hi 8|vull 5|una 5|és 3
+ni	tan 7|una 6|un 5|de 3
+havia	estat 7|fet 6|una 5|un 3
+contra	el 10|la 4|de 4|del 3
+comprar	un 7|una 6|la 4|el 4
+bé	amb 7|a 6|en 4|el 4
+aquí	per 6|hi 5|fa 5|el 5
+anat	a 16|amb 3|mai 2
+primer	cop 12|lloc 3|a 3|ministre 2
+moltes	coses 8|gràcies 6|persones 4|vegades 2
+estan	trencades 13|de 3|tancades 2|plens 2
+agraden	les 13|els 5|molt 2
+tens	un 10|una 3|raó 3|alguna 3
+tenir	un 8|una 4|lloc 4|res 3
+te	les 6|a 5|una 4|que 4
+setmana	passada 9|que 6|tanca 2|passat 2
+pots	fer 6|venir 5|dir 4|deixar 4
+molts	diners 7|dels 5|llibres 4|anys 3
+massa	curta 6|tard 5|car 5|jove 3
+llibre	és 8|que 4|de 4|sobre 3
+hauria	de 15|pogut 2|fet 2
+gràcies	per 11|a 5|pel 3
+gos	és 6|que 6|va 4|està 3
+escriure	un 10|en 4|una 3|la 2
+algú	que 10|altre 4|em 3|en 2
+vol	que 8|dir 5|anar 3|veure 2
+qualsevol	cosa 7|moment 4|idioma 4|altre 3
+part	de 11|del 4|dels 3
+han	de 7|estat 4|col 4|tingut 3
+espero	que 14|no 2|el 2
+cal	que 11|una 3|saber 2|meu 2
+anem	a 18
+viu	a 10|al 3|una 2|o 2
+vam	anar 7|veure 4|fer 4|vore 2
+teu	amic 7|llibre 4|pare 3|nom 3
+nom	de 6|és 4|i 4|a 3
+mentre	el 7|hi 4|feu 4|la 2
+mal	de 5|temps 4|que 4|el 4
+gran	que 8|i 3|del 3|de 3
+déu	és 6|va 4|no 4|meu 3
+creus	que 17
+anys	que 7|més 6|és 2|vaig 2
+ahir	a 7|vaig 5|va 3|van 2
+venir	a 14|amb 2
+trobar	un 7|la 4|el 3|en 2
+teva	mare 4|germana 4|faldilla 4|cara 4
+tenim	una 7|un 4|la 3|prou 2
+tard	a 7|o 5|que 2|per 2
+parla	anglès 10|més 2|japonès 2|italià 2
+nova	york 8|zelanda 3|novel 3|llengua 2
+morir	de 6|abans 4|fa 3|en 3
+molta	gent 13|aigua 3
+estat	molt 6|a 5|cancel 3|una 2
+donar	un 7|a 4|la 3|tot 2
+diuen	que 16
+difícil	de 7|que 5|trobar 2|com 2
+deixa	de 9|que 3|el 2|aquest 2
+amic	que 6|meu 5|de 3|no 2
+vols	que 8|una 3|fer 2|estudiar 2
+tenia	un 6|uns 3|una 3|plans 3
+sense	la 5|cap 4|vida 3|parar 3
+quarts	de 15
+món	és 5|no 4|que 3|està 3
+mon	pare 13|fill 2
+important	per 6|que 3|en 3|de 3
+fàcil	de 6|per 5|traduir 2|que 2
+frases	que 6|en 4|a 3|són 2
+durant	la 7|el 4|tres 2|sis 2
+bona	sort 4|olor 4|nit 4|relació 3
+aquell	que 5|moment 4|home 3|dia 3
+viure	en 5|a 4|sense 3|un 2
+uns	quants 5|ulls 4|dies 3|amb 2
+sortir	de 6|amb 3|a 3|del 2
+seria	millor 7|de 3|una 2|la 2
+sentir	la 5|que 4|res 3|el 2
+segur	que 9|de 5
+punt	de 9|i 3|vam 2
+por	de 7|dels 3|del 2|a 2
+podria	haver 5|ser 3|fer 3|ajudar 3
+persona	més 6|té 3|que 3|o 2
+pa	amb 5|per 4|és 3|i 2
+necessito	un 6|una 3|ajuda 3|unes 2
+menjar	xinès 4|a 4|ràpid 3|més 3
+llum	de 6|i 3|del 3|encès 2
+heu	de 6|vist 3|estat 3|trobat 2
+haver	de 7|fet 3|sigut 2|oblidat 2
+ganes	de 14
+estava	llegint 4|a 4|fent 3|al 3
+dona	és 5|que 3|per 3|de 3
+demà	al 6|farà 3|a 3|tindrem 2
+cotxe	és 5|nou 4|es 3|vermell 2
+cinc	anys 5|dies 4|idiomes 3|oceans 2
+algun	dia 6|lloc 3|cop 3|llibre 2
+vist	un 5|mai 4|res 2|per 2
+tenen	el 6|les 3|xicotes 2|un 2
+racisme	és 6|existeix 3|i 2|encara 2
+manera	de 8|que 3|diferent 2
+lo	que 5|a 4|per 2|amb 2
+escoltar	la 7|un 2|música 2|les 2
+dues	hores 5|vegades 4|filles 2|dones 2
+dit	que 13
+diners	per 5|que 3|al 3|tens 2
+coses	que 5|per 4|noves 2|no 2
+altra	vegada 5|persona 4|opció 2|manera 2
+vegades	em 5|al 3|és 2|està 2
+vegada	que 8|més 2|a 2
+som	a 5|aquí 3|el 2|bons 2
+sol	a 4|és 3|menjar 3|parlar 2
+sinó	que 5|també 4|a 3
+serà	el 5|un 3|millor 2|la 2
+saben	què 5|tot 3|parlar 2|exactament 2
+poc	a 5|més 3|després 2|de 2
+persones	que 4|van 3|fan 3|només 2
+passar	la 5|el 3|per 2|menys 2
+ma	mare 7|germana 3|casa 2
+lloc	és 3|on 3|em 3|a 3
+llegir	el 4|un 3|aquest 3|és 2
+dur	a 4|la 3|amb 3|per 2
+cor	de 5|i 3|que 2|no 2
+volia	anar 5|ser 2|que 2|fer 2
+tanca	la 7|blue 2|a 2
+també	és 7|tinc 2|es 2
+saps	què 3|que 3|on 3|qui 2
+saber	si 3|qui 3|quan 3|res 2
+quatre	estacions 4|anys 3|i 2|germanes 2
+prop	de 9|del 2
+pensava	que 11
+passat	no 4|vaig 3|tot 2|quan 2
+mi	mateix 5|a 4|i 2
+majoria	de 6|dels 5
+jugar	a 11
+germà	gran 5|és 4|té 2
+germana	és 4|gran 3|no 2|es 2
+gat	és 5|va 2|que 2|blanc 2
+fes	una 4|exercici 3|la 2|el 2
+estar	a 5|viu 2|segur 2|de 2
+entendre	el 7|què 2|que 2
+dies	de 4|que 3|més 2|i 2
+cop	que 7|de 2|al 2
+confiar	en 11
+comença	a 7|el 2|al 2
+camí	a 5|cap 4|que 2
+bo	per 5|que 2|pogués 2|aviat 2
+aprendre	turc 3|anglès 3|a 3|llengües 2
+alt	que 5|del 4|com 2
+agafar	un 5|la 3|el 3
+viuen	a 7|al 3
+viatjar	a 5|en 3|és 2
+trucar	a 6|en 2|el 2
+traduir	des 3|aquesta 3|aquest 2|algunes 2
+teus	pares 4|versos 2|somnis 2|plans 2
+sota	el 4|un 2|les 2|la 2
+sentit	de 3|a 3|que 2|la 2
+rei	és 4|de 4|dels 2
+quantes	vegades 4|persones 4|lletres 2
+prou	feines 3|diners 3|bona 2|amb 2
+porta	una 3|bé 3|roba 2|oberta 2
+penso	que 8|en 2
+pena	visitar 3|intentar 3|veure 2|recordar 2
+néixer	el 4|a 4|un 2
+nosaltres	no 3|ja 3|si 2|mengem 2
+nit	en 4|és 2|que 2|no 2
+nen	és 3|petit 3|va 2|que 2
+mort	és 3|a 3|del 2|de 2
+llibres	són 7|a 3
+hora	és 3|al 3|vas 2|que 2
+frase	a 4|és 2|original 2|en 2
+faré	una 3|el 3|els 2|de 2
+faldilla	és 5|blava 3|vermella 2
+dret	a 8|de 2
+creu	que 6|en 4
+compte	els 3|amb 3|quan 2|de 2
+arriba	tard 4|a 4|al 2
+altre	cop 5|idioma 3|lloc 2
+ajudar	el 4|a 4|els 2
+éssers	humans 9
+ve	de 3|del 2|amb 2|a 2
+tipus	de 9
+sigui	el 3|un 2|sempre 2|com 2
+seves	traduccions 3|respostes 2|pròpies 2|promeses 2
+quasi	no 7|tot 2
+quants	diners 4|anys 3|dies 2
+prendre	una 3|seriosament 3|la 3
+poder	evitar 3|venir 2|sentir 2|de 2
+podem	anar 3|passar 2|fer 2|córrer 2
+perdut	la 7|el 2
+parlant	de 3|per 2|del 2|amb 2
+pagar	el 5|la 2|amb 2
+nostre	suport 3|temps 2|servidor 2|equip 2
+nostra	casa 3|època 2|mestra 2|memòria 2
+noi	que 3|és 2|no 2|més 2
+música	i 3|per 2|no 2|més 2
+meves	ulleres 3|orelles 2|frases 2|coses 2
+mateixa	edat 3|que 2|planta 2|frase 2
+mateix	que 3|temps 2|no 2|lavabo 2
+llengües	estrangeres 3|vives 2|que 2|no 2
+llegint	un 5|una 2|el 2
+ligència	artificial 9
+home	vell 3|valent 2|que 2|a 2
+història	és 3|que 2|interessant 2|de 2
+heus	aquí 5|ací 4
+hauries	de 9
+francès	a 3|tan 2|i 2|amb 2
+fos	una 3|un 2|tan 2|per 2
+exactament	el 7|com 2
+entrar	a 4|al 3|per 2
+demanar	al 3|una 2|un 2|que 2
+causa	de 7|del 2
+cantar	una 5|un 2|millor 2
+bons	amics 9
+blanc	i 5|és 2|com 2
+algunes	persones 3|paraules 2|llengües 2|frases 2
+vostè	és 5|no 3
+voltant	de 5|del 3
+veritat	és 2|sempre 2|que 2|confies 2
+ulls	són 2|que 2|del 2|bonics 2
+trobat	un 3|a 3|una 2
+treballo	per 2|en 2|com 2|a 2
+treballa	en 6|a 2
+tothom	que 2|li 2|està 2|el 2
+tornaré	a 6|de 2
+tocar	el 5|la 3
+tingut	una 3|un 3|la 2
+sovint	es 2|en 2|arriba 2|a 2
+servir	el 5|la 3
+sens	dubte 8
+primera	vegada 6|part 2
+posar	una 4|la 2|a 2
+podia	respondre 2|portar 2|fer 2|confiar 2
+pensar	sobre 2|que 2|en 2|definitivament 2
+peix	és 2|per 2|o 2|no 2
+país	té 3|està 3|de 2
+pares	són 4|sàpiguen 2|no 2
+paraula	per 3|de 3|més 2
+noia	és 2|va 2|que 2|del 2
+nens	van 2|petits 2|no 2|a 2
+mesos	que 4|de 4
+menys	de 4|temps 2|que 2
+literatura	francesa 3|anglesa 3|en 2
+jove	que 3|per 3|és 2
+humans	van 2|tan 2|són 2|neixen 2
+haig	de 8
+guerra	és 4|mundial 2|la 2
+fill	és 2|va 2|meu 2|ha 2
+feu	la 4|una 2|com 2
+favor	de 6|a 2
+estàs	tan 2|equivocat 2|en 2|cansat 2
+dotze	anys 5|mesos 3
+diccionari	mentre 4|és 2|a 2
+deixat	passar 2|la 2|entrar 2|el 2
+començat	a 6|quan 2
+ben	segur 2|entrada 2|bé 2|aviat 2
+aquests	llibres 4|turons 2|moments 2
+aquestes	tortugues 2|qüestions 2|persones 2|paraules 2
+aigua	pura 2|per 2|i 2|de 2
+acabat	de 6|el 2
+acabar	de 4|el 2|bé 2
+viscut	a 7
+veig	la 3|ningú 2|ballar 2
+toca	el 4|la 3
+teua	opinió 3|mare 2|bossa 2
+terra	és 3|era 2|de 2
+tal	com 5|cosa 2
+suport	a 3|en 2|al 2
+sopar	plegats 3|està 2|al 2
+resultat	de 5|és 2
+raó	per 4|i 3
+quedar	amb 3|sense 2|a 2
+prohibit	pescar 4|nadar 3
+popular	entre 5|al 2
+ocells	volen 3|tenen 2|i 2
+nombre	de 5|entre 2
+negre	i 5|com 2
+mira	la 3|el 2|cap 2
+mil	paraules 3|milions 2|frases 2
+juga	a 5|al 2
+japó	és 5|amb 2
+hores	i 3|més 2|diàries 2
+guanyar	la 4|el 3
+greu	haver 4|no 3
+forma	estranya 4|de 3
+fora	de 4|del 3
+feliç	amb 3|dia 2|aniversari 2
+entenc	el 5|la 2
+dormir	al 3|una 2|a 2
+diferència	entre 7
+crear	la 3|una 2|i 2
+cos	no 3|és 2|i 2
+conèixer	el 3|millor 2|la 2
+convertir	en 5|la 2
+consisteix	en 4|a 3
+conec	la 3|un 2|bé 2
+color	de 4|és 3
+claus	del 7
+capaç	de 7
+calor	que 3|i 2|a 2
+açò	és 5|no 2
+aniré	a 3|en 2|amb 2
+anirem	a 3|amb 2|al 2
+adonat	que 5|de 2
+acaba	de 7
+vosaltres	sou 4|no 2
+vos	els 2|de 2|a 2
+vet	aquí 6
+units	és 2|mai 2|i 2
+troba	en 2|bé 2|al 2
+treballar	dur 2|com 2|al 2
+tornat	a 4|boig 2
+surt	de 3|a 3
+sols	vull 3|un 3
+situació	és 4|de 2
+sis	mesos 4|en 2
+set	mesos 2|de 2|caràcters 2
+senyor	smith 4|brown 2
+semblava	que 4|massa 2
+recordo	la 2|el 2|com 2
+qual	és 4|va 2
+potser	que 3|el 3
+portava	una 4|un 2
+portar	una 2|ulleres 2|el 2
+pogut	veure 2|morir 2|fer 2
+podeu	venir 2|fer 2|ajudar 2
+poden	veure 2|utilitzar 2|dir 2
+número	de 4|per 2
+nou	professor 2|llibre 2|assistent 2
+normalment	vaig 2|em 2|a 2
+mirar	la 2|els 2|al 2
+millorar	la 4|el 2
+marxar	de 4|amb 2
+malgrat	que 4|tot 2
+mala	sort 4|notícia 2
+llarg	temps 2|i 2|del 2
+idioma	és 2|que 2|al 2
+gust	de 4|dolç 2
+foto	era 4|més 2
+fort	que 2|i 2|com 2
+fan	volar 2|una 2|setze 2
+escriu	el 4|en 2
+escrit	en 4|tres 2
+eixe	text 4|llibre 2
+diumenge	és 2|de 2|a 2
+cura	del 4|de 2
+coneix	la 2|els 2|el 2
+ciutat	és 2|de 2|ara 2
+cel	és 2|són 2|i 2
+carta	de 4|als 2
+bellesa	de 4|dels 2
+bec	i 2|el 2|aigua 2
+banda	de 4|del 2
+aviat	tinguem 2|es 2|com 2
+aquella	pregunta 2|llengua 2|frase 2
+vivia	a 3|en 2
+ves	a 3|amb 2
+vermella	i 3|és 2
+veniu	a 3|i 2
+vacances	a 5
+torna	a 3|aquí 2
+sigues	amable 3|sempre 2
+seguir	el 3|les 2
+sabates	són 5
+rus	a 3|que 2
+quart	de 3|pis 2
+professor	de 3|va 2
+problemes	per 3|de 2
+pregunto	si 3|quantes 2
+prefereixo	la 3|que 2
+parar	de 3|a 2
+oi	que 5
+odia	les 3|en 2
+obrir	la 5
+minuts	tard 3|després 2
+milers	de 5
+metge	i 3|de 2
+mena	de 5
+matí	hem 3|a 2
+lluny	de 5
+hagut	de 3|cap 2
+got	de 3|està 2
+gens	de 3|bé 2
+gegant	de 3|del 2
+gairebé	sempre 3|tres 2
+filla	dormen 3|és 2
+fi	de 3|he 2
+farem	tard 3|ara 2
+fans	per 5
+faldilles	llargues 3|curtes 2
+faig	el 3|servir 2
+este	lloc 3|riu 2
+esperar	més 3|fins 2
+enviar	una 3|les 2
+eixa	és 3|guitarra 2
+drets	humans 3|no 2
+diferents	llengües 3|en 2
+deia	que 3|la 2
+content	de 3|que 2
+contacte	amb 5
+conegut	mai 3|la 2
+comprat	una 3|un 2
+clar	que 3|i 2
+cent	anys 3|frases 2
+cara	de 3|que 2
+boston	abans 3|amb 2
+bonic	de 3|que 2
+bisexual	i 3|o 2
+beure	alcohol 3|molta 2
+acostumat	a 5
+útil	que 2|per 2
+xicota	no 2|a 2
+xarxes	socials 4
+vés	a 4
+vuit	i 2|del 2
+volem	donar 4
+vista	ja 2|de 2
+vint	dòlars 2|anys 2
+vinc	de 2|aquí 2
+veu	és 2|sense 2
+vens	amb 2|a 2
+vagi	bé 2|a 2
+ulleres	per 2|estan 2
+turc	és 4
+trenta	anys 4
+tren	està 2|en 2
+tractar	com 4
+tindré	una 2|un 2
+telèfon	no 2|mòbil 2
+tancar	la 4
+ta	mare 4
+sí	que 4
+suportar	més 2|el 2
+somni	que 2|de 2
+setze	trenta 2|anys 2
+serveix	per 2|de 2
+semblat	la 2|el 2
+segle	xxi 2|xix 2
+sabeu	que 2|pas 2
+sa	mare 4
+riure	quan 2|de 2
+riu	fa 2|amb 2
+resposta	correcta 2|a 2
+recordar	el 4
+realment	un 2|la 2
+prémer	el 4
+provoca	mal 2|enveja 2
+prometre	que 2|a 2
+pressa	per 4
+president	va 2|dels 2
+policia	va 2|dirigia 2
+població	urbana 2|del 2
+pluja	àcida 2|ens 2
+ple	de 4
+platja	avui 2|amb 2
+pitjor	del 4
+pis	i 2|està 2
+peu	i 2|a 2
+petit	que 2|i 2
+pensant	en 4
+passa	per 2|i 2
+pas	on 2|el 2
+partit	de 4
+parlo	suec 2|en 2
+parles	francès 2|el 2
+paraules	per 2|noves 2
+paraigües	per 2|al 2
+opinió	és 2|sobre 2
+nàixer	el 2|a 2
+nostres	veïns 2|amics 2
+ne	un 2|més 2
+mà	esquerra 2|abans 2
+munt	de 4
+moment	és 2|jo 2
+miro	la 4
+matar	el 2|dos 2
+manca	de 4
+major	que 2|part 2
+lícula	va 2|preferida 2
+llogar	un 4
+llit	on 2|amb 2
+llet	em 2|a 2
+llegit	el 2|aquest 2
+llatí	i 2|de 2
+ligent	i 2|com 2
+lavabo	que 2|públic 2
+imaginar	que 2|la 2
+igual	que 2|a 2
+humà	és 4
+hauràs	de 4
+haurien	de 4
+hagués	sigut 2|estat 2
+gaire	bon 2|bo 2
+frança	és 2|en 2
+flors	que 2|es 2
+festa	de 4
+fent	veure 4
+feina	en 2|a 2
+explicar	el 4
+estem	molt 2|amb 2
+espera	que 2|el 2
+eren	tots 2|els 2
+equip	va 2|de 2
+enviat	una 2|un 2
+dorm	la 2|com 2
+dolent	per 2|dels 2
+dius	que 2|de 2
+dins	les 2|de 2
+digui	el 4
+depèn	del 2|de 2
+davant	la 2|de 2
+córrer	en 2|cap 2
+culpa	teva 2|meva 2
+creure	que 4
+convertit	en 4
+conduir	un 4
+comparació	amb 4
+cobert	de 4
+circ	menut 2|com 2
+catalunya	és 2|hi 2
+cas	del 2|de 2
+car	que 2|per 2
+canviar	la 2|el 2
+buscant	una 2|el 2
+botiga	ven 2|tanca 2
+beu	un 2|cafè 2
+bandera	és 2|de 2
+assegurar	que 4
+arreu	del 4
+aquells	que 4
+any	té 2|nou 2
+anglès	tan 2|a 2
+amèrica	algun 2|a 2
+amiga	no 2|meva 2
+alumnes	han 4
+allà	on 4
+ajuda	a 4
+accés	al 2|a 2
+ésser	humà 3
+àvia	està 3
+vuitanta	anys 3
+votat	en 3
+vingut	a 3
+vers	les 3
+vell	amic 3
+veient	el 3
+veiem	per 3
+trobo	a 3
+tractament	mèdic 3
+tortugues	són 3
+text	va 3
+tassa	de 3
+suposa	que 3
+sucre	i 3
+sortit	de 3
+soroll	per 3
+signe	de 3
+seues	ales 3
+senyal	de 3
+secret	de 3
+sabies	que 3
+robar	la 3
+respecta	com 3
+rellotge	no 3
+religió	és 3
+relació	amb 3
+regla	em 3
+recorde	on 3
+rebre	un 3
+quaranta	anys 3
+publicació	del 3
+pròxima	vegada 3
+professora	de 3
+preocupis	per 3
+pren	una 3
+posta	de 3
+plou	a 3
+peti	qui 3
+pescar	en 3
+pensa	que 3
+pau	és 3
+passaport	és 3
+parell	de 3
+olor	preferida 3
+oblidat	el 3
+nóvia	a 3
+notar	que 3
+new	york 3
+necessitem	més 3
+naturalesa	humana 3
+màquina	és 3
+mirant	la 3
+milió	de 3
+milions	de 3
+menjaré	la 3
+marit	i 3
+lluitar	contra 3
+llevo	a 3
+jugant	a 3
+inventar	la 3
+interessat	en 3
+homes	són 3
+hom	no 3
+hola	a 3
+haurà	de 3
+golf	és 3
+farà	bon 3
+faria	si 3
+experimentat	racisme 3
+estudiar	literatura 3
+estrany	que 3
+estacions	de 3
+esperem	que 3
+escrigui	el 3
+enmig	de 3
+dubto	que 3
+dormen	com 3
+dificultats	per 3
+descomptat	que 3
+darrera	vegada 3
+creuen	que 3
+confia	en 3
+confessar	que 3
+coneixia	el 3
+coneixes	el 3
+començo	a 3
+ceba	de 3
+català	i 3
+casat	amb 3
+casar	amb 3
+buit	a 3
+brasil	és 3
+base	de 3
+balls	de 3
+baixes	temperatures 3
+atac	de 3
+aparcar	el 3
+aneu	amb 3
+anava	a 3
+ales	estan 3
+agraït	per 3
+afirma	que 3
+adora	la 3
+adonar	que 3
+acostuma	a 3
+aconsellar	que 3
+acabo	de 3

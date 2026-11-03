@@ -28,28 +28,6 @@ struct SaveToClipboardHistoryIntent: AppIntent {
     }
 }
 
-/// Copia al portapapeles del sistema el último texto del historial.
-struct CopyLatestClipIntent: AppIntent {
-    static var title: LocalizedStringResource { "Copiar lo último de Super Teclado" }
-
-    static var description: IntentDescription {
-        IntentDescription("Copia el texto más reciente del historial de Super Teclado para pegarlo en cualquier app.")
-    }
-
-    static var openAppWhenRun: Bool { false }
-
-    @MainActor
-    func perform() async throws -> some IntentResult & ReturnsValue<String> & ProvidesDialog {
-        let recent = SharedClipboardStore.loadTemporaryInbox().first { !$0.isImage }
-        let saved = SharedClipboardStore.load().first { !$0.isImage }
-        guard let text = recent?.text ?? saved?.text else {
-            return .result(value: "", dialog: "El historial está vacío.")
-        }
-        UIPasteboard.general.string = text
-        return .result(value: text, dialog: "Copiado.")
-    }
-}
-
 struct SuperTecladoShortcuts: AppShortcutsProvider {
     static var appShortcuts: [AppShortcut] {
         AppShortcut(

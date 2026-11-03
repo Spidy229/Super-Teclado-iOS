@@ -176,12 +176,29 @@ struct SettingsView: View {
                     Text("Añade Super Teclado en Teclados y activa Acceso total. Lo que copies aparecerá en Recientes del portapapeles del teclado; mantén pulsado un elemento para fijarlo.")
                 }
 
+                Section {
+                    NavigationLink {
+                        BackupView()
+                    } label: {
+                        Label("Copia de seguridad", systemImage: "externaldrive.badge.icloud")
+                    }
+                    NavigationLink {
+                        DiagnosticsView()
+                    } label: {
+                        Label("Diagnóstico del teclado", systemImage: "stethoscope")
+                    }
+                } header: {
+                    Text("Mantenimiento")
+                } footer: {
+                    Text("Haz una copia antes de reinstalar la app con otro certificado: al cambiarlo se pueden perder los datos.")
+                }
+
                 Section("Acerca de") {
                     LabeledContent("Versión", value: appVersion)
                     Text("Los datos se guardan únicamente en el dispositivo.")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
-                    Text("Diccionarios basados en FrequencyWords de Hermit Dave (OpenSubtitles, CC BY-SA 4.0). Nombres de emojis de Unicode CLDR (© Unicode, Inc., licencia Unicode V3).")
+                    Text("Diccionarios basados en FrequencyWords de Hermit Dave (OpenSubtitles, CC BY-SA 4.0). Predicción con frases de Tatoeba (CC BY 2.0 FR). Nombres de emojis de Unicode CLDR (© Unicode, Inc., licencia Unicode V3).")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                 }
@@ -224,7 +241,7 @@ struct SettingsView: View {
     }
 
     private var appVersion: String {
-        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "2.5"
+        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "2.6"
     }
 
     private func addFolder() {

@@ -1,3 +1,4 @@
+import os
 import SwiftUI
 import UIKit
 
@@ -35,6 +36,8 @@ final class KeyboardViewController: UIInputViewController {
         if hasFullAccess {
             // La app lo usa para mostrar que el teclado está activado y con acceso total.
             SharedClipboardStore.sharedDefaults?.set(Date().timeIntervalSince1970, forKey: KeyboardPreferenceKey.lastActive)
+            KeyboardDiagnostics.recordSessionStart()
+            Self.recordAvailableMemory()
         }
         engine.loadPreferences()
         engine.setTraitStyle(traitCollection.userInterfaceStyle)
@@ -51,6 +54,10 @@ final class KeyboardViewController: UIInputViewController {
         clipboardTimer?.invalidate()
         clipboardTimer = nil
         if engine.panel != .typing { engine.closePanel() }
+        if hasFullAccess {
+            Self.recordAvailableMemory()
+            KeyboardDiagnostics.recordSessionEnd()
+        }
     }
 
     override func viewWillLayoutSubviews() {
@@ -107,6 +114,13 @@ final class KeyboardViewController: UIInputViewController {
 
     @objc private func pollClipboard() {
         checkPasteboard()
+    }
+
+    /// Memoria que le queda al teclado antes de que iOS lo cierre.
+    static func recordAvailableMemory() {
+        let available = os_proc_available_memory()
+        guard available > 0 else { return }
+        KeyboardDiagnostics.recordMemory(availableMB: Double(available) / 1_048_576)
     }
 
     // MARK: Diseño

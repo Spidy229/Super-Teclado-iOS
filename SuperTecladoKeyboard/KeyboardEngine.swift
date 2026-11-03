@@ -63,7 +63,9 @@ final class KeyboardEngine: ObservableObject {
     private var undoDeletion: (saved: [SharedClipboardClip], temporary: [SharedTemporaryClip])?
     private var undoTask: Task<Void, Never>?
     private var glidePoints: [CGPoint] = []
-    private var glideGridSize: CGSize = .zero
+    private var glideTarget: GlideTarget?
+    private var lastGlidePreview = Date.distantPast
+    private var glidePreviewTask: Task<Void, Never>?
     /// Última palabra escrita deslizando y sus alternativas, para cambiarla desde la barra.
     private var lastGlide: (word: String, alternatives: [String])?
     /// Espacio añadido automáticamente tras elegir una sugerencia (se quita ante un signo).
@@ -188,13 +190,27 @@ final class KeyboardEngine: ObservableObject {
         loadedLanguages = languages
         suggestionEngine.setLanguage(primary.spellCheckerLanguage)
         let secondaryURL = secondary.flatMap { Bundle.main.url(forResource: $0.dictionaryResource, withExtension: "txt") }
+        let bigramsURL = Bundle.main.url(forResource: "bigrams-\(primary.rawValue)", withExtension: "txt")
+        let started = Date()
         Task { [weak self] in
-            let dictionary = await Task.detached(priority: .userInitiated) {
-                WordDictionary.load(from: url, secondary: secondaryURL, secondaryWeight: 0.6)
+            let loaded = await Task.detached(priority: .userInitiated) {
+                (
+                    dictionary: WordDictionary.load(from: url, secondary: secondaryURL, secondaryWeight: 0.6),
+                    bigrams: bigramsURL.flatMap(BigramModel.load(from:))
+                )
             }.value
-            guard let self, let dictionary, self.loadedLanguages == languages else { return }
+            guard let self, let dictionary = loaded.dictionary, self.loadedLanguages == languages else { return }
             self.suggestionEngine.setDictionary(dictionary)
+            self.suggestionEngine.setBigramModel(loaded.bigrams)
             self.refreshSuggestions()
+            if self.hasFullAccess {
+                KeyboardDiagnostics.recordDictionary(
+                    milliseconds: Int(Date().timeIntervalSince(started) * 1000),
+                    wordCount: dictionary.words.count,
+                    languages: languages
+                )
+                KeyboardViewController.recordAvailableMemory()
+            }
         }
     }
 
@@ -273,9 +289,15 @@ final class KeyboardEngine: ObservableObject {
 
     private func predictions() -> [SuggestionItem?] {
         guard preferences.nextWordPrediction,
-              let context = proxy?.documentContextBeforeInput, context.hasSuffix(" "),
-              let previous = KeyboardTextLogic.previousWord(before: context) else { return [] }
-        return suggestionEngine.predictions(after: previous)
+              let context = proxy?.documentContextBeforeInput, context.hasSuffix(" ") else { return [] }
+        let capitalized = shift != .off
+        if let previous = KeyboardTextLogic.previousWord(before: context) {
+            return suggestionEngine.predictions(after: previous, capitalized: capitalized)
+        }
+        // Tras un punto: palabras con las que suele empezar una frase.
+        guard !context.trimmingCharacters(in: .whitespaces).isEmpty,
+              KeyboardTextLogic.isSentenceStart(context) else { return [] }
+        return suggestionEngine.predictions(after: nil, capitalized: true)
     }
 
     /// Aprende la palabra y el par «palabra anterior → palabra» para predecir.
@@ -485,10 +507,12 @@ final class KeyboardEngine: ObservableObject {
             && !isWebField && !isEmailField && suggestionEngine.dictionary != nil
     }
 
-    func beginGlide(at point: CGPoint, gridSize: CGSize) {
+    func beginGlide(at point: CGPoint, target: GlideTarget) {
         glidePoints = [point]
-        glideGridSize = gridSize
+        glideTarget = target
+        lastGlidePreview = .distantPast
         isGliding = true
+        glideTrail.preview = nil
         if preferences.glideTrail { glideTrail.begin(at: point) }
     }
 
@@ -496,6 +520,26 @@ final class KeyboardEngine: ObservableObject {
         guard isGliding, let last = glidePoints.last, GlideDecoder.distance(last, point) >= 2 else { return }
         glidePoints.append(point)
         if preferences.glideTrail { glideTrail.add(point) }
+        updateGlidePreview()
+    }
+
+    /// Muestra en la barra la palabra que se va reconociendo mientras se desliza, como Gboard.
+    private func updateGlidePreview() {
+        guard glidePreviewTask == nil, glidePoints.count >= 6,
+              Date().timeIntervalSince(lastGlidePreview) > 0.12,
+              let target = glideTarget, let dictionary = suggestionEngine.dictionary else { return }
+        lastGlidePreview = Date()
+        let path = glidePoints
+        let decoder = GlideDecoder(keyCenters: target.centers, keyWidth: target.keyWidth)
+        glidePreviewTask = Task { [weak self] in
+            let best = await Task.detached(priority: .userInitiated) {
+                decoder.decode(path: path, dictionary: dictionary, limit: 1).first
+            }.value
+            guard let self else { return }
+            self.glidePreviewTask = nil
+            guard self.isGliding else { return }
+            self.glideTrail.preview = best.map { self.applyShift($0) }
+        }
     }
 
     /// Devuelve `false` si el trazo fue tan corto que debe tratarse como una pulsación normal.
@@ -503,18 +547,17 @@ final class KeyboardEngine: ObservableObject {
     func endGlide() -> Bool {
         guard isGliding else { return true }
         isGliding = false
+        glidePreviewTask?.cancel()
+        glidePreviewTask = nil
+        glideTrail.preview = nil
         glideTrail.finish()
         let path = glidePoints
         glidePoints = []
-        let geometry = KeyGridGeometry(
-            size: glideGridSize,
-            showsNumberRow: preferences.numberRow,
-            rowCount: preferences.numberRow ? 5 : 4
-        )
-        guard GlideDecoder.length(of: path) >= Double(geometry.unit) * 0.9 else { return false }
+        guard let target = glideTarget else { return false }
+        guard GlideDecoder.length(of: path) >= Double(target.keyWidth) * 0.9 else { return false }
         guard let proxy, let dictionary = suggestionEngine.dictionary else { return true }
 
-        let decoder = GlideDecoder(keyCenters: geometry.letterCenters(layout: letterLayout), keyWidth: geometry.unit)
+        let decoder = GlideDecoder(keyCenters: target.centers, keyWidth: target.keyWidth)
         let candidates = decoder.decode(
             path: path,
             dictionary: dictionary,

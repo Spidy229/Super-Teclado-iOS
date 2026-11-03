@@ -2,15 +2,16 @@
 
 Teclado para iPhone y iPad inspirado en Gboard, con portapapeles completo.
 
-## Versión 2.5
+## Versión 2.6
 
 ### Teclado
 
 - QWERTY español (con **ñ**) con **temas** al estilo Gboard: automático, claro, oscuro, negro, **cristal translúcido**, océano, bosque, atardecer, rosa, lavanda, **degradados** (aurora, amanecer, menta, noche), **personalizado con tus colores** (fondo liso o degradado, teclas, letras y acento) o **una foto propia** de fondo; con o sin bordes de tecla. El tema se cambia desde la **paleta de la barra del teclado** o desde la app.
-- **Escritura deslizando** (*glide typing*): desliza de letra en letra sin levantar el dedo, con estela, alternativas en la barra y borrado de la palabra entera con un toque.
+- **Escritura deslizando** (*glide typing*): desliza de letra en letra sin levantar el dedo, con estela, **la palabra en la barra mientras deslizas**, alternativas al terminar y borrado de la palabra entera con un toque.
 - **Idiomas**: español, catalán, portugués, inglés, francés, italiano y alemán, con un segundo idioma opcional a la vez, y **distribuciones** QWERTY española (ñ), QWERTY con ç, QWERTY, AZERTY y QWERTZ. Diccionarios de 30 000-40 000 palabras ordenadas por frecuencia para completar, corregir y reconocer trazos.
 - Barra de sugerencias con tres propuestas, **autocorrección** de erratas y tildes («qeu» → «que», «tambien» → «también») al pulsar espacio o puntuación, y deshacer la corrección pulsando borrar justo después.
-- **Predicción de la siguiente palabra** aprendida de lo que escribes y **sugerencias de emojis** («jaja» → 😂).
+- **Predicción de la siguiente palabra desde el primer día**, con una base de pares de palabras de frases reales (Tatoeba) en cada idioma que se combina con lo que aprende de ti, y **sugerencias de emojis** («jaja» → 😂).
+- Al escribir «hoy» o «ahora», la barra ofrece la fecha o la hora; los atajos admiten `{fecha}`, `{fecha_larga}`, `{hora}` y `{dia}`.
 - Al elegir una sugerencia y escribir un signo, el espacio se recoloca («hola, » en vez de «hola ,»).
 - Aprende las palabras que escribes, usa las sustituciones de texto y los contactos de iOS, y permite atajos propios desde el **diccionario personal** de la app.
 - Mayúsculas automáticas (también tras «¿» y «¡»), doble toque en mayúsculas para bloquearlas y punto con doble espacio.
@@ -24,6 +25,7 @@ Teclado para iPhone y iPad inspirado en Gboard, con portapapeles completo.
 - **Fila de favoritos** opcional encima de las teclas con tus emojis y símbolos.
 - **Vibración ajustable**: tipo (suave, ligera, media, seca o fuerte) e intensidad, con botón para probarla.
 - La tecla de intro cambia de icono según el campo (buscar, enviar, siguiente…).
+- En **iPad**, distribución ancha con borrar e intro a la derecha, «,» «.» y dos teclas de mayúsculas.
 
 ### Portapapeles
 
@@ -43,6 +45,9 @@ Teclado para iPhone y iPad inspirado en Gboard, con portapapeles completo.
 ### App
 
 - Historial con búsqueda (incluido el texto reconocido en imágenes), carpetas, etiquetas y colores.
+- **Widget** de pantalla de inicio con tus fijados (toca para copiar) y botón del **Centro de control** para copiar lo último.
+- **Copia de seguridad**: exporta e importa historial, imágenes, carpetas, diccionario personal y ajustes en un archivo, para no perder nada al reinstalar con otro certificado.
+- **Diagnóstico del teclado**: memoria disponible, carga del diccionario y cierres inesperados, con un informe para copiar.
 - **Guía de bienvenida** paso a paso para activar el teclado, que detecta cuándo ya funciona.
 - La app muestra si el teclado está **activado con acceso total**.
 - **Ajustes › Ajustes del teclado** reúne las preferencias del teclado, una guía para activarlo, un campo para probarlo y el **diccionario personal** (palabras aprendidas y atajos).
@@ -55,8 +60,8 @@ iOS no permite a los teclados de terceros usar el micrófono, insertar imágenes
 
 GitHub Actions genera `Super-Teclado-unsigned.ipa` en un runner macOS. La IPA no contiene una firma de Apple y debe firmarse después con KravaSign, Feather o una herramienta equivalente usando el certificado y el perfil asociados al UDID del dispositivo.
 
-El código de la aplicación está en `SuperTecladoApp/`, el teclado en `SuperTecladoKeyboard/`, la extensión de Compartir en `SuperTecladoShare/` y el código común (almacenamiento compartido, preferencias y reglas de texto) en `Shared/`. `project.yml` genera el proyecto Xcode reproducible mediante XcodeGen.
+El código de la aplicación está en `SuperTecladoApp/`, el teclado en `SuperTecladoKeyboard/`, la extensión de Compartir en `SuperTecladoShare/`, el widget en `SuperTecladoWidget/`, las acciones de Atajos compartidas en `SharedIntents/` y el código común (almacenamiento compartido, preferencias y reglas de texto) en `Shared/`. `project.yml` genera el proyecto Xcode reproducible mediante XcodeGen.
 
-La automatización compila primero las pruebas unitarias para el simulador y solo genera la IPA si lo consigue. En Windows puede ejecutarse `powershell -File scripts/validate-project.ps1` para comprobar estructura, metadatos y reglas esenciales antes de enviar los cambios a GitHub.
+La automatización compila y **ejecuta las pruebas unitarias** en un simulador de iPhone y solo genera la IPA si pasan. En Windows puede ejecutarse `powershell -File scripts/validate-project.ps1` para comprobar estructura, metadatos y reglas esenciales antes de enviar los cambios a GitHub.
 
-Los diccionarios proceden de FrequencyWords (CC BY-SA 4.0) y los nombres de emojis de Unicode CLDR (licencia Unicode); consulta `THIRD_PARTY_NOTICES.md`.
+Los diccionarios proceden de FrequencyWords (CC BY-SA 4.0), los pares de palabras para predecir de Tatoeba (CC BY 2.0 FR) y los nombres de emojis de Unicode CLDR (licencia Unicode); consulta `THIRD_PARTY_NOTICES.md`.

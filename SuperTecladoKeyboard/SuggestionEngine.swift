@@ -35,6 +35,7 @@ final class SuggestionEngine {
     /// Distribución activa, para saber qué teclas están al lado al corregir erratas.
     var layout: LetterLayout = .spanish
     private(set) var dictionary: WordDictionary?
+    private var bigramModel: BigramModel?
     private var lexiconShortcuts: [String: String] = [:]
     private var lexiconWords: Set<String> = []
     private var personalShortcuts: [String: String] = [:]
@@ -114,7 +115,7 @@ final class SuggestionEngine {
         }
 
         var correction: String?
-        if let shortcut = personalShortcuts[lower] ?? lexiconShortcuts[lower] {
+        if let shortcut = (personalShortcuts[lower] ?? lexiconShortcuts[lower]).map({ ShortcutVariables.expand($0) }) {
             correction = shortcut
             seen.insert(shortcut.lowercased())
         } else if !isKnown, !rejected.contains(lower), let best = bestCorrection(for: word, range: range) {
@@ -149,22 +150,39 @@ final class SuggestionEngine {
             slots = [typed, others.first.map(completion), others.dropFirst().first.map(completion)]
         }
 
-        if includeEmoji, let emoji = EmojiKeywords.emoji(for: correction ?? word) {
+        if let dateText = Self.dateSuggestion(for: lower) {
+            slots[2] = SuggestionItem(text: dateText, kind: .completion)
+        } else if includeEmoji, let emoji = EmojiKeywords.emoji(for: correction ?? word) {
             slots[2] = SuggestionItem(text: emoji, kind: .emoji)
         }
         return SuggestionResult(slots: slots, autocorrection: correction)
     }
 
     /// Siguiente palabra a partir de lo que el usuario suele escribir después de `previous`.
-    func predictions(after previous: String) -> [SuggestionItem?] {
-        guard let followers = bigrams[previous.lowercased()] else { return [] }
-        let ranked = followers
-            .filter { $0.value >= 2 }
-            .sorted { $0.value == $1.value ? $0.key < $1.key : $0.value > $1.value }
-            .prefix(3)
-            .map { SuggestionItem(text: $0.key, kind: .prediction) }
+    /// Siguiente palabra: base de frases reales combinada con lo que escribe el usuario.
+    /// Sin palabra anterior (inicio de frase) propone las palabras con que suelen empezar.
+    func predictions(after previous: String?, capitalized: Bool) -> [SuggestionItem?] {
+        let base = previous.map { bigramModel?.followers(of: $0) ?? [] } ?? (bigramModel?.sentenceStarters ?? [])
+        let learnedFollowers = previous.flatMap { bigrams[$0.lowercased()] } ?? [:]
+        let ranked = BigramModel.rank(base: base, learned: learnedFollowers).map { word in
+            SuggestionItem(text: capitalized ? word.prefix(1).uppercased() + word.dropFirst() : word, kind: .prediction)
+        }
         guard !ranked.isEmpty else { return [] }
         return [ranked.dropFirst().first, ranked.first, ranked.dropFirst(2).first]
+    }
+
+    private static let todayWords: Set<String> = ["hoy", "fecha", "avui", "hoje", "today", "date", "oggi", "heute"]
+    private static let nowWords: Set<String> = ["ahora", "hora", "ara", "agora", "now", "time", "adesso", "jetzt"]
+
+    /// Al escribir «hoy» o «ahora», la barra ofrece la fecha o la hora actuales.
+    private static func dateSuggestion(for word: String) -> String? {
+        if todayWords.contains(word) { return ShortcutVariables.expand("{fecha}") }
+        if nowWords.contains(word) { return ShortcutVariables.expand("{hora}") }
+        return nil
+    }
+
+    func setBigramModel(_ model: BigramModel?) {
+        bigramModel = model
     }
 
     private func bestCorrection(for word: String, range: NSRange) -> String? {

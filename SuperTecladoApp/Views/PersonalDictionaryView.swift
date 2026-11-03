@@ -35,7 +35,7 @@ struct PersonalDictionaryView: View {
             } header: {
                 Text("Atajos")
             } footer: {
-                Text("Al escribir un atajo, el texto completo aparece en el centro de la barra y se inserta al pulsar espacio.")
+                Text("Al escribir un atajo, el texto completo aparece en el centro de la barra y se inserta al pulsar espacio. Puedes usar {fecha}, {fecha_larga}, {hora} y {dia} para insertar la fecha o la hora del momento.")
             }
 
             Section {

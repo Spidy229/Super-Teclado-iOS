@@ -18,7 +18,9 @@ struct SuggestionStripView: View {
                 }
             }
 
-            if engine.showsToolbar || !hasContent {
+            if engine.isGliding {
+                GlidePreviewView(trail: engine.glideTrail)
+            } else if engine.showsToolbar || !hasContent {
                 toolbarIcons(compact: false)
             } else if let quickPaste {
                 // Lo recién copiado tiene prioridad sobre la predicción de la siguiente palabra.
@@ -129,5 +131,20 @@ struct SuggestionStripView: View {
                 StripButton(symbol: "keyboard.chevron.compact.down", label: "Ocultar teclado") { engine.dismissKeyboard() }
             }
         }
+    }
+}
+
+/// Palabra que se va reconociendo mientras se desliza el dedo.
+private struct GlidePreviewView: View {
+    @ObservedObject var trail: GlideTrail
+    @Environment(\.keyboardPalette) private var palette
+
+    var body: some View {
+        Text(trail.preview ?? "")
+            .font(.system(size: 19, weight: .semibold))
+            .foregroundStyle(palette.accent)
+            .lineLimit(1)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .animation(.easeOut(duration: 0.1), value: trail.preview)
     }
 }

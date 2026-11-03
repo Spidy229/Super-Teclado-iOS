@@ -98,7 +98,7 @@ struct GlideDecoder {
         for first in startKeys {
             for last in endKeys {
                 for index in dictionary.glideCandidates(first: first, last: last) {
-                    evaluate(dictionary.words[index], count: dictionary.counts[index])
+                    evaluate(dictionary.word(at: index), count: dictionary.count(at: index))
                 }
             }
         }
