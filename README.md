@@ -2,7 +2,7 @@
 
 Teclado para iPhone y iPad inspirado en Gboard, con portapapeles completo.
 
-## Versión 2.2
+## Versión 2.3
 
 ### Teclado
 
@@ -25,13 +25,18 @@ Teclado para iPhone y iPad inspirado en Gboard, con portapapeles completo.
 
 ### Portapapeles
 
-- Captura automática de **texto e imágenes** copiados mientras el teclado está visible (requiere *Acceso total*).
-- Cuadrícula con secciones **Fijados** y **Recientes**, filtros (texto, enlaces, imágenes y carpetas) e interruptor para desactivarlo.
-- Toca para pegar; mantén pulsado para fijar, desfijar, copiar o eliminar; el lápiz permite seleccionar varios elementos.
+- Captura automática de **texto, enlaces e imágenes** mientras el teclado está visible, también cuando se copian **varios elementos a la vez** (requiere *Acceso total*).
+- Historial con **Fijados** y **Recientes agrupados por fecha** (hoy, ayer, esta semana…), filtros (texto, enlaces, imágenes, carpetas) e interruptor para desactivarlo.
+- **Buscador** del historial escribiendo con el propio teclado.
+- Toca para pegar; mantén pulsado para fijar, copiar, **ver el texto completo**, **pegar como** (MAYÚSCULAS, minúsculas, Tipo Título, en una línea, sin espacios de más), **mover a una carpeta** o eliminar.
+- Selección múltiple para **pegar o copiar varios juntos**, fijarlos o borrarlos, y **Deshacer** tras borrar.
+- **Privacidad**: lo que parece una tarjeta, un IBAN, una contraseña o un código se guarda oculto y se borra a los 2 minutos (o no se guarda, según el ajuste); lo que los gestores de contraseñas marcan como oculto nunca se guarda.
+- Enlaces con su dominio y colores `#RRGGBB` con muestra.
+- Recientes de hasta 500 elementos y opción **sin caducidad**.
+- **Con el teclado cerrado**: «Compartir › Super Teclado» en cualquier app, y acciones de **Atajos y Siri** («Guardar el portapapeles en Super Teclado», «Copiar lo último de Super Teclado») que se pueden lanzar con el toque posterior del iPhone. La app explica cómo en *Ajustes › Guardar con el teclado cerrado*.
 - Sugerencia de pegado rápido en la barra superior justo después de copiar algo.
 - Las imágenes se copian al portapapeles del sistema para pegarlas en la app, porque iOS no deja que un teclado inserte imágenes.
-- Volver a copiar algo lo sube al principio en lugar de duplicarlo. Los códigos de un solo uso se omiten por defecto.
-- Los cambios hechos en el teclado (fijar, borrar) se sincronizan con la app sin que los elementos borrados reaparezcan.
+- Volver a copiar algo lo sube al principio en lugar de duplicarlo. Los cambios hechos en el teclado se sincronizan con la app sin que los elementos borrados reaparezcan.
 
 ### App
 
@@ -40,13 +45,13 @@ Teclado para iPhone y iPad inspirado en Gboard, con portapapeles completo.
 
 ### Limitaciones de iOS
 
-iOS no permite a los teclados de terceros usar el micrófono, insertar imágenes directamente ni seleccionar texto, así que el dictado por voz, los GIF y «Seleccionar todo» de Gboard no están disponibles.
+iOS no permite a los teclados de terceros usar el micrófono, insertar imágenes directamente, seleccionar texto ni leer el portapapeles en segundo plano, así que el dictado por voz, los GIF, «Seleccionar todo» y la captura de lo copiado con el teclado cerrado (más allá de Compartir y Atajos) no están disponibles.
 
 ## Compilación
 
 GitHub Actions genera `Super-Teclado-unsigned.ipa` en un runner macOS. La IPA no contiene una firma de Apple y debe firmarse después con KravaSign, Feather o una herramienta equivalente usando el certificado y el perfil asociados al UDID del dispositivo.
 
-El código de la aplicación está en `SuperTecladoApp/`, la extensión en `SuperTecladoKeyboard/` y el código común (almacenamiento compartido, preferencias y reglas de texto) en `Shared/`. `project.yml` genera el proyecto Xcode reproducible mediante XcodeGen.
+El código de la aplicación está en `SuperTecladoApp/`, el teclado en `SuperTecladoKeyboard/`, la extensión de Compartir en `SuperTecladoShare/` y el código común (almacenamiento compartido, preferencias y reglas de texto) en `Shared/`. `project.yml` genera el proyecto Xcode reproducible mediante XcodeGen.
 
 La automatización compila primero las pruebas unitarias para el simulador y solo genera la IPA si lo consigue. En Windows puede ejecutarse `powershell -File scripts/validate-project.ps1` para comprobar estructura, metadatos y reglas esenciales antes de enviar los cambios a GitHub.
 

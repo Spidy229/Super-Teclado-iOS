@@ -70,7 +70,8 @@ final class KeyboardViewController: UIInputViewController {
 
     // MARK: Portapapeles
 
-    /// Captura lo copiado en otras apps. Solo lee el contenido cuando cambia `changeCount`.
+    /// Captura lo copiado en otras apps. Solo lee el contenido cuando cambia `changeCount`, así
+    /// iOS muestra el aviso de «pegado» una sola vez por copia.
     func checkPasteboard() {
         guard hasFullAccess else { return }
         let pasteboard = UIPasteboard.general
@@ -81,21 +82,9 @@ final class KeyboardViewController: UIInputViewController {
               !engine.isIncognito,
               SharedClipboardStore.automaticCaptureEnabled else { return }
 
-        var captured = false
-        if pasteboard.hasStrings, let text = pasteboard.string {
-            let value = text.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !value.isEmpty else { return }
-            if SharedClipboardStore.skipOneTimeCodes && KeyboardTextLogic.isLikelyOneTimeCode(value) { return }
-            captured = SharedClipboardStore.captureTemporaryText(value, pasteboardChangeCount: changeCount)
-        } else if pasteboard.hasImages,
-                  let data = ClipImageProcessing.pasteboardImageData(pasteboard),
-                  let jpeg = ClipImageProcessing.jpegThumbnail(from: data, maxPixelSize: 1_600) {
-            captured = SharedClipboardStore.captureTemporaryImage(
-                jpeg,
-                hash: ClipImageProcessing.hash(data),
-                pasteboardChangeCount: changeCount
-            )
-        }
+        // Textos, enlaces e imágenes, también cuando se copian varios a la vez. Lo que los
+        // gestores de contraseñas marcan como privado no se guarda.
+        let captured = ClipboardCapture.captureItems(from: pasteboard, changeCount: changeCount)
 
         engine.reloadClips()
         if captured { engine.offerQuickPaste() }

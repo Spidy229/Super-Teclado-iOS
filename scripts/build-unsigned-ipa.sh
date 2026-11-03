@@ -27,6 +27,13 @@ codesign --force --sign - \
   --entitlements SuperTecladoKeyboard/SuperTecladoKeyboard.entitlements \
   "$KEYBOARD_PATH"
 
+SHARE_PATH="$APP_PATH/PlugIns/SuperTecladoShare.appex"
+test -d "$SHARE_PATH"
+
+codesign --force --sign - \
+  --entitlements SuperTecladoShare/SuperTecladoShare.entitlements \
+  "$SHARE_PATH"
+
 codesign --force --sign - \
   --entitlements SuperTecladoApp/SuperTeclado.entitlements \
   "$APP_PATH"

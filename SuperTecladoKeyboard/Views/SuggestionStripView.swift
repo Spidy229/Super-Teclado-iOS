@@ -75,6 +75,9 @@ struct SuggestionStripView: View {
                         .frame(width: 26, height: 26)
                         .clipShape(RoundedRectangle(cornerRadius: 5))
                     Text("Imagen copiada")
+                } else if clip.isSensitive {
+                    Image(systemName: "lock.fill")
+                    Text("Pegar contenido privado")
                 } else {
                     Image(systemName: "doc.on.clipboard")
                     Text(clip.text.replacingOccurrences(of: "\n", with: " "))

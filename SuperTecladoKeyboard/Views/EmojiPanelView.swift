@@ -189,8 +189,8 @@ struct EmojiSearchBarView: View {
             HStack(spacing: 4) {
                 Image(systemName: "magnifyingglass")
                     .foregroundStyle(palette.secondaryText)
-                Text(engine.emojiSearchQuery.isEmpty ? "Buscar emojis" : engine.emojiSearchQuery)
-                    .foregroundStyle(engine.emojiSearchQuery.isEmpty ? palette.secondaryText : palette.text)
+                Text(engine.searchQuery.isEmpty ? "Buscar emojis" : engine.searchQuery)
+                    .foregroundStyle(engine.searchQuery.isEmpty ? palette.secondaryText : palette.text)
                     .lineLimit(1)
                     .truncationMode(.head)
                 RoundedRectangle(cornerRadius: 1)
@@ -204,7 +204,7 @@ struct EmojiSearchBarView: View {
             .background(palette.chip, in: Capsule())
 
             if engine.emojiSearchResults.isEmpty {
-                Text(engine.emojiSearchQuery.isEmpty ? "" : "Sin resultados")
+                Text(engine.searchQuery.isEmpty ? "" : "Sin resultados")
                     .font(.system(size: 13))
                     .foregroundStyle(palette.secondaryText)
                     .frame(maxWidth: .infinity)

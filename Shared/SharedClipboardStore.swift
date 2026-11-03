@@ -48,6 +48,8 @@ struct SharedClipboardClip: Codable, Identifiable, Hashable {
     var folderName: String? = nil
     var colorTagRawValue: String? = nil
     var imageFileName: String? = nil
+    /// Tarjetas, IBAN, contraseñas o códigos: se muestran ocultos.
+    var isSensitive: Bool? = nil
 
     var kindSymbol: String { SharedClipboardStore.symbol(forKind: kindRawValue) }
     var isImage: Bool { imageFileName != nil }
@@ -62,6 +64,7 @@ struct SharedTemporaryClip: Codable, Identifiable, Hashable {
     var pasteboardChangeCount: Int? = nil
     var imageFileName: String? = nil
     var imageHash: String? = nil
+    var isSensitive: Bool? = nil
 
     var isImage: Bool { imageFileName != nil }
 }
@@ -76,6 +79,9 @@ enum SharedClipboardStore {
     private static let savedFallbackKey = "super-teclado-saved-fallback"
     private static let temporaryFallbackKey = "super-teclado-temporary-fallback"
     private static let deletedIDsKey = "super-teclado-deleted-ids"
+    static let sensitiveModeKey = "clipboardSensitiveMode"
+    /// Imágenes que se conservan como máximo en Recientes, aparte del límite general.
+    static let maximumTemporaryImages = 100
 
     static var sharedDefaults: UserDefaults? { UserDefaults(suiteName: appGroupID) }
 
@@ -92,9 +98,14 @@ enum SharedClipboardStore {
         return sharedDefaults?.bool(forKey: "skipOneTimeCodes") ?? true
     }
 
+    /// Horas que se conservan los recientes; un valor negativo significa «sin caducidad».
     static var temporaryRetentionHours: Int {
         let value = sharedDefaults?.integer(forKey: "temporaryRetentionHours") ?? 0
-        return value > 0 ? value : 24
+        return value == 0 ? 24 : value
+    }
+
+    static var sensitiveMode: SensitiveClipMode {
+        sharedDefaults?.string(forKey: sensitiveModeKey).flatMap(SensitiveClipMode.init(rawValue:)) ?? .mask
     }
 
     static var maximumTemporaryItems: Int {
@@ -153,14 +164,45 @@ enum SharedClipboardStore {
     }
 
     /// Elimina elementos guardados y deja constancia para que la app no los restaure.
-    static func deleteSaved(ids: Set<UUID>) {
-        guard !ids.isEmpty else { return }
+    /// Con `removeImages: false` las imágenes se conservan para poder deshacer el borrado.
+    @discardableResult
+    static func deleteSaved(ids: Set<UUID>, removeImages: Bool = true) -> [SharedClipboardClip] {
+        guard !ids.isEmpty else { return [] }
         var clips = load()
         let removed = clips.filter { ids.contains($0.id) }
         clips.removeAll { ids.contains($0.id) }
         save(clips)
         recordDeletion(of: ids)
-        removed.compactMap(\.imageFileName).forEach(removeImage(fileName:))
+        if removeImages { removed.compactMap(\.imageFileName).forEach(removeImage(fileName:)) }
+        return removed
+    }
+
+    /// Deshace un borrado reciente.
+    static func restore(saved: [SharedClipboardClip], temporary: [SharedTemporaryClip]) {
+        let ids = Set(saved.map(\.id) + temporary.map(\.id))
+        guard !ids.isEmpty else { return }
+        forgetDeletion(of: ids)
+        if !saved.isEmpty {
+            var clips = load()
+            let existing = Set(clips.map(\.id))
+            clips += saved.filter { !existing.contains($0.id) }
+            save(clips)
+        }
+        if !temporary.isEmpty {
+            var clips = loadTemporaryInbox()
+            let existing = Set(clips.map(\.id))
+            clips += temporary.filter { !existing.contains($0.id) }
+            saveTemporaryInbox(clips.sorted { $0.capturedAt > $1.capturedAt })
+        }
+    }
+
+    /// Cambia la carpeta de un elemento guardado.
+    static func setFolder(_ folder: String?, forSavedID id: UUID) {
+        var clips = load()
+        guard let index = clips.firstIndex(where: { $0.id == id }) else { return }
+        clips[index].folderName = folder
+        clips[index].updatedAt = .now
+        save(clips)
     }
 
     /// Devuelve un elemento guardado a Recientes, como «Desfijar» en Gboard.
@@ -192,19 +234,26 @@ enum SharedClipboardStore {
 
     // MARK: Recientes (temporales)
 
+    /// Añade un texto a Recientes. `pasteboardChangeCount` evita guardar dos veces la misma
+    /// copia; es `nil` cuando el texto llega desde «Compartir» o desde Atajos.
     @discardableResult
     static func captureTemporaryText(
         _ text: String,
-        pasteboardChangeCount: Int,
-        maximumItems: Int? = nil
+        pasteboardChangeCount: Int?,
+        maximumItems: Int? = nil,
+        isSensitive: Bool = false
     ) -> Bool {
         let value = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !value.isEmpty else { return false }
 
         var clips = loadTemporaryInbox()
-        if clips.contains(where: { $0.pasteboardChangeCount == pasteboardChangeCount }) {
+        if let pasteboardChangeCount,
+           clips.contains(where: { $0.pasteboardChangeCount == pasteboardChangeCount }) {
             return false
         }
+        let expiration = isSensitive
+            ? Date.now.addingTimeInterval(ClipboardClassifier.sensitiveLifetime)
+            : temporaryExpiration()
         if load().contains(where: { !$0.isImage && $0.text == value }) {
             // Ya está fijado: no se duplica en Recientes.
             return false
@@ -213,8 +262,9 @@ enum SharedClipboardStore {
         if let index = clips.firstIndex(where: { !$0.isImage && $0.text == value }) {
             // Igual que Gboard: volver a copiar algo lo sube al principio.
             clips[index].capturedAt = .now
-            clips[index].expiresAt = temporaryExpiration()
+            clips[index].expiresAt = expiration
             clips[index].pasteboardChangeCount = pasteboardChangeCount
+            clips[index].isSensitive = isSensitive ? true : nil
         } else {
             clips.append(
                 SharedTemporaryClip(
@@ -222,8 +272,9 @@ enum SharedClipboardStore {
                     text: value,
                     capturedAt: .now,
                     kindRawValue: detectKind(value),
-                    expiresAt: temporaryExpiration(),
-                    pasteboardChangeCount: pasteboardChangeCount
+                    expiresAt: expiration,
+                    pasteboardChangeCount: pasteboardChangeCount,
+                    isSensitive: isSensitive ? true : nil
                 )
             )
         }
@@ -236,11 +287,12 @@ enum SharedClipboardStore {
     static func captureTemporaryImage(
         _ data: Data,
         hash: String,
-        pasteboardChangeCount: Int,
+        pasteboardChangeCount: Int?,
         maximumItems: Int? = nil
     ) -> Bool {
         var clips = loadTemporaryInbox()
-        if clips.contains(where: { $0.pasteboardChangeCount == pasteboardChangeCount }) {
+        if let pasteboardChangeCount,
+           clips.contains(where: { $0.pasteboardChangeCount == pasteboardChangeCount }) {
             return false
         }
 
@@ -292,14 +344,16 @@ enum SharedClipboardStore {
         saveTemporaryInbox(clips)
     }
 
-    static func deleteTemporary(ids: Set<UUID>) {
-        guard !ids.isEmpty else { return }
+    @discardableResult
+    static func deleteTemporary(ids: Set<UUID>, removeImages: Bool = true) -> [SharedTemporaryClip] {
+        guard !ids.isEmpty else { return [] }
         var clips = loadTemporaryInbox()
         let removed = clips.filter { ids.contains($0.id) }
         clips.removeAll { ids.contains($0.id) }
         saveTemporaryInbox(clips)
         recordDeletion(of: ids)
-        removed.compactMap(\.imageFileName).forEach(removeImage(fileName:))
+        if removeImages { removed.compactMap(\.imageFileName).forEach(removeImage(fileName:)) }
+        return removed
     }
 
     @discardableResult
@@ -342,6 +396,11 @@ enum SharedClipboardStore {
 
     static func pendingDeletedIDs() -> Set<UUID> {
         Set((sharedDefaults?.stringArray(forKey: deletedIDsKey) ?? []).compactMap(UUID.init(uuidString:)))
+    }
+
+    static func forgetDeletion(of ids: Set<UUID>) {
+        let remaining = pendingDeletedIDs().subtracting(ids)
+        sharedDefaults?.set(remaining.map(\.uuidString), forKey: deletedIDsKey)
     }
 
     static func consumeDeletedIDs() -> Set<UUID> {
@@ -458,13 +517,23 @@ enum SharedClipboardStore {
     }
 
     private static func temporaryExpiration() -> Date? {
-        Calendar.current.date(byAdding: .hour, value: temporaryRetentionHours, to: .now)
+        let hours = temporaryRetentionHours
+        guard hours > 0 else { return nil }
+        return Calendar.current.date(byAdding: .hour, value: hours, to: .now)
     }
 
     private static func saveTrimmedTemporaryInbox(_ clips: [SharedTemporaryClip], maximumItems: Int) {
-        let sorted = clips.sorted { $0.capturedAt > $1.capturedAt }
-        let kept = Array(sorted.prefix(max(1, maximumItems)))
-        let dropped = sorted.dropFirst(kept.count)
+        var imageCount = 0
+        var kept: [SharedTemporaryClip] = []
+        var dropped: [SharedTemporaryClip] = []
+        for clip in clips.sorted(by: { $0.capturedAt > $1.capturedAt }) {
+            if clip.isImage { imageCount += 1 }
+            if kept.count < max(1, maximumItems), !(clip.isImage && imageCount > maximumTemporaryImages) {
+                kept.append(clip)
+            } else {
+                dropped.append(clip)
+            }
+        }
         saveTemporaryInbox(kept)
         dropped.compactMap(\.imageFileName).forEach(removeImage(fileName:))
     }

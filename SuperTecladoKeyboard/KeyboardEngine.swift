@@ -38,9 +38,11 @@ final class KeyboardEngine: ObservableObject {
     @Published var isCursorMode = false
     @Published private(set) var isGliding = false
     @Published private(set) var backgroundImage: UIImage?
-    @Published private(set) var emojiSearchQuery = ""
+    @Published private(set) var searchQuery = ""
     @Published private(set) var emojiSearchResults: [String] = []
     @Published private(set) var emojiTones: [String: String] = [:]
+    @Published private(set) var clipSearchResults: [KeyboardClip] = []
+    @Published private(set) var toastActionTitle: String?
 
     let glideTrail = GlideTrail()
 
@@ -55,6 +57,10 @@ final class KeyboardEngine: ObservableObject {
     private var quickPasteDate = Date.distantPast
     private var traitStyle: UIUserInterfaceStyle = .unspecified
     private var toastTask: Task<Void, Never>?
+    private var toastAction: (() -> Void)?
+    /// Último borrado del portapapeles, para poder deshacerlo durante unos segundos.
+    private var undoDeletion: (saved: [SharedClipboardClip], temporary: [SharedTemporaryClip])?
+    private var undoTask: Task<Void, Never>?
     private var glidePoints: [CGPoint] = []
     private var glideGridSize: CGSize = .zero
     /// Última palabra escrita deslizando y sus alternativas, para cambiarla desde la barra.
@@ -86,6 +92,9 @@ final class KeyboardEngine: ObservableObject {
     var isWebField: Bool { keyboardType == .URL || keyboardType == .webSearch }
 
     var isEmailField: Bool { keyboardType == .emailAddress }
+
+    /// En las búsquedas, las teclas escriben en el buscador y no en el documento.
+    var isSearching: Bool { panel == .emojiSearch || panel == .clipboardSearch }
 
     /// Modo incógnito elegido por el usuario o campo sensible (contraseñas, códigos, tarjetas).
     var isIncognito: Bool {
@@ -216,7 +225,7 @@ final class KeyboardEngine: ObservableObject {
     }
 
     private func updateShiftState() {
-        if panel == .emojiSearch {
+        if isSearching {
             if shift != .off { shift = .off }
             return
         }
@@ -281,8 +290,8 @@ final class KeyboardEngine: ObservableObject {
     }
 
     func insertCharacter(_ value: String, caseSensitive: Bool) {
-        if panel == .emojiSearch {
-            setEmojiSearchQuery(emojiSearchQuery + value.lowercased())
+        if isSearching {
+            setSearchQuery(searchQuery + value.lowercased())
             return
         }
         guard let proxy else { return }
@@ -311,9 +320,9 @@ final class KeyboardEngine: ObservableObject {
     }
 
     func insertSpace() {
-        if panel == .emojiSearch {
-            if !emojiSearchQuery.isEmpty, !emojiSearchQuery.hasSuffix(" ") {
-                setEmojiSearchQuery(emojiSearchQuery + " ")
+        if isSearching {
+            if !searchQuery.isEmpty, !searchQuery.hasSuffix(" ") {
+                setSearchQuery(searchQuery + " ")
             }
             return
         }
@@ -337,6 +346,10 @@ final class KeyboardEngine: ObservableObject {
     func insertReturn() {
         if panel == .emojiSearch {
             if let first = emojiSearchResults.first { insertSearchedEmoji(first) }
+            return
+        }
+        if panel == .clipboardSearch {
+            if let first = clipSearchResults.first { useClip(first) }
             return
         }
         autoSpaceInserted = false
@@ -365,8 +378,8 @@ final class KeyboardEngine: ObservableObject {
     }
 
     func deleteBackward() {
-        if panel == .emojiSearch {
-            setEmojiSearchQuery(String(emojiSearchQuery.dropLast()))
+        if isSearching {
+            setSearchQuery(String(searchQuery.dropLast()))
             return
         }
         guard let proxy else { return }
@@ -394,9 +407,9 @@ final class KeyboardEngine: ObservableObject {
     }
 
     func deleteWordBackward() {
-        if panel == .emojiSearch {
-            let count = KeyboardTextLogic.wordDeletionLength(context: emojiSearchQuery)
-            setEmojiSearchQuery(String(emojiSearchQuery.dropLast(max(count, 1))))
+        if isSearching {
+            let count = KeyboardTextLogic.wordDeletionLength(context: searchQuery)
+            setSearchQuery(String(searchQuery.dropLast(max(count, 1))))
             return
         }
         guard let proxy else { return }
@@ -616,7 +629,7 @@ final class KeyboardEngine: ObservableObject {
 
     func openEmojiSearch() {
         loadEmojiIndexIfNeeded()
-        emojiSearchQuery = ""
+        searchQuery = ""
         updateEmojiSearchResults()
         page = .letters
         shift = .off
@@ -637,13 +650,17 @@ final class KeyboardEngine: ObservableObject {
         UserDefaults.standard.set(emojiTones, forKey: Self.emojiTonesKey)
     }
 
-    private func setEmojiSearchQuery(_ query: String) {
-        emojiSearchQuery = query
-        updateEmojiSearchResults()
+    private func setSearchQuery(_ query: String) {
+        searchQuery = query
+        if panel == .clipboardSearch {
+            updateClipSearchResults()
+        } else {
+            updateEmojiSearchResults()
+        }
     }
 
     private func updateEmojiSearchResults() {
-        let query = emojiSearchQuery.trimmingCharacters(in: .whitespaces)
+        let query = searchQuery.trimmingCharacters(in: .whitespaces)
         if query.isEmpty {
             var seen = Set<String>()
             emojiSearchResults = (recentEmojis + EmojiSkinTone.popular)
@@ -705,12 +722,12 @@ final class KeyboardEngine: ObservableObject {
         useClip(clip)
     }
 
-    func useClip(_ clip: KeyboardClip) {
+    func useClip(_ clip: KeyboardClip, transform: ClipboardClassifier.Transform? = nil) {
         if clip.isImage {
             copyClip(clip)
             return
         }
-        proxy?.insertText(clip.text)
+        proxy?.insertText(transform?.apply(to: clip.text) ?? clip.text)
         pendingAutocorrection = nil
         if hasFullAccess {
             switch clip.source {
@@ -754,11 +771,113 @@ final class KeyboardEngine: ObservableObject {
 
     func deleteClips(_ clips: [KeyboardClip]) {
         guard requireFullAccess(), !clips.isEmpty else { return }
-        SharedClipboardStore.deleteSaved(ids: Set(clips.filter(\.isSaved).map(\.id)))
-        SharedClipboardStore.deleteTemporary(ids: Set(clips.filter { !$0.isSaved }.map(\.id)))
+        finishPendingUndo()
+        // Las imágenes se borran del disco cuando ya no se puede deshacer.
+        let saved = SharedClipboardStore.deleteSaved(
+            ids: Set(clips.filter(\.isSaved).map(\.id)),
+            removeImages: false
+        )
+        let temporary = SharedClipboardStore.deleteTemporary(
+            ids: Set(clips.filter { !$0.isSaved }.map(\.id)),
+            removeImages: false
+        )
+        undoDeletion = (saved, temporary)
+        undoTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .seconds(6))
+            guard !Task.isCancelled else { return }
+            self?.finishPendingUndo()
+        }
         if let quickPaste, clips.contains(where: { $0.id == quickPaste.id }) { self.quickPaste = nil }
         reloadClips()
-        showToast(clips.count == 1 ? "Eliminado" : "\(clips.count) elementos eliminados")
+        if panel == .clipboardSearch { updateClipSearchResults() }
+        showToast(
+            clips.count == 1 ? "Eliminado" : "\(clips.count) elementos eliminados",
+            actionTitle: "Deshacer"
+        ) { [weak self] in
+            self?.undoLastDeletion()
+        }
+    }
+
+    private func undoLastDeletion() {
+        guard let deletion = undoDeletion else { return }
+        undoTask?.cancel()
+        undoDeletion = nil
+        SharedClipboardStore.restore(saved: deletion.saved, temporary: deletion.temporary)
+        reloadClips()
+        if panel == .clipboardSearch { updateClipSearchResults() }
+        showToast("Restaurado")
+    }
+
+    /// Borra del disco las imágenes del último borrado si ya no se puede deshacer.
+    private func finishPendingUndo() {
+        undoTask?.cancel()
+        undoTask = nil
+        guard let deletion = undoDeletion else { return }
+        undoDeletion = nil
+        let files = deletion.saved.compactMap(\.imageFileName) + deletion.temporary.compactMap(\.imageFileName)
+        files.forEach(SharedClipboardStore.removeImage(fileName:))
+    }
+
+    /// Pega varios elementos seguidos, cada uno en su línea (las imágenes se omiten).
+    func pasteClips(_ clips: [KeyboardClip]) {
+        let texts = clips.filter { !$0.isImage }.map(\.text)
+        guard !texts.isEmpty else {
+            showToast("Las imágenes se pegan una a una desde el campo")
+            return
+        }
+        proxy?.insertText(texts.joined(separator: "\n"))
+        pendingAutocorrection = nil
+        afterEdit()
+        showToast(texts.count == 1 ? "Pegado" : "\(texts.count) elementos pegados")
+    }
+
+    /// Copia varios elementos juntos al portapapeles del sistema.
+    func copyClips(_ clips: [KeyboardClip]) {
+        guard requireFullAccess() else { return }
+        let texts = clips.filter { !$0.isImage }.map(\.text)
+        guard !texts.isEmpty else { return }
+        UIPasteboard.general.string = texts.joined(separator: "\n")
+        ownPasteboardChangeCount = UIPasteboard.general.changeCount
+        showToast(texts.count == 1 ? "Copiado" : "\(texts.count) elementos copiados juntos")
+    }
+
+    func moveClip(_ clip: KeyboardClip, toFolder folder: String?) {
+        guard requireFullAccess() else { return }
+        if !clip.isSaved { SharedClipboardStore.promoteTemporary(id: clip.id) }
+        SharedClipboardStore.setFolder(folder, forSavedID: clip.id)
+        reloadClips()
+        showToast(folder.map { "Movido a «\($0)»" } ?? "Quitado de la carpeta")
+    }
+
+    // MARK: Búsqueda en el portapapeles
+
+    func openClipboardSearch() {
+        reloadClips()
+        searchQuery = ""
+        page = .letters
+        shift = .off
+        isEditingClips = false
+        panel = .clipboardSearch
+        updateClipSearchResults()
+    }
+
+    private func updateClipSearchResults() {
+        let words = WordDictionary.fold(searchQuery.lowercased())
+            .split(separator: " ")
+            .map(String.init)
+        let clips = savedClips + recentClips
+        guard !words.isEmpty else {
+            clipSearchResults = Array(clips.prefix(40))
+            return
+        }
+        clipSearchResults = clips.filter { clip in
+            let haystack = WordDictionary.fold(
+                [clip.text, clip.folderName ?? "", clip.isImage ? "imagen foto" : ""]
+                    .joined(separator: " ")
+                    .lowercased()
+            )
+            return words.allSatisfy { haystack.contains($0) }
+        }
     }
 
     func pinClips(_ clips: [KeyboardClip]) {
@@ -847,14 +966,34 @@ final class KeyboardEngine: ObservableObject {
         }
     }
 
-    func showToast(_ message: String) {
+    func showToast(_ message: String, actionTitle: String? = nil, action: (() -> Void)? = nil) {
         toastTask?.cancel()
-        withAnimation(.easeOut(duration: 0.15)) { toast = message }
-        toastTask = Task { @MainActor [weak self] in
-            try? await Task.sleep(for: .seconds(2.2))
-            guard let self, !Task.isCancelled else { return }
-            withAnimation(.easeIn(duration: 0.2)) { self.toast = nil }
+        toastAction = action
+        withAnimation(.easeOut(duration: 0.15)) {
+            toast = message
+            toastActionTitle = action == nil ? nil : actionTitle
         }
+        let duration: Duration = action == nil ? .seconds(2.2) : .seconds(5)
+        toastTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: duration)
+            guard let self, !Task.isCancelled else { return }
+            withAnimation(.easeIn(duration: 0.2)) {
+                self.toast = nil
+                self.toastActionTitle = nil
+            }
+            self.toastAction = nil
+        }
+    }
+
+    func performToastAction() {
+        let action = toastAction
+        toastTask?.cancel()
+        toastAction = nil
+        withAnimation(.easeIn(duration: 0.2)) {
+            toast = nil
+            toastActionTitle = nil
+        }
+        action?()
     }
 
     private func requireFullAccess() -> Bool {

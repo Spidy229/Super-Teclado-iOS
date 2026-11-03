@@ -14,6 +14,8 @@ enum KeyboardPanel: Equatable {
     case emoji
     /// Búsqueda de emojis: las letras escriben en el buscador, no en el documento.
     case emojiSearch
+    /// Búsqueda en el portapapeles, también escrita con el teclado.
+    case clipboardSearch
     case editing
 }
 

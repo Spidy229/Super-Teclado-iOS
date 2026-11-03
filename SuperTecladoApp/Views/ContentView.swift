@@ -318,6 +318,19 @@ struct ContentView: View {
                 return
             }
 
+            var isSensitive = false
+            if let text = draft.text, ClipboardClassifier.isSensitive(text) {
+                switch SharedClipboardStore.sensitiveMode {
+                case .skip:
+                    if origin == .manual { showToast("Contenido privado omitido") }
+                    return
+                case .mask:
+                    isSensitive = true
+                case .normal:
+                    break
+                }
+            }
+
             if let existing = existingItem(withContentHash: draft.contentHash) {
                 existing.updatedAt = .now
                 if existing.isTemporary {
@@ -336,7 +349,10 @@ struct ContentView: View {
                 kind: draft.kind,
                 contentHash: draft.contentHash,
                 isTemporary: true,
-                expiresAt: ClipboardRetentionPolicy.expirationDate(hours: temporaryRetentionHours)
+                expiresAt: isSensitive
+                    ? Date.now.addingTimeInterval(ClipboardClassifier.sensitiveLifetime)
+                    : ClipboardRetentionPolicy.expirationDate(hours: temporaryRetentionHours),
+                isSensitive: isSensitive
             )
             modelContext.insert(item)
             save()

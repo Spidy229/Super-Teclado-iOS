@@ -55,7 +55,8 @@ enum KeyboardHistorySync {
                 isPinned: item.isPinned,
                 folderName: item.folderName,
                 colorTagRawValue: item.colorTagRawValue,
-                imageFileName: imageFileName
+                imageFileName: imageFileName,
+                isSensitive: item.isSensitive ? true : nil
             )
         }
         SharedClipboardStore.save(clips)
@@ -72,7 +73,8 @@ enum KeyboardHistorySync {
                 kindRawValue: item.kindRawValue,
                 expiresAt: item.expiresAt,
                 imageFileName: imageFileName,
-                imageHash: imageFileName == nil ? nil : item.contentHash
+                imageHash: imageFileName == nil ? nil : item.contentHash,
+                isSensitive: item.isSensitive ? true : nil
             )
         }
         SharedClipboardStore.replaceTemporaryInbox(temporary)
@@ -168,7 +170,8 @@ enum KeyboardHistorySync {
                     colorTagRawValue: clip.colorTagRawValue,
                     contentHash: ClipboardService.hash(data),
                     isTemporary: false,
-                    expiresAt: nil
+                    expiresAt: nil,
+                    isSensitive: clip.isSensitive == true
                 )
             )
         }
@@ -227,7 +230,8 @@ enum KeyboardHistorySync {
                 kind: imageData == nil ? (ClipboardKind(rawValue: clip.kindRawValue) ?? .text) : .image,
                 contentHash: hash,
                 isTemporary: true,
-                expiresAt: expiration
+                expiresAt: expiration,
+                isSensitive: clip.isSensitive == true
             )
             context.insert(item)
             existingByID[clip.id] = item

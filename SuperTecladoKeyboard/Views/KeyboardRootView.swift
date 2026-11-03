@@ -29,6 +29,7 @@ struct KeyboardRootView: View {
         case .clipboard: ClipboardHeaderView()
         case .emoji: EmojiHeaderView()
         case .emojiSearch: EmojiSearchBarView()
+        case .clipboardSearch: ClipboardSearchBarView()
         case .editing: PanelHeaderView(title: "Edición de texto")
         }
     }
@@ -40,6 +41,11 @@ struct KeyboardRootView: View {
         case .clipboard: ClipboardPanelView()
         case .emoji: EmojiPanelView()
         case .emojiSearch: TypingKeyboardView()
+        case .clipboardSearch:
+            VStack(spacing: 0) {
+                ClipboardSearchResultsView().frame(height: 50)
+                TypingKeyboardView()
+            }
         case .editing: TextEditingPanelView()
         }
     }
@@ -63,18 +69,26 @@ struct KeyboardRootView: View {
     @ViewBuilder
     private func toast(palette: KeyboardPalette) -> some View {
         if let message = engine.toast {
-            Text(message)
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(palette.accentText)
-                .multilineTextAlignment(.center)
-                .padding(.horizontal, 14)
-                .padding(.vertical, 8)
-                .background(palette.accent, in: Capsule())
-                .shadow(color: .black.opacity(0.25), radius: 6, y: 2)
-                .padding(.top, engine.metrics.stripHeight + 6)
-                .padding(.horizontal, 16)
-                .transition(.opacity.combined(with: .move(edge: .top)))
-                .allowsHitTesting(false)
+            HStack(spacing: 12) {
+                Text(message)
+                    .multilineTextAlignment(.center)
+                if let actionTitle = engine.toastActionTitle {
+                    Button(actionTitle) { engine.performToastAction() }
+                        .font(.system(size: 13, weight: .bold))
+                        .underline()
+                        .buttonStyle(.plain)
+                }
+            }
+            .font(.system(size: 13, weight: .semibold))
+            .foregroundStyle(palette.accentText)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 8)
+            .background(palette.accent, in: Capsule())
+            .shadow(color: .black.opacity(0.25), radius: 6, y: 2)
+            .padding(.top, engine.metrics.stripHeight + 6)
+            .padding(.horizontal, 16)
+            .transition(.opacity.combined(with: .move(edge: .top)))
+            .allowsHitTesting(engine.toastActionTitle != nil)
         }
     }
 }

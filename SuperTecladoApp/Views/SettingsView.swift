@@ -28,6 +28,11 @@ struct SettingsView: View {
         store: UserDefaults(suiteName: SharedClipboardStore.appGroupID)
     ) private var maximumTemporaryItems = ClipboardRetentionPolicy.defaultMaximumTemporaryItems
 
+    @AppStorage(
+        SharedClipboardStore.sensitiveModeKey,
+        store: UserDefaults(suiteName: SharedClipboardStore.appGroupID)
+    ) private var sensitiveMode: SensitiveClipMode = .mask
+
     @State private var showDeleteConfirmation = false
     @State private var showClearTemporaryConfirmation = false
     @State private var folders: [String] = []
@@ -55,6 +60,8 @@ struct SettingsView: View {
                         Text("24 horas").tag(24)
                         Text("3 días").tag(72)
                         Text("7 días").tag(168)
+                        Text("30 días").tag(720)
+                        Text("Sin caducidad").tag(-1)
                     }
 
                     Picker("Límite temporal", selection: $maximumTemporaryItems) {
@@ -62,11 +69,23 @@ struct SettingsView: View {
                         Text("25 elementos").tag(25)
                         Text("50 elementos").tag(50)
                         Text("100 elementos").tag(100)
+                        Text("250 elementos").tag(250)
+                        Text("500 elementos").tag(500)
+                    }
+
+                    Picker("Contenido privado", selection: $sensitiveMode) {
+                        ForEach(SensitiveClipMode.allCases) { mode in Text(mode.title).tag(mode) }
+                    }
+
+                    NavigationLink {
+                        ClipboardCaptureGuideView()
+                    } label: {
+                        Label("Guardar con el teclado cerrado", systemImage: "square.and.arrow.down")
                     }
                 } header: {
                     Text("Bandeja temporal")
                 } footer: {
-                    Text("La captura funciona mientras la app está activa y al volver a ella. iOS puede pedir permiso para leer contenido copiado desde otra app.")
+                    Text("Se considera privado lo que parece una tarjeta, un IBAN, una contraseña o un código. Lo que los gestores de contraseñas marcan como oculto nunca se guarda.")
                 }
 
                 Section {
@@ -192,7 +211,7 @@ struct SettingsView: View {
     }
 
     private var appVersion: String {
-        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "2.2"
+        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "2.3"
     }
 
     private func addFolder() {
