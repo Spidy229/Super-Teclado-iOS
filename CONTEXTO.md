@@ -1,6 +1,6 @@
 # Super Teclado: contexto para agentes
 
-Resumen de todo lo hecho hasta la **versión 2.6.8**, para que otro agente (Claude Code, Codex…) pueda seguir el trabajo sin repetir errores. El `README.md` describe las funciones para el usuario; este documento explica **cómo está hecho, por qué y qué falta**.
+Resumen de todo lo hecho hasta la **versión 2.6.9**, para que otro agente (Claude Code, Codex…) pueda seguir el trabajo sin repetir errores. El `README.md` describe las funciones para el usuario; este documento explica **cómo está hecho, por qué y qué falta**.
 
 ---
 
@@ -32,7 +32,7 @@ Resumen de todo lo hecho hasta la **versión 2.6.8**, para que otro agente (Clau
 - **Subir versión** en cada cambio que se entregue, en dos sitios que deben coincidir:
   - `project.yml`: `MARKETING_VERSION` y `CURRENT_PROJECT_VERSION`, **4 veces cada uno** (app, teclado, share y widget).
   - `SuperTecladoApp/Package.swift`: `displayVersion` y `bundleVersion`.
-  - Estado actual: 2.6.8 / 17 en `project.yml`, 2.6.8 / 22 en `Package.swift`.
+  - Estado actual: 2.6.9 / 18 en `project.yml`, 2.6.9 / 23 en `Package.swift`.
 - `scripts/build-unsigned-ipa.sh`:
   - firma ad hoc (`codesign -s -`) cada appex con sus entitlements y después la app;
   - **falla si falta `Assets.car` o `CFBundleIcons`** (comprobación añadida en 2.6.6).
@@ -112,7 +112,19 @@ Este archivo es la solución al **retraso al escribir**. Antes cada tecla era un
 - Las ventanas emergentes (`KeyPopupUIView`) se añaden a **`engine.controller.view`**, para que nada las recorte por encima de la fila superior. Se reutilizan y se quitan en `tearDown()`.
 - `KeyCapUIView` reproduce el aspecto de Gboard: tapa con esquinas de 7 pt (continuas), sombra desplazada 1 pt, etiqueta, símbolo de la esquina e icono SF.
 - **Mantener `KeySpec` y `KeyboardPalette` como `Equatable`**; la configuración depende de ello.
-- `TypingKeyboardView.swift` construye las filas (`makeRows`: letras, `?123`, `=\<`, teclado numérico y distribución ancha de iPad) y la configuración. `KeyGridGeometry` reparte las alturas (la fila de números ocupa 0,78 de una fila normal).
+- Las filas (`keyRows()`: letras, `?123`, `=\<`, teclado numérico y distribución ancha de iPad) y `KeyGridConfiguration(engine:)` están en `KeyRows.swift`.
+  - La cuadrícula se pone al día con el motor después de cada toque (`syncWithEngine()`), sin esperar a SwiftUI; así el siguiente dedo ya ve la página y las mayúsculas correctas.
+  - `KeyGridGeometry` reparte las alturas (la fila de números ocupa 0,78 de una fila normal).
+  - La cuadrícula se mete `topOverlap` (6 pt) por debajo de la barra superior, para que un toque algo alto cuente como fila superior.
+- **Reglas para no perder toques al teclear deprisa** (2.6.9):
+  - el glide solo empieza si el dedo sale de su tecla y recorre más de `max(26, 0,8 × ancho)`, o `1,3 × ancho` si hubo otra letra hace menos de 0,3 s;
+  - si toca un segundo dedo con un trazo todavía corto (< 2,5 teclas), el trazo se convierte en pulsación de la tecla inicial;
+  - un trazo corto sin palabra reconocida también cuenta como pulsación;
+  - el cursor de la barra espaciadora solo se mueve con un deslizamiento claro (> 28 pt, sobre todo horizontal y tras 80 ms); igual con borrar palabras (> 32 pt);
+  - sin glide, deslizar solo cambia de letra si el dedo entra bien en otra tecla (20 % hacia dentro);
+  - un toque cancelado por iOS se escribe si era corto (< 0,4 s y < 14 pt);
+  - los dedos de los que iOS no avisó al levantarse se cierran (`dropTouchesThatEnded`), para que no bloqueen el teclado;
+  - tocar otra tecla detiene la repetición de borrar.
 - `Views/KeyViews.swift` conserva las teclas SwiftUI (`FunctionKeyView`, `DeleteKeyView`, `RepeatingKeyView`) que usan los paneles de emojis y edición, y `GlideTrail` (solo `preview`).
 
 ### Sugerencias: `SuggestionEngine.swift`
@@ -191,6 +203,7 @@ Este archivo es la solución al **retraso al escribir**. Antes cada tecla era un
 | 2.6.6 | **Icono:** `project.yml` usaba una clave `resources:` que **no existe en XcodeGen** y además excluía `Assets.xcassets` de `sources`, así que nunca se compilaba. Ahora va en `sources` y el script lo comprueba |
 | 2.6.7 | Vibración en sugerencias y botones de la barra; control de **transparencia del cristal** (`glassTransparency`, 0–1, por defecto 1) en el teclado y en la app |
 | 2.6.8 | Sin azul ni corrección en el espacio con la autocorrección desactivada; «Enviar ajustes al teclado» |
+| 2.6.9 | Toques más fiables al teclear deprisa (ver reglas en §4) y cuadrícula que se actualiza sin esperar a SwiftUI |
 
 ## 8. Errores ya resueltos (no repetirlos)
 
@@ -217,7 +230,9 @@ Este archivo es la solución al **retraso al escribir**. Antes cada tecla era un
 - No está verificado en un iPhone que «Enviar ajustes al teclado» funcione con KravaSigner (debería, con acceso total).
 - El usuario aún no ha dicho qué muestra el panel ⚙︎ (estado del acceso total y del App Group).
 - `scripts/validate-project.ps1` está desfasado (§2).
+- El usuario notaba que se perdían pulsaciones al teclear deprisa; la 2.6.9 lo ataca, pero falta su confirmación.
 - Ideas posibles:
+  - zonas de toque que crecen según la letra más probable, como hace Apple (necesita un índice de prefijos en `WordDictionary`);
   - pulsación larga en `?123` para escribir números sin cambiar de página;
   - más ajustes de la app dentro del panel ⚙︎ (idiomas, altura), para quien no tiene App Group.
 

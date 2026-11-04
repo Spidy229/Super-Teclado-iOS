@@ -607,6 +607,9 @@ final class KeyboardEngine: ObservableObject {
             limit: 4
         )
         guard !candidates.isEmpty else {
+            // Un trazo corto sin palabra era una pulsación rápida que resbaló: se escribe la
+            // letra en vez de perderla.
+            if GlideDecoder.length(of: path) < Double(target.keyWidth) * 2.5 { return false }
             keyFeedback(.modifier)
             return true
         }

@@ -87,7 +87,11 @@ private final class TouchState {
     var spec: KeySpec
     var frame: CGRect
     let start: CGPoint
+    /// Momento del toque (`CACurrentMediaTime`), para distinguir un toque rápido de un gesto.
+    let beganAt: CFTimeInterval
     var last: CGPoint
+    /// Recorrido del dedo desde que empezó a deslizar.
+    var glideLength: CGFloat = 0
     var phase: Phase = .pressed
     var selectedAlternate = 0
     var alternatesStart: CGFloat = 0
@@ -97,11 +101,12 @@ private final class TouchState {
     var popup: KeyPopupUIView?
     var timer: Task<Void, Never>?
 
-    init(keyID: String, spec: KeySpec, frame: CGRect, start: CGPoint) {
+    init(keyID: String, spec: KeySpec, frame: CGRect, start: CGPoint, beganAt: CFTimeInterval) {
         self.keyID = keyID
         self.spec = spec
         self.frame = frame
         self.start = start
+        self.beganAt = beganAt
         last = start
     }
 }
@@ -136,6 +141,12 @@ final class KeyGridUIView: UIView {
     private var allPopups: [KeyPopupUIView] = []
     private let trailLayer = CAShapeLayer()
     private var trailPoints: [CGPoint] = []
+    /// Última letra o espacio escritos al tocar: si hace muy poco, se está tecleando deprisa.
+    private var lastTapCommit: CFTimeInterval = 0
+
+    /// Puntos que la cuadrícula se mete por debajo de la barra superior: un toque algo alto en
+    /// la primera fila cuenta como esa fila en vez de perderse.
+    static let topOverlap: CGFloat = 6
 
     init(engine: KeyboardEngine) {
         self.engine = engine
@@ -179,6 +190,13 @@ final class KeyGridUIView: UIView {
         } else {
             keys.forEach(configure)
         }
+    }
+
+    /// Tras cada pulsación la cuadrícula se pone al día con el motor en el acto (mayúsculas,
+    /// página…), sin esperar a SwiftUI: así el siguiente toque ya ve las teclas correctas.
+    private func syncWithEngine() {
+        guard let palette else { return }
+        apply(KeyGridConfiguration(engine: engine), palette: palette)
     }
 
     /// La vista sale de pantalla (otro panel): se sueltan los dedos sin escribir nada.
@@ -227,7 +245,12 @@ final class KeyGridUIView: UIView {
     private func layoutKeys() {
         let rows = configuration.rows
         let width = bounds.width
-        let geometry = KeyGridGeometry(size: bounds.size, showsNumberRow: configuration.showsNumberRow, rowCount: rows.count)
+        let inset = min(Self.topOverlap, bounds.height / 4)
+        let geometry = KeyGridGeometry(
+            size: CGSize(width: bounds.width, height: bounds.height - inset),
+            showsNumberRow: configuration.showsNumberRow,
+            rowCount: rows.count
+        )
         let padding = KeyGridGeometry.horizontalPadding
         // El iPad tiene filas más largas (intro, comas, segunda tecla de mayúsculas…).
         let totalUnits = max(10, rows.map { $0.reduce(0) { $0 + $1.units } }.max() ?? 10)
@@ -240,7 +263,7 @@ final class KeyGridUIView: UIView {
         var flatIndex = 0
         for (rowIndex, row) in rows.enumerated() {
             let height = geometry.height(ofRow: rowIndex)
-            let originY = geometry.originY(ofRow: rowIndex)
+            let originY = inset + geometry.originY(ofRow: rowIndex)
             let rowWidth = row.reduce(0) { $0 + $1.units } * unit
             var x = padding + max(0, (width - padding * 2 - rowWidth) / 2)
             let first = newKeys.count
@@ -405,9 +428,37 @@ final class KeyGridUIView: UIView {
     }
 
     override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
-        for touch in touches.sorted(by: { $0.timestamp < $1.timestamp }) {
+        dropTouchesThatEnded(keeping: event?.allTouches)
+        // Con varios dedos a la vez, de izquierda a derecha si llegan en el mismo instante.
+        let ordered = touches.sorted {
+            $0.timestamp == $1.timestamp ? $0.location(in: self).x < $1.location(in: self).x : $0.timestamp < $1.timestamp
+        }
+        for touch in ordered {
             begin(touch, event: event)
         }
+        syncWithEngine()
+    }
+
+    /// Si iOS no avisó del final de algún dedo, se da por levantado: su tecla se escribe y no
+    /// deja el teclado bloqueado (p. ej. creyendo que sigue un trazo deslizado).
+    private func dropTouchesThatEnded(keeping liveTouches: Set<UITouch>?) {
+        guard let liveTouches else { return }
+        let live = Set(liveTouches.map(ObjectIdentifier.init))
+        for id in touchOrder where !live.contains(id) {
+            guard let state = states.removeValue(forKey: id) else { continue }
+            state.timer?.cancel()
+            state.timer = nil
+            hidePopup(of: state)
+            switch state.phase {
+            case .pressed: commit(state)
+            case .gliding:
+                engine.cancelGlide()
+                fadeTrail()
+            default: break
+            }
+            refreshKey(state.keyID)
+        }
+        touchOrder.removeAll { !live.contains($0) }
     }
 
     override func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent?) {
@@ -416,8 +467,11 @@ final class KeyGridUIView: UIView {
             if state.phase == .gliding {
                 // Todos los puntos intermedios (hasta 120 por segundo) para un trazo más fiel.
                 let samples = event?.coalescedTouches(for: touch) ?? [touch]
+                var previous = state.last
                 for sample in samples {
                     let point = sample.location(in: self)
+                    state.glideLength += CGFloat(GlideDecoder.distance(previous, point))
+                    previous = point
                     engine.extendGlide(to: point)
                     addTrailPoint(point)
                 }
@@ -431,15 +485,23 @@ final class KeyGridUIView: UIView {
     }
 
     override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent?) {
-        for touch in touches.sorted(by: { $0.timestamp < $1.timestamp }) {
+        // En el orden en que tocaron, para que dos letras levantadas a la vez no se crucen.
+        let ordered = touches.sorted { first, second in
+            let a = touchOrder.firstIndex(of: ObjectIdentifier(first)) ?? .max
+            let b = touchOrder.firstIndex(of: ObjectIdentifier(second)) ?? .max
+            return a < b
+        }
+        for touch in ordered {
             end(touch, event: event, cancelled: false)
         }
+        syncWithEngine()
     }
 
     override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent?) {
         for touch in touches {
             end(touch, event: event, cancelled: true)
         }
+        syncWithEngine()
     }
 
     private func begin(_ touch: UITouch, event: UIEvent?) {
@@ -447,14 +509,23 @@ final class KeyGridUIView: UIView {
         let point = touch.location(in: self)
         guard let index = keyIndex(at: point) else { return }
         let key = keys[index]
-        let state = TouchState(keyID: key.id, spec: key.spec, frame: key.frame, start: point)
+        let state = TouchState(keyID: key.id, spec: key.spec, frame: key.frame, start: point, beganAt: CACurrentMediaTime())
         states[id] = state
         touchOrder.append(id)
 
-        // Mientras se escribe deslizando no cuentan otros dedos.
-        if states.values.contains(where: { $0.phase == .gliding }) {
-            state.phase = .ignored
-            return
+        if let gliding = states.values.first(where: { $0.phase == .gliding }) {
+            guard gliding.glideLength < glideTarget.keyWidth * 2.5 else {
+                // Un trazo largo de verdad: otro dedo que roce no lo estropea.
+                state.phase = .ignored
+                return
+            }
+            // Otro dedo al poco de empezar a «deslizar»: se estaba tecleando deprisa y el dedo
+            // anterior solo resbaló. Cuenta como pulsación de su tecla y se sigue normal.
+            engine.cancelGlide()
+            fadeTrail()
+            gliding.phase = .committed
+            commit(gliding)
+            refreshKey(gliding.keyID)
         }
         // Como en Gboard y el teclado de Apple: si toca otro dedo antes de levantar el anterior,
         // la tecla anterior se escribe ya, para no perder ni desordenar letras al teclear rápido.
@@ -498,6 +569,12 @@ final class KeyGridUIView: UIView {
                 hidePopup(of: state)
                 commit(state)
                 refreshKey(state.keyID)
+            case .delete:
+                // Al tocar otra tecla deja de repetir, para no borrar lo que se acaba de escribir.
+                state.timer?.cancel()
+                state.timer = nil
+                state.phase = .committed
+                refreshKey(state.keyID)
             default:
                 break
             }
@@ -534,10 +611,15 @@ final class KeyGridUIView: UIView {
     }
 
     private func characterMoved(_ state: TouchState, to point: CGPoint) {
-        let distance = GlideDecoder.distance(state.start, point)
+        let distance = CGFloat(GlideDecoder.distance(state.start, point))
         let activeTouches = states.values.filter { $0.phase != .committed && $0.phase != .ignored }.count
-        if state.spec.isLetter, engine.canGlide, activeTouches == 1,
-           distance > max(18, glideTarget.keyWidth * 0.6) {
+        let keyWidth = glideTarget.keyWidth
+        // Al teclear deprisa el dedo resbala un poco al tocar: hace falta un recorrido mayor
+        // para empezar a deslizar, y el dedo tiene que haber salido de su tecla.
+        let typingFast = state.beganAt - lastTapCommit < 0.3
+        let threshold = typingFast ? keyWidth * 1.3 : max(26, keyWidth * 0.8)
+        let leftKey = !state.frame.insetBy(dx: -4, dy: -4).contains(point)
+        if state.spec.isLetter, engine.canGlide, activeTouches == 1, leftKey, distance > threshold {
             // El dedo ha salido de la tecla: empieza la escritura deslizando.
             state.timer?.cancel()
             state.timer = nil
@@ -548,12 +630,16 @@ final class KeyGridUIView: UIView {
             beginTrail(at: state.start)
             engine.extendGlide(to: point)
             addTrailPoint(point)
+            state.glideLength = distance
             return
         }
         guard !(state.spec.isLetter && engine.canGlide) else { return }
-        // Sin escritura deslizando, la tecla que cuenta es la que queda bajo el dedo.
+        // Sin escritura deslizando, la tecla que cuenta es la que queda bajo el dedo, pero
+        // solo si entra claramente en otra: rozar el borde no cambia la letra.
         guard let index = keyIndex(at: point), keys[index].id != state.keyID,
               case .character = keys[index].spec.kind else { return }
+        let target = keys[index].frame
+        guard target.insetBy(dx: target.width * 0.2, dy: target.height * 0.2).contains(point) else { return }
         let previous = state.keyID
         state.keyID = keys[index].id
         state.spec = keys[index].spec
@@ -566,7 +652,12 @@ final class KeyGridUIView: UIView {
 
     private func spaceMoved(_ state: TouchState, to point: CGPoint) {
         let width = point.x - state.start.x
-        guard abs(width) > 16 else { return }
+        let height = point.y - state.start.y
+        // Solo un deslizamiento claro mueve el cursor: un espacio rápido que resbala un poco
+        // sigue siendo un espacio (antes se perdía y movía el cursor).
+        guard abs(width) > max(28, glideTarget.keyWidth * 0.75),
+              abs(width) > abs(height) * 1.5,
+              CACurrentMediaTime() - state.beganAt > 0.08 else { return }
         state.phase = .cursor
         state.cursorStep = Int(width / 9)
         refreshKey(state.keyID)
@@ -574,7 +665,10 @@ final class KeyGridUIView: UIView {
 
     private func deleteMoved(_ state: TouchState, to point: CGPoint) {
         // Deslizar hacia la izquierda borra palabras completas.
-        let steps = Int(-(point.x - state.start.x) / 24)
+        let distance = -(point.x - state.start.x)
+        let firstStep = max(32, glideTarget.keyWidth * 0.85)
+        guard distance > firstStep, CACurrentMediaTime() - state.beganAt > 0.08 else { return }
+        let steps = 1 + Int((distance - firstStep) / 24)
         guard steps > state.swipeSteps else { return }
         state.timer?.cancel()
         state.timer = nil
@@ -597,6 +691,10 @@ final class KeyGridUIView: UIView {
             if state.phase == .gliding {
                 engine.cancelGlide()
                 fadeTrail()
+            } else if state.phase == .pressed, isQuickTap(state) {
+                // iOS a veces cancela un toque (gestos del sistema): si era una pulsación
+                // normal, se escribe igual para no perderla.
+                commit(state)
             }
         } else {
             finish(state, event: event)
@@ -625,7 +723,20 @@ final class KeyGridUIView: UIView {
         }
     }
 
+    private func isQuickTap(_ state: TouchState) -> Bool {
+        switch state.spec.kind {
+        case .character, .space:
+            return CACurrentMediaTime() - state.beganAt < 0.4 && GlideDecoder.distance(state.start, state.last) < 14
+        default:
+            return false
+        }
+    }
+
     private func commit(_ state: TouchState) {
+        switch state.spec.kind {
+        case .character, .space: lastTapCommit = CACurrentMediaTime()
+        default: break
+        }
         switch state.spec.kind {
         case .character(let value): engine.insertCharacter(value, caseSensitive: state.spec.isLetter)
         case .space: engine.insertSpace()
