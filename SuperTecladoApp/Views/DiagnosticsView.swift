@@ -36,13 +36,18 @@ struct DiagnosticsView: View {
 
             Section {
                 LabeledContent("Cierres inesperados", value: "\(diagnostics.unexpectedExits)")
+                LabeledContent("Seguidos", value: "\(diagnostics.consecutiveUnexpectedExits)")
+                if diagnostics.isSafeModeActive {
+                    Label("Modo seguro activo: el teclado arranca sin sugerencias", systemImage: "shield.lefthalf.filled")
+                        .foregroundStyle(.orange)
+                }
                 if let date = diagnostics.lastUnexpectedExit {
                     LabeledContent("Último", value: date.formatted(date: .abbreviated, time: .shortened))
                 }
             } header: {
                 Text("Estabilidad")
             } footer: {
-                Text("Se cuenta cuando el teclado deja de funcionar mientras estaba en pantalla. Si aumenta, copia el informe y envíalo.")
+                Text("Se cuenta cuando el teclado deja de funcionar mientras estaba en pantalla. Tras dos cierres seguidos arranca en modo seguro (sin diccionarios) para que puedas seguir escribiendo; «Reiniciar contadores» lo desactiva.")
             }
 
             Section {

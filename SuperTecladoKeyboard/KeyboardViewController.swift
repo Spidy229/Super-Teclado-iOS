@@ -8,6 +8,8 @@ final class KeyboardViewController: UIInputViewController {
     private var heightConstraint: NSLayoutConstraint?
     private var clipboardTimer: Timer?
     private static let lastChangeCountKey = "super-teclado-last-pasteboard-change"
+    /// Si este proceso ya marcó la sesión como abierta (para detectar cierres inesperados).
+    private static var sessionMarkedOpen = false
 
     private var lastSeenChangeCount: Int {
         get { UserDefaults.standard.object(forKey: Self.lastChangeCountKey) as? Int ?? -1 }
@@ -16,6 +18,10 @@ final class KeyboardViewController: UIInputViewController {
 
     override func viewDidLoad() {
         super.viewDidLoad()
+        // Se marca la sesión lo antes posible: si iOS cierra el teclado al arrancar, la próxima
+        // vez se sabe y, tras dos cierres seguidos, arranca en modo seguro.
+        if hasFullAccess { markSessionOpen() }
+        engine.safeMode = KeyboardDiagnostics.load().isSafeModeActive
         engine.controller = self
         engine.hasFullAccess = hasFullAccess
         engine.loadPreferences()
@@ -27,7 +33,13 @@ final class KeyboardViewController: UIInputViewController {
         constraint.isActive = true
         heightConstraint = constraint
 
-        requestLexicon()
+        if !engine.safeMode { requestLexicon() }
+    }
+
+    private func markSessionOpen() {
+        guard !Self.sessionMarkedOpen else { return }
+        Self.sessionMarkedOpen = true
+        KeyboardDiagnostics.recordSessionStart()
     }
 
     override func viewWillAppear(_ animated: Bool) {
@@ -36,8 +48,11 @@ final class KeyboardViewController: UIInputViewController {
         if hasFullAccess {
             // La app lo usa para mostrar que el teclado está activado y con acceso total.
             SharedClipboardStore.sharedDefaults?.set(Date().timeIntervalSince1970, forKey: KeyboardPreferenceKey.lastActive)
-            KeyboardDiagnostics.recordSessionStart()
+            markSessionOpen()
             Self.recordAvailableMemory()
+        }
+        if engine.safeMode {
+            engine.showToast("Modo seguro: sin sugerencias tras varios cierres. Se quita solo al usarlo con normalidad.")
         }
         engine.loadPreferences()
         engine.setTraitStyle(traitCollection.userInterfaceStyle)
@@ -57,6 +72,7 @@ final class KeyboardViewController: UIInputViewController {
         if hasFullAccess {
             Self.recordAvailableMemory()
             KeyboardDiagnostics.recordSessionEnd()
+            Self.sessionMarkedOpen = false
         }
     }
 
@@ -164,10 +180,15 @@ final class KeyboardViewController: UIInputViewController {
 
     /// Sustituciones de texto y nombres de contactos que iOS comparte con los teclados.
     private func requestLexicon() {
-        requestSupplementaryLexicon { [weak self] lexicon in
-            // UILexicon está aislado al hilo principal; UIKit entrega el resultado allí.
-            let entries = lexicon.entries.map { (input: $0.userInput, replacement: $0.documentText) }
-            self?.engine.setLexicon(entries)
+        // iOS no garantiza en qué hilo llega el resultado. El cierre es @Sendable para que
+        // Swift no compruebe el hilo al entrar (eso cerraría el teclado) y el diccionario se
+        // lee después en el hilo principal, que es donde UILexicon puede usarse.
+        requestSupplementaryLexicon { @Sendable [weak self] lexicon in
+            nonisolated(unsafe) let lexicon = lexicon
+            Task { @MainActor in
+                let entries = lexicon.entries.map { (input: $0.userInput, replacement: $0.documentText) }
+                self?.engine.setLexicon(entries)
+            }
         }
     }
 }

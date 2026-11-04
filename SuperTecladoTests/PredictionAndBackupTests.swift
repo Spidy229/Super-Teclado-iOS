@@ -45,8 +45,17 @@ final class PredictionAndBackupTests: XCTestCase {
 
         let diagnostics = KeyboardDiagnostics.load(from: defaults)
         XCTAssertEqual(diagnostics.unexpectedExits, 1)
+        XCTAssertEqual(diagnostics.consecutiveUnexpectedExits, 1)
+        XCTAssertFalse(diagnostics.isSafeModeActive)
         XCTAssertEqual(diagnostics.lowestAvailableMemoryMB ?? 0, 12, accuracy: 0.01)
         XCTAssertTrue(diagnostics.report(appVersion: "2.6", lastActive: nil).contains("Cierres inesperados: 1"))
+
+        // Un cierre más seguido activa el modo seguro; una sesión normal lo quita.
+        KeyboardDiagnostics.recordSessionStart(defaults: defaults)
+        XCTAssertTrue(KeyboardDiagnostics.load(from: defaults).isSafeModeActive)
+        KeyboardDiagnostics.recordSessionEnd(defaults: defaults)
+        XCTAssertFalse(KeyboardDiagnostics.load(from: defaults).isSafeModeActive)
+        XCTAssertEqual(KeyboardDiagnostics.load(from: defaults).unexpectedExits, 2)
     }
 
     func testBackupValuesKeepTheirType() throws {

@@ -48,6 +48,8 @@ final class KeyboardEngine: ObservableObject {
 
     /// Cambio del portapapeles hecho por el propio teclado (para no volver a capturarlo).
     var ownPasteboardChangeCount: Int?
+    /// Tras varios cierres seguidos: sin diccionarios, contactos ni foto de fondo.
+    var safeMode = false
 
     private let suggestionEngine = SuggestionEngine()
     private var feedbackGenerator: UIImpactFeedbackGenerator?
@@ -122,6 +124,10 @@ final class KeyboardEngine: ObservableObject {
         if loaded != preferences { preferences = loaded }
         suggestionEngine.reloadPersonalData()
         updateAppearance()
+        guard !safeMode else {
+            backgroundImage = nil
+            return
+        }
         loadDictionaryIfNeeded()
         loadBackgroundIfNeeded()
     }

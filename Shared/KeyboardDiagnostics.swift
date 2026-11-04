@@ -9,6 +9,8 @@ struct KeyboardDiagnostics: Equatable {
     var dictionaryWordCount: Int?
     var languages: String?
     var unexpectedExits = 0
+    /// Cierres seguidos sin una sesión normal entre medias.
+    var consecutiveUnexpectedExits = 0
     var lastUnexpectedExit: Date?
     var sessionOpen = false
 
@@ -19,6 +21,7 @@ struct KeyboardDiagnostics: Equatable {
         static let wordCount = "diagnosticsDictionaryWordCount"
         static let languages = "diagnosticsLanguages"
         static let unexpectedExits = "diagnosticsUnexpectedExits"
+        static let consecutiveExits = "diagnosticsConsecutiveUnexpectedExits"
         static let lastUnexpectedExit = "diagnosticsLastUnexpectedExit"
         static let sessionOpen = "diagnosticsSessionOpen"
     }
@@ -34,6 +37,7 @@ struct KeyboardDiagnostics: Equatable {
         diagnostics.dictionaryWordCount = int(Key.wordCount)
         diagnostics.languages = defaults.string(forKey: Key.languages)
         diagnostics.unexpectedExits = defaults.integer(forKey: Key.unexpectedExits)
+        diagnostics.consecutiveUnexpectedExits = defaults.integer(forKey: Key.consecutiveExits)
         diagnostics.lastUnexpectedExit = double(Key.lastUnexpectedExit).map(Date.init(timeIntervalSince1970:))
         diagnostics.sessionOpen = defaults.bool(forKey: Key.sessionOpen)
         return diagnostics
@@ -45,6 +49,7 @@ struct KeyboardDiagnostics: Equatable {
         guard let defaults else { return }
         if defaults.bool(forKey: Key.sessionOpen) {
             defaults.set(defaults.integer(forKey: Key.unexpectedExits) + 1, forKey: Key.unexpectedExits)
+            defaults.set(defaults.integer(forKey: Key.consecutiveExits) + 1, forKey: Key.consecutiveExits)
             defaults.set(Date().timeIntervalSince1970, forKey: Key.lastUnexpectedExit)
         }
         defaults.set(true, forKey: Key.sessionOpen)
@@ -52,7 +57,14 @@ struct KeyboardDiagnostics: Equatable {
 
     static func recordSessionEnd(defaults: UserDefaults? = SharedClipboardStore.sharedDefaults) {
         defaults?.set(false, forKey: Key.sessionOpen)
+        defaults?.set(0, forKey: Key.consecutiveExits)
     }
+
+    /// Tras dos cierres seguidos el teclado arranca sin diccionarios ni extras (modo seguro),
+    /// para que al menos se pueda escribir. Se desactiva solo tras una sesión normal.
+    static let safeModeThreshold = 2
+
+    var isSafeModeActive: Bool { consecutiveUnexpectedExits >= Self.safeModeThreshold }
 
     static func recordMemory(availableMB: Double, defaults: UserDefaults? = SharedClipboardStore.sharedDefaults) {
         guard let defaults else { return }
@@ -73,7 +85,7 @@ struct KeyboardDiagnostics: Equatable {
     }
 
     static func reset(defaults: UserDefaults? = SharedClipboardStore.sharedDefaults) {
-        for key in [Key.lowestMemory, Key.unexpectedExits, Key.lastUnexpectedExit] {
+        for key in [Key.lowestMemory, Key.unexpectedExits, Key.consecutiveExits, Key.lastUnexpectedExit] {
             defaults?.removeObject(forKey: key)
         }
     }
@@ -86,6 +98,7 @@ struct KeyboardDiagnostics: Equatable {
         lines.append("Memoria disponible mínima: \(lowestAvailableMemoryMB.map { String(format: "%.0f MB", $0) } ?? "sin datos")")
         lines.append("Diccionario: \(dictionaryWordCount.map(String.init) ?? "?") palabras (\(languages ?? "?")) en \(dictionaryLoadMilliseconds.map { "\($0) ms" } ?? "?")")
         lines.append("Cierres inesperados: \(unexpectedExits)\(lastUnexpectedExit.map { ", el último \($0.formatted(date: .abbreviated, time: .shortened))" } ?? "")")
+        lines.append("Cierres seguidos: \(consecutiveUnexpectedExits)\(isSafeModeActive ? " (modo seguro)" : "")")
         return lines.joined(separator: "\n")
     }
 }
