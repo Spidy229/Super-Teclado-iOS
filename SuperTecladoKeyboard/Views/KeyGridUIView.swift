@@ -92,6 +92,8 @@ private final class TouchState {
     var last: CGPoint
     /// Recorrido del dedo desde que empezó a deslizar.
     var glideLength: CGFloat = 0
+    /// Milisegundos desde el toque anterior (para el diagnóstico).
+    var gap = 0
     var phase: Phase = .pressed
     var selectedAlternate = 0
     var alternatesStart: CGFloat = 0
@@ -117,6 +119,12 @@ final class KeyGridUIView: UIView {
         let spec: KeySpec
         let frame: CGRect
         let view: KeyCapUIView
+
+        /// La letra como tecla («a», «ñ»…), solo en las teclas de letras.
+        var letter: String? {
+            guard spec.isLetter, case .character(let value) = spec.kind, value.count == 1 else { return nil }
+            return String(WordDictionary.keyLetters(value))
+        }
     }
 
     private struct RowBand {
@@ -143,6 +151,7 @@ final class KeyGridUIView: UIView {
     private var trailPoints: [CGPoint] = []
     /// Última letra o espacio escritos al tocar: si hace muy poco, se está tecleando deprisa.
     private var lastTapCommit: CFTimeInterval = 0
+    private var lastTouchDown: CFTimeInterval = 0
 
     /// Puntos que la cuadrícula se mete por debajo de la barra superior: un toque algo alto en
     /// la primera fila cuenta como esa fila en vez de perderse.
@@ -449,8 +458,9 @@ final class KeyGridUIView: UIView {
             state.timer?.cancel()
             state.timer = nil
             hidePopup(of: state)
+            engine.touchDiagnostics.unfinished += 1
             switch state.phase {
-            case .pressed: commit(state)
+            case .pressed: commit(state, note: "sin aviso de fin")
             case .gliding:
                 engine.cancelGlide()
                 fadeTrail()
@@ -507,16 +517,22 @@ final class KeyGridUIView: UIView {
     private func begin(_ touch: UITouch, event: UIEvent?) {
         let id = ObjectIdentifier(touch)
         let point = touch.location(in: self)
-        guard let index = keyIndex(at: point) else { return }
-        let key = keys[index]
-        let state = TouchState(keyID: key.id, spec: key.spec, frame: key.frame, start: point, beganAt: CACurrentMediaTime())
-        states[id] = state
-        touchOrder.append(id)
+        guard let nearest = keyIndex(at: point) else { return }
+        let now = CACurrentMediaTime()
+        let gap = lastTouchDown > 0 ? Int(((now - lastTouchDown) * 1000).rounded()) : 0
+        lastTouchDown = now
+        engine.touchDiagnostics.touches += 1
 
         if let gliding = states.values.first(where: { $0.phase == .gliding }) {
             guard gliding.glideLength < glideTarget.keyWidth * 2.5 else {
                 // Un trazo largo de verdad: otro dedo que roce no lo estropea.
-                state.phase = .ignored
+                let key = keys[nearest]
+                let ignored = TouchState(keyID: key.id, spec: key.spec, frame: key.frame, start: point, beganAt: now)
+                ignored.phase = .ignored
+                states[id] = ignored
+                touchOrder.append(id)
+                engine.touchDiagnostics.ignored += 1
+                engine.touchDiagnostics.log("ignorado (deslizando)")
                 return
             }
             // Otro dedo al poco de empezar a «deslizar»: se estaba tecleando deprisa y el dedo
@@ -524,12 +540,25 @@ final class KeyGridUIView: UIView {
             engine.cancelGlide()
             fadeTrail()
             gliding.phase = .committed
-            commit(gliding)
+            engine.touchDiagnostics.glidesAsTaps += 1
+            commit(gliding, note: "deslizar→toque")
             refreshKey(gliding.keyID)
         }
         // Como en Gboard y el teclado de Apple: si toca otro dedo antes de levantar el anterior,
         // la tecla anterior se escribe ya, para no perder ni desordenar letras al teclear rápido.
+        // Va antes de elegir la tecla nueva para que la precisión inteligente la tenga en cuenta.
         commitPendingTouches(except: id)
+
+        let index = smartKeyIndex(at: point, nearest: nearest)
+        let key = keys[index]
+        let state = TouchState(keyID: key.id, spec: key.spec, frame: key.frame, start: point, beganAt: now)
+        state.gap = gap
+        states[id] = state
+        touchOrder.append(id)
+        if index != nearest, let from = keys[nearest].letter, let to = key.letter {
+            engine.touchDiagnostics.smartChoices += 1
+            engine.touchDiagnostics.log("\(from)→\(to) precisión")
+        }
 
         switch key.spec.kind {
         case .character:
@@ -558,6 +587,47 @@ final class KeyGridUIView: UIView {
         configure(key)
     }
 
+    /// Como el teclado de Apple: si el dedo cae cerca del borde entre letras, gana la que forma
+    /// con lo ya escrito palabras más usadas. Solo decide dentro de la franja del 25 % junto al
+    /// borde; un toque claro sobre una tecla escribe siempre esa tecla.
+    private func smartKeyIndex(at point: CGPoint, nearest index: Int) -> Int {
+        let key = keys[index]
+        guard let letter = key.letter, engine.smartTouchAllowed, let dictionary = engine.dictionary else { return index }
+        let marginX = key.frame.width * 0.25
+        let marginY = key.frame.height * 0.25
+        var candidates: [(index: Int, letter: String)] = [(index, letter)]
+        for (other, candidate) in keys.enumerated() where other != index {
+            guard let otherLetter = candidate.letter else { continue }
+            let frame = candidate.frame
+            let dx = max(frame.minX - point.x, 0, point.x - frame.maxX)
+            let dy = max(frame.minY - point.y, 0, point.y - frame.maxY)
+            if dx <= marginX, dy <= marginY { candidates.append((other, otherLetter)) }
+        }
+        guard candidates.count > 1 else { return index }
+
+        let prefix = String(WordDictionary.keyLetters(engine.wordForPrediction))
+        func score(_ candidate: (index: Int, letter: String)) -> Double {
+            let frame = keys[candidate.index].frame
+            // Probabilidad del toque según la distancia al centro (desviación de media tecla).
+            let dx = Double((point.x - frame.midX) / frame.width)
+            let dy = Double((point.y - frame.midY) / frame.height)
+            let spatial = -2 * (dx * dx + dy * dy)
+            // Lo usadas que son las palabras que siguen así (0 si no hay ninguna).
+            let weight = Double(dictionary.prefixWeight(prefix + candidate.letter))
+            return spatial + 0.25 * log(weight + 1)
+        }
+        var best = candidates[0]
+        var bestScore = score(best)
+        for candidate in candidates.dropFirst() {
+            let value = score(candidate)
+            if value > bestScore {
+                best = candidate
+                bestScore = value
+            }
+        }
+        return best.index
+    }
+
     private func commitPendingTouches(except newID: ObjectIdentifier) {
         for id in touchOrder where id != newID {
             guard let state = states[id], state.phase == .pressed else { continue }
@@ -567,7 +637,8 @@ final class KeyGridUIView: UIView {
                 state.timer = nil
                 state.phase = .committed
                 hidePopup(of: state)
-                commit(state)
+                engine.touchDiagnostics.rollovers += 1
+                commit(state, note: "otro dedo")
                 refreshKey(state.keyID)
             case .delete:
                 // Al tocar otra tecla deja de repetir, para no borrar lo que se acaba de escribir.
@@ -624,6 +695,7 @@ final class KeyGridUIView: UIView {
             state.timer?.cancel()
             state.timer = nil
             state.phase = .gliding
+            engine.touchDiagnostics.glides += 1
             hidePopup(of: state)
             refreshKey(state.keyID)
             engine.beginGlide(at: state.start, target: glideTarget)
@@ -659,6 +731,8 @@ final class KeyGridUIView: UIView {
               abs(width) > abs(height) * 1.5,
               CACurrentMediaTime() - state.beganAt > 0.08 else { return }
         state.phase = .cursor
+        engine.touchDiagnostics.cursorSwipes += 1
+        engine.touchDiagnostics.log("cursor")
         state.cursorStep = Int(width / 9)
         refreshKey(state.keyID)
     }
@@ -694,7 +768,11 @@ final class KeyGridUIView: UIView {
             } else if state.phase == .pressed, isQuickTap(state) {
                 // iOS a veces cancela un toque (gestos del sistema): si era una pulsación
                 // normal, se escribe igual para no perderla.
-                commit(state)
+                engine.touchDiagnostics.cancelledTyped += 1
+                commit(state, note: "cancelado por iOS")
+            } else if state.phase == .pressed {
+                engine.touchDiagnostics.cancelledLost += 1
+                engine.touchDiagnostics.log("cancelado por iOS, no escrito")
             }
         } else {
             finish(state, event: event)
@@ -708,13 +786,19 @@ final class KeyGridUIView: UIView {
             commit(state)
         case .alternates:
             if state.spec.alternates.indices.contains(state.selectedAlternate) {
-                engine.insertCharacter(state.spec.alternates[state.selectedAlternate], caseSensitive: state.spec.isLetter)
+                let option = state.spec.alternates[state.selectedAlternate]
+                engine.touchDiagnostics.alternates += 1
+                engine.touchDiagnostics.log("\(option) pulsación larga")
+                engine.insertCharacter(option, caseSensitive: state.spec.isLetter)
             }
         case .gliding:
             fadeTrail()
             // Un desliz corto al teclear rápido cuenta como pulsación normal.
-            if !engine.endGlide(), case .character(let value) = state.spec.kind {
-                engine.insertCharacter(value, caseSensitive: state.spec.isLetter)
+            if !engine.endGlide() {
+                engine.touchDiagnostics.glidesAsTaps += 1
+                commit(state, note: "deslizar→toque")
+            } else {
+                engine.touchDiagnostics.log("palabra deslizada")
             }
         case .system:
             if let event { engine.controller?.handleInputModeList(from: self, with: event) }
@@ -732,10 +816,20 @@ final class KeyGridUIView: UIView {
         }
     }
 
-    private func commit(_ state: TouchState) {
+    private func commit(_ state: TouchState, note: String? = nil) {
         switch state.spec.kind {
-        case .character, .space: lastTapCommit = CACurrentMediaTime()
-        default: break
+        case .character(let value):
+            lastTapCommit = CACurrentMediaTime()
+            engine.touchDiagnostics.typed += 1
+            let suffix = note.map { " · \($0)" } ?? ""
+            engine.touchDiagnostics.log("\(engine.displayText(for: value, caseSensitive: state.spec.isLetter)) · \(state.gap) ms\(suffix)")
+        case .space:
+            lastTapCommit = CACurrentMediaTime()
+            engine.touchDiagnostics.typed += 1
+            let suffix = note.map { " · \($0)" } ?? ""
+            engine.touchDiagnostics.log("espacio · \(state.gap) ms\(suffix)")
+        default:
+            break
         }
         switch state.spec.kind {
         case .character(let value): engine.insertCharacter(value, caseSensitive: state.spec.isLetter)

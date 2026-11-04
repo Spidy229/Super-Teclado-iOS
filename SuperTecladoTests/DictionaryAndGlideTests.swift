@@ -27,6 +27,19 @@ final class DictionaryAndGlideTests: XCTestCase {
         XCTAssertEqual(dictionary.completions(for: "tamb", limit: 3), ["también"])
     }
 
+    func testPrefixWeightTellsWhichKeyContinuesAWord() {
+        // «ho» + «l» sigue «hola»; «ho» + «k» no sigue ninguna palabra.
+        XCTAssertEqual(dictionary.prefixWeight("hol"), 1_000_000)
+        XCTAssertEqual(dictionary.prefixWeight("hok"), 0)
+        // Las tildes no cuentan como teclas, pero la «ñ» sí.
+        XCTAssertEqual(dictionary.prefixWeight("tamb"), 488_057)
+        XCTAssertEqual(dictionary.prefixWeight("mañ"), 283_391)
+        XCTAssertEqual(dictionary.prefixWeight("man"), 0)
+        XCTAssertEqual(dictionary.prefixWeight("qu"), 14_421_005 + 4_166_708)
+        XCTAssertEqual(dictionary.prefixWeight("per"), 2_060_000)
+        XCTAssertGreaterThan(dictionary.prefixWeight(""), dictionary.prefixWeight("d"))
+    }
+
     func testTypoCorrectorPrefersNeighbouringKeys() {
         XCTAssertEqual(TypoCorrector.candidates(for: "qeu", in: dictionary).first?.word, "que")
         XCTAssertEqual(TypoCorrector.candidates(for: "graciss", in: dictionary).first?.word, "gracias")

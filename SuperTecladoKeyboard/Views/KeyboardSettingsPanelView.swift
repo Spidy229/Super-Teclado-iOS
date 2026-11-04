@@ -1,11 +1,33 @@
 import SwiftUI
 
+/// Retraso de la pulsación larga que se elige en el panel del teclado.
+private enum LongPressOption: Int, CaseIterable, Hashable {
+    case short = 250
+    case normal = 400
+    case long = 550
+
+    init(milliseconds: Int) {
+        self = Self.allCases.min { abs($0.rawValue - milliseconds) < abs($1.rawValue - milliseconds) } ?? .normal
+    }
+
+    var milliseconds: Int { rawValue }
+
+    var title: String {
+        switch self {
+        case .short: "Corta"
+        case .normal: "Normal"
+        case .long: "Larga"
+        }
+    }
+}
+
 /// Ajustes rápidos dentro del teclado. Se guardan aunque la app y el teclado no compartan
 /// datos (cuando la firma no incluye el App Group), y muestra el estado del acceso total.
 struct KeyboardSettingsPanelView: View {
     @EnvironmentObject private var engine: KeyboardEngine
     @Environment(\.keyboardPalette) private var palette
     @State private var strength = 0.6
+    @State private var diagnostics = TouchDiagnostics()
 
     var body: some View {
         ScrollView {
@@ -14,10 +36,14 @@ struct KeyboardSettingsPanelView: View {
                 vibrationSection
                 soundSection
                 writingSection
+                diagnosticsSection
             }
             .padding(12)
         }
-        .onAppear { strength = engine.preferences.hapticsStrength }
+        .onAppear {
+            strength = engine.preferences.hapticsStrength
+            diagnostics = engine.touchDiagnostics
+        }
     }
 
     // MARK: Estado
@@ -112,6 +138,19 @@ struct KeyboardSettingsPanelView: View {
             toggleRow("Autocorrección", isOn: engine.preferences.autocorrect) { value in
                 engine.updatePreferences { $0.autocorrect = value }
             }
+            toggleRow("Precisión inteligente", isOn: engine.preferences.smartTouch) { value in
+                engine.updatePreferences { $0.smartTouch = value }
+            }
+            Text("Si tocas justo entre dos letras, elige la que forma una palabra, como el teclado de Apple.")
+                .font(.system(size: 11))
+                .foregroundStyle(palette.secondaryText)
+                .fixedSize(horizontal: false, vertical: true)
+            Text("Pulsación larga (acentos y símbolos)")
+                .font(.system(size: 13))
+                .foregroundStyle(palette.text)
+            chips(LongPressOption.allCases, selected: LongPressOption(milliseconds: engine.preferences.longPressDelay), title: \.title) { option in
+                engine.updatePreferences { $0.longPressDelay = option.milliseconds }
+            }
             toggleRow("Fila de números", isOn: engine.preferences.numberRow) { value in
                 engine.updatePreferences { $0.numberRow = value }
             }
@@ -122,6 +161,57 @@ struct KeyboardSettingsPanelView: View {
                 engine.updatePreferences { $0.incognito = value }
             }
         }
+    }
+
+    // MARK: Diagnóstico
+
+    private var diagnosticsSection: some View {
+        section("Diagnóstico de toques") {
+            VStack(alignment: .leading, spacing: 4) {
+                diagnosticRow("Toques", diagnostics.touches)
+                diagnosticRow("Escritos", diagnostics.typed)
+                diagnosticRow("Escritos al tocar con otro dedo", diagnostics.rollovers)
+                diagnosticRow("Cancelados por iOS y escritos", diagnostics.cancelledTyped)
+                diagnosticRow("Cancelados por iOS y perdidos", diagnostics.cancelledLost)
+                diagnosticRow("Sin aviso de fin (escritos)", diagnostics.unfinished)
+                diagnosticRow("Ignorados mientras deslizabas", diagnostics.ignored)
+                diagnosticRow("Deslizamientos", diagnostics.glides)
+                diagnosticRow("Deslizamientos que eran toques", diagnostics.glidesAsTaps)
+                diagnosticRow("Cursor con la barra espaciadora", diagnostics.cursorSwipes)
+                diagnosticRow("Pulsaciones largas", diagnostics.alternates)
+                diagnosticRow("Elegidos por la precisión inteligente", diagnostics.smartChoices)
+            }
+            if !diagnostics.recent.isEmpty {
+                Text("Últimos toques")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(palette.secondaryText)
+                Text(diagnostics.recent.joined(separator: "\n"))
+                    .font(.system(size: 11).monospacedDigit())
+                    .foregroundStyle(palette.text)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Button("Poner a cero") {
+                engine.touchDiagnostics = TouchDiagnostics()
+                diagnostics = TouchDiagnostics()
+            }
+            .font(.system(size: 13, weight: .medium))
+            .foregroundStyle(palette.accent)
+            .buttonStyle(.plain)
+            Text("Si notas que falla una tecla, abre esto justo después y haz una captura.")
+                .font(.system(size: 11))
+                .foregroundStyle(palette.secondaryText)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private func diagnosticRow(_ title: String, _ value: Int) -> some View {
+        HStack {
+            Text(title)
+            Spacer(minLength: 8)
+            Text("\(value)").monospacedDigit()
+        }
+        .font(.system(size: 12))
+        .foregroundStyle(palette.text)
     }
 
     // MARK: Piezas

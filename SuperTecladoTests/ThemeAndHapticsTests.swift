@@ -93,6 +93,23 @@ final class ThemeAndHapticsTests: XCTestCase {
         XCTAssertEqual(KeyboardSettingsTransfer.apply(Data("no".utf8), to: keyboard), 0)
     }
 
+    func testSmartTouchAndLongPressDefaults() throws {
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: "super-teclado-tests-\(UUID().uuidString)"))
+        var preferences = KeyboardPreferences.load(from: defaults)
+        XCTAssertTrue(preferences.smartTouch)
+        XCTAssertEqual(preferences.longPressDelay, 400)
+
+        // El antiguo «Normal» (330 ms) pasa al nuevo; un valor elegido se respeta.
+        defaults.set(330, forKey: KeyboardPreferenceKey.longPressDelay)
+        XCTAssertEqual(KeyboardPreferences.load(from: defaults).longPressDelay, 400)
+        defaults.set(550, forKey: KeyboardPreferenceKey.longPressDelay)
+        XCTAssertEqual(KeyboardPreferences.load(from: defaults).longPressDelay, 550)
+
+        preferences.smartTouch = false
+        preferences.save(to: defaults)
+        XCTAssertFalse(KeyboardPreferences.load(from: defaults).smartTouch)
+    }
+
     func testCustomThemeIsIncludedInThemeList() {
         XCTAssertTrue(KeyboardThemeOption.allCases.contains(.custom))
         XCTAssertNil(KeyboardThemeOption.custom.isDark)

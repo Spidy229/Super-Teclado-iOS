@@ -22,7 +22,7 @@ struct KeyboardSettingsView: View {
     @AppStorage(KeyboardPreferenceKey.nextWordPrediction, store: UserDefaults(suiteName: SharedClipboardStore.appGroupID)) private var nextWordPrediction = true
     @AppStorage(KeyboardPreferenceKey.emojiSuggestions, store: UserDefaults(suiteName: SharedClipboardStore.appGroupID)) private var emojiSuggestions = true
     @AppStorage(KeyboardPreferenceKey.height, store: UserDefaults(suiteName: SharedClipboardStore.appGroupID)) private var height: KeyboardHeightOption = .normal
-    @AppStorage(KeyboardPreferenceKey.longPressDelay, store: UserDefaults(suiteName: SharedClipboardStore.appGroupID)) private var longPressDelay = 330
+    @AppStorage(KeyboardPreferenceKey.longPressDelay, store: UserDefaults(suiteName: SharedClipboardStore.appGroupID)) private var longPressDelay = 400
 
     @AppStorage(KeyboardPreferenceKey.primaryLanguage, store: UserDefaults(suiteName: SharedClipboardStore.appGroupID)) private var primaryLanguage: KeyboardLanguage = .spanish
     /// Código del segundo idioma o cadena vacía.
@@ -30,6 +30,7 @@ struct KeyboardSettingsView: View {
     /// Distribución elegida o «auto».
     @AppStorage(KeyboardPreferenceKey.layout, store: UserDefaults(suiteName: SharedClipboardStore.appGroupID)) private var layoutCode = "auto"
     @AppStorage(KeyboardPreferenceKey.incognito, store: UserDefaults(suiteName: SharedClipboardStore.appGroupID)) private var incognito = false
+    @AppStorage(KeyboardPreferenceKey.smartTouch, store: UserDefaults(suiteName: SharedClipboardStore.appGroupID)) private var smartTouch = true
 
     @AppStorage(KeyboardPreferenceKey.hapticsStrength, store: UserDefaults(suiteName: SharedClipboardStore.appGroupID)) private var hapticsStrength = 0.6
     @AppStorage(KeyboardPreferenceKey.hapticsStyle, store: UserDefaults(suiteName: SharedClipboardStore.appGroupID)) private var hapticsStyle: HapticStyleOption = .light
@@ -72,7 +73,7 @@ struct KeyboardSettingsView: View {
                     .lineLimit(2...5)
             }
 
-            Section("Preferencias") {
+            Section {
                 Toggle("Fila de números", isOn: $numberRow)
                 Toggle("Mostrar símbolos con pulsación larga", isOn: $longPressSymbols)
                 Toggle("Ventana emergente al pulsar teclas", isOn: $keyPopups)
@@ -86,10 +87,15 @@ struct KeyboardSettingsView: View {
                     ForEach(KeyboardHeightOption.allCases) { option in Text(option.title).tag(option) }
                 }
                 Picker("Retraso de la pulsación larga", selection: $longPressDelay) {
-                    Text("Corto").tag(220)
-                    Text("Normal").tag(330)
-                    Text("Largo").tag(500)
+                    Text("Corto").tag(250)
+                    Text("Normal").tag(400)
+                    Text("Largo").tag(550)
                 }
+                Toggle("Precisión inteligente", isOn: $smartTouch)
+            } header: {
+                Text("Preferencias")
+            } footer: {
+                Text("Con «Precisión inteligente», si tocas justo entre dos letras el teclado elige la que forma una palabra, como el teclado de Apple. Un toque claro sobre una tecla siempre escribe esa tecla.")
             }
 
             Section {

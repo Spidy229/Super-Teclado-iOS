@@ -118,6 +118,8 @@ enum KeyboardPreferenceKey {
     static let height = "keyboardHeight"
     static let longPressDelay = "keyboardLongPressDelay"
     static let incognito = "keyboardIncognito"
+    /// Elegir entre dos teclas según la palabra que se está escribiendo al tocar entre ellas.
+    static let smartTouch = "keyboardSmartTouch"
     /// Clave antigua (versión 2.2): inglés como segundo idioma.
     static let englishSecondLanguage = "keyboardEnglishSecondLanguage"
     static let primaryLanguage = "keyboardPrimaryLanguage"
@@ -164,9 +166,11 @@ struct KeyboardPreferences: Equatable {
     var emojiSuggestions = true
     var height: KeyboardHeightOption = .normal
     /// Milisegundos hasta mostrar acentos y símbolos al mantener una tecla.
-    var longPressDelay = 330
+    /// Antes 330 ms: con eso un toque algo lento escribía el número de la esquina.
+    var longPressDelay = 400
     /// Sin aprender palabras ni guardar lo copiado.
     var incognito = false
+    var smartTouch = true
     var primaryLanguage: KeyboardLanguage = .spanish
     var secondaryLanguage: KeyboardLanguage?
     /// `nil` usa la distribución del idioma principal.
@@ -214,8 +218,10 @@ struct KeyboardPreferences: Equatable {
         preferences.height = defaults.string(forKey: KeyboardPreferenceKey.height)
             .flatMap(KeyboardHeightOption.init(rawValue:)) ?? fallback.height
         let delay = defaults.integer(forKey: KeyboardPreferenceKey.longPressDelay)
-        preferences.longPressDelay = delay > 0 ? delay : fallback.longPressDelay
+        // 330 era el valor «Normal» anterior: pasa al nuevo normal.
+        preferences.longPressDelay = delay > 0 && delay != 330 ? delay : fallback.longPressDelay
         preferences.incognito = bool(KeyboardPreferenceKey.incognito, fallback.incognito)
+        preferences.smartTouch = bool(KeyboardPreferenceKey.smartTouch, fallback.smartTouch)
         preferences.primaryLanguage = defaults.string(forKey: KeyboardPreferenceKey.primaryLanguage)
             .flatMap(KeyboardLanguage.init(rawValue:)) ?? fallback.primaryLanguage
         if let code = defaults.string(forKey: KeyboardPreferenceKey.secondaryLanguage) {
@@ -283,6 +289,7 @@ struct KeyboardPreferences: Equatable {
             KeyboardPreferenceKey.height: height.rawValue,
             KeyboardPreferenceKey.longPressDelay: longPressDelay,
             KeyboardPreferenceKey.incognito: incognito,
+            KeyboardPreferenceKey.smartTouch: smartTouch,
             KeyboardPreferenceKey.backgroundDim: backgroundDim,
             KeyboardPreferenceKey.glassTransparency: glassTransparency,
             KeyboardPreferenceKey.hapticsStrength: hapticsStrength,

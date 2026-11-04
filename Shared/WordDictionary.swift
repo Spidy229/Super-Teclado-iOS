@@ -13,6 +13,11 @@ final class WordDictionary: Sendable {
     private let indicesByFirstLetter: [Character: [Int32]]
     /// Índices agrupados por la primera y la última tecla, para la escritura deslizando.
     private let indicesByGlideEnds: [String: [Int32]]
+    /// Palabras escritas como teclas («canción» → «cancion», la «ñ» se queda), en orden, con la
+    /// suma acumulada de frecuencias: dice al momento cuánto se usan las palabras que empiezan
+    /// por unas teclas, para elegir la tecla más probable cuando se toca entre dos.
+    private let sortedKeyWords: [String]
+    private let cumulativeCounts: [Int64]
 
     init(entries: [(word: String, count: Int)]) {
         var words: [String] = []
@@ -50,6 +55,33 @@ final class WordDictionary: Sendable {
         self.bestIndexByFolded = bestIndexByFolded
         self.indicesByFirstLetter = indicesByFirstLetter
         self.indicesByGlideEnds = indicesByGlideEnds
+
+        let keyed = zip(words, counts)
+            .map { (keys: String(Self.keyLetters($0.0)), count: $0.1) }
+            .sorted { $0.keys < $1.keys }
+        var cumulative: [Int64] = [0]
+        cumulative.reserveCapacity(keyed.count + 1)
+        for entry in keyed { cumulative.append(cumulative[cumulative.count - 1] + Int64(entry.count)) }
+        sortedKeyWords = keyed.map(\.keys)
+        cumulativeCounts = cumulative
+    }
+
+    /// Suma de frecuencias de las palabras que empiezan por estas teclas (0 si ninguna).
+    func prefixWeight(_ keys: String) -> Int64 {
+        guard !keys.isEmpty else { return cumulativeCounts.last ?? 0 }
+        let lower = firstIndex(notBefore: keys)
+        let upper = firstIndex(notBefore: keys + "\u{10FFFF}")
+        return cumulativeCounts[upper] - cumulativeCounts[lower]
+    }
+
+    private func firstIndex(notBefore value: String) -> Int {
+        var low = 0
+        var high = sortedKeyWords.count
+        while low < high {
+            let middle = (low + high) / 2
+            if sortedKeyWords[middle] < value { low = middle + 1 } else { high = middle }
+        }
+        return low
     }
 
     /// Lee líneas con el formato «palabra frecuencia».

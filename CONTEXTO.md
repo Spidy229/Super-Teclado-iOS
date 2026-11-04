@@ -1,6 +1,6 @@
 # Super Teclado: contexto para agentes
 
-Resumen de todo lo hecho hasta la **versión 2.6.9**, para que otro agente (Claude Code, Codex…) pueda seguir el trabajo sin repetir errores. El `README.md` describe las funciones para el usuario; este documento explica **cómo está hecho, por qué y qué falta**.
+Resumen de todo lo hecho hasta la **versión 2.7.0**, para que otro agente (Claude Code, Codex…) pueda seguir el trabajo sin repetir errores. El `README.md` describe las funciones para el usuario; este documento explica **cómo está hecho, por qué y qué falta**.
 
 ---
 
@@ -32,7 +32,7 @@ Resumen de todo lo hecho hasta la **versión 2.6.9**, para que otro agente (Clau
 - **Subir versión** en cada cambio que se entregue, en dos sitios que deben coincidir:
   - `project.yml`: `MARKETING_VERSION` y `CURRENT_PROJECT_VERSION`, **4 veces cada uno** (app, teclado, share y widget).
   - `SuperTecladoApp/Package.swift`: `displayVersion` y `bundleVersion`.
-  - Estado actual: 2.6.9 / 18 en `project.yml`, 2.6.9 / 23 en `Package.swift`.
+  - Estado actual: 2.7.0 / 19 en `project.yml`, 2.7.0 / 24 en `Package.swift`.
 - `scripts/build-unsigned-ipa.sh`:
   - firma ad hoc (`codesign -s -`) cada appex con sus entitlements y después la app;
   - **falla si falta `Assets.car` o `CFBundleIcons`** (comprobación añadida en 2.6.6).
@@ -125,6 +125,14 @@ Este archivo es la solución al **retraso al escribir**. Antes cada tecla era un
   - un toque cancelado por iOS se escribe si era corto (< 0,4 s y < 14 pt);
   - los dedos de los que iOS no avisó al levantarse se cierran (`dropTouchesThatEnded`), para que no bloqueen el teclado;
   - tocar otra tecla detiene la repetición de borrar.
+- **Precisión inteligente** (2.7.0, `smartKeyIndex`, preferencia `smartTouch`, activada por defecto):
+  - si el toque cae a menos del 25 % del borde de otra letra, se puntúa cada candidata con `−2·(dx²+dy²)` (distancia normalizada al centro) más `0,25·log(peso+1)`;
+  - el peso es `WordDictionary.prefixWeight(palabra + letra)`: índice ordenado de palabras como teclas con sumas acumuladas, unos 0,6 µs por consulta;
+  - la palabra sale de `engine.wordForPrediction`: el contexto del documento completado con `typedWord`, porque el contexto puede ir una letra por detrás al teclear deprisa;
+  - el rollover se escribe antes de elegir la tecla nueva, para que esa letra cuente;
+  - no se usa en contraseñas, códigos, tarjetas, usuario, correo, web ni campos con `autocorrectionType = .no`.
+- **Diagnóstico de toques**: `engine.touchDiagnostics` (contadores + últimos 12 toques con milisegundos entre toques), visible en el panel ⚙︎ con «Poner a cero».
+- Pulsación larga: el valor por defecto pasa de 330 a **400 ms**; el 330 guardado se convierte al cargar. Se elige en ⚙︎ (250 / 400 / 550 ms).
 - `Views/KeyViews.swift` conserva las teclas SwiftUI (`FunctionKeyView`, `DeleteKeyView`, `RepeatingKeyView`) que usan los paneles de emojis y edición, y `GlideTrail` (solo `preview`).
 
 ### Sugerencias: `SuggestionEngine.swift`
@@ -204,6 +212,7 @@ Este archivo es la solución al **retraso al escribir**. Antes cada tecla era un
 | 2.6.7 | Vibración en sugerencias y botones de la barra; control de **transparencia del cristal** (`glassTransparency`, 0–1, por defecto 1) en el teclado y en la app |
 | 2.6.8 | Sin azul ni corrección en el espacio con la autocorrección desactivada; «Enviar ajustes al teclado» |
 | 2.6.9 | Toques más fiables al teclear deprisa (ver reglas en §4) y cuadrícula que se actualiza sin esperar a SwiftUI |
+| 2.7.0 | Precisión inteligente al tocar entre dos letras, diagnóstico de toques en ⚙︎, pulsación larga de 400 ms ajustable en ⚙︎ |
 
 ## 8. Errores ya resueltos (no repetirlos)
 
@@ -230,9 +239,8 @@ Este archivo es la solución al **retraso al escribir**. Antes cada tecla era un
 - No está verificado en un iPhone que «Enviar ajustes al teclado» funcione con KravaSigner (debería, con acceso total).
 - El usuario aún no ha dicho qué muestra el panel ⚙︎ (estado del acceso total y del App Group).
 - `scripts/validate-project.ps1` está desfasado (§2).
-- El usuario notaba que se perdían pulsaciones al teclear deprisa; la 2.6.9 lo ataca, pero falta su confirmación.
+- El usuario notaba que se perdían pulsaciones al teclear deprisa. Tras la 2.6.9 seguía notando fallos, así que la 2.7.0 añade la precisión inteligente y el diagnóstico de toques. Hay que pedirle una captura del diagnóstico (⚙︎) justo después de un fallo: si «Cancelados y perdidos» y «Sin aviso de fin» siguen en 0, los toques perdidos no llegan al teclado (es cosa de iOS); si llegan, se ve qué les pasa.
 - Ideas posibles:
-  - zonas de toque que crecen según la letra más probable, como hace Apple (necesita un índice de prefijos en `WordDictionary`);
   - pulsación larga en `?123` para escribir números sin cambiar de página;
   - más ajustes de la app dentro del panel ⚙︎ (idiomas, altura), para quien no tiene App Group.
 

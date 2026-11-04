@@ -9,6 +9,34 @@ enum KeyFeedbackKind {
     case modifier
 }
 
+/// Recuento de lo que pasa con cada toque, para averiguar en el propio móvil por qué falla
+/// alguno (se ve en el engranaje ⚙︎ de la barra).
+struct TouchDiagnostics {
+    var touches = 0
+    var typed = 0
+    /// Teclas escritas porque tocó otro dedo antes de levantar el anterior.
+    var rollovers = 0
+    /// Toques que iOS canceló: los cortos se escriben igual, los demás se pierden.
+    var cancelledTyped = 0
+    var cancelledLost = 0
+    /// Dedos de los que iOS no avisó al levantarse.
+    var unfinished = 0
+    var ignored = 0
+    var glides = 0
+    var glidesAsTaps = 0
+    var cursorSwipes = 0
+    var alternates = 0
+    /// Toques entre dos letras resueltos con el diccionario.
+    var smartChoices = 0
+    /// Últimos toques, del más reciente al más antiguo.
+    var recent: [String] = []
+
+    mutating func log(_ entry: String) {
+        recent.insert(entry, at: 0)
+        if recent.count > 12 { recent.removeLast(recent.count - 12) }
+    }
+}
+
 /// Lo que cambia con cada pulsación (sugerencias, pegado rápido) va aparte del motor: así solo
 /// se vuelve a dibujar la barra de sugerencias y no todo el teclado.
 @MainActor
@@ -69,6 +97,10 @@ final class KeyboardEngine: ObservableObject {
 
     /// Última pulsación de una tecla (para no consultar el portapapeles mientras se escribe).
     private(set) var lastKeyTouch: TimeInterval = 0
+    var touchDiagnostics = TouchDiagnostics()
+    /// Letras que el propio teclado acaba de escribir en la palabra actual. Al teclear muy
+    /// deprisa el contexto del documento puede ir una letra por detrás.
+    private var typedWord = ""
 
     /// Cambio del portapapeles hecho por el propio teclado (para no volver a capturarlo).
     var ownPasteboardChangeCount: Int?
@@ -140,6 +172,25 @@ final class KeyboardEngine: ObservableObject {
 
     var letterLayout: LetterLayout { preferences.letterLayout }
 
+    var dictionary: WordDictionary? { suggestionEngine.dictionary }
+
+    /// Palabra que se está escribiendo, en minúsculas, para elegir la tecla más probable.
+    var wordForPrediction: String {
+        let context = currentWord.lowercased()
+        return typedWord.count > context.count && typedWord.hasPrefix(context) ? typedWord : context
+    }
+
+    /// La precisión inteligente no se usa donde se escriben cosas que no son palabras.
+    var smartTouchAllowed: Bool {
+        guard preferences.smartTouch, panel == .typing, page == .letters,
+              !isWebField, !isEmailField, suggestionEngine.dictionary != nil else { return false }
+        guard proxy?.autocorrectionType != .no else { return false }
+        let contentType: UITextContentType? = proxy?.textContentType ?? nil
+        guard let contentType else { return true }
+        let free: [UITextContentType] = [.password, .newPassword, .oneTimeCode, .creditCardNumber, .username, .emailAddress, .URL]
+        return !free.contains(contentType)
+    }
+
     // MARK: Contexto
 
     func loadPreferences() {
@@ -178,6 +229,8 @@ final class KeyboardEngine: ObservableObject {
             page = Self.defaultPage(for: newType)
         }
         updateAppearance()
+        // Si el cursor se ha ido a otra palabra, lo escrito antes ya no cuenta.
+        if !typedWord.hasPrefix(currentWord.lowercased()) { typedWord = "" }
         updateShiftState()
         scheduleSuggestions()
     }
@@ -245,6 +298,7 @@ final class KeyboardEngine: ObservableObject {
 
     /// Restablece la página al empezar a escribir en otro campo, como Gboard.
     func prepareForNewField() {
+        typedWord = ""
         page = Self.defaultPage(for: proxy?.keyboardType ?? keyboardType)
         lastGlide = nil
         autoSpaceInserted = false
@@ -343,7 +397,8 @@ final class KeyboardEngine: ObservableObject {
         }
     }
 
-    private func afterEdit() {
+    private func afterEdit(keepingTypedWord: Bool = false) {
+        if !keepingTypedWord { typedWord = "" }
         updateShiftState()
         scheduleSuggestions()
     }
@@ -393,7 +448,9 @@ final class KeyboardEngine: ObservableObject {
             pendingAutocorrection = nil
         }
         if shift == .on { shift = .off }
-        afterEdit()
+        let continuesWord = output.count == 1 && (output.first?.isLetter == true || output == "'")
+        if continuesWord { typedWord += output.lowercased() }
+        afterEdit(keepingTypedWord: continuesWord)
     }
 
     func insertSpace() {
@@ -478,6 +535,12 @@ final class KeyboardEngine: ObservableObject {
             suggestionEngine.reject(pending.original, persist: !isIncognito)
         } else {
             proxy.deleteBackward()
+            if !typedWord.isEmpty {
+                typedWord.removeLast()
+                pendingAutocorrection = nil
+                afterEdit(keepingTypedWord: true)
+                return
+            }
         }
         pendingAutocorrection = nil
         afterEdit()
