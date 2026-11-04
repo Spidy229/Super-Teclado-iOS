@@ -10,6 +10,8 @@ struct KeyboardThemesView: View {
     private var keyBorders = true
     @AppStorage(KeyboardPreferenceKey.backgroundDim, store: UserDefaults(suiteName: SharedClipboardStore.appGroupID))
     private var backgroundDim = 0.35
+    @AppStorage(KeyboardPreferenceKey.glassTransparency, store: UserDefaults(suiteName: SharedClipboardStore.appGroupID))
+    private var glassTransparency = 1.0
 
     @State private var photoItem: PhotosPickerItem?
     @State private var photo: UIImage?
@@ -31,11 +33,21 @@ struct KeyboardThemesView: View {
                     if photo != nil { themeButton(.photo) }
                 }
                 .padding(.vertical, 8)
+                if theme == .glass {
+                    VStack(alignment: .leading) {
+                        LabeledContent("Transparencia del cristal") {
+                            Text("\(Int((glassTransparency * 100).rounded())) %")
+                                .monospacedDigit()
+                        }
+                        Slider(value: $glassTransparency, in: 0...1, step: 0.05)
+                            .accessibilityLabel("Transparencia del cristal")
+                    }
+                }
                 Toggle("Bordes de las teclas", isOn: $keyBorders)
             } header: {
                 Text("Temas")
             } footer: {
-                Text("«Automático» y «Cristal» siguen el modo claro u oscuro del sistema. «Cristal» deja ver el fondo translúcido de iOS. También puedes cambiar de tema desde la paleta de la barra del teclado.")
+                Text("«Automático» y «Cristal» siguen el modo claro u oscuro del sistema. «Cristal» deja ver el fondo translúcido de iOS; su transparencia se ajusta aquí o en la paleta del teclado (100 % es el cristal más transparente). También puedes cambiar de tema desde la paleta de la barra del teclado.")
             }
 
             Section {
@@ -142,7 +154,8 @@ struct KeyboardThemesView: View {
                     systemIsDark: colorScheme == .dark,
                     custom: customColors,
                     photo: photo,
-                    dim: backgroundDim
+                    dim: backgroundDim,
+                    glassTransparency: glassTransparency
                 )
                     .frame(height: 74)
                     .overlay {

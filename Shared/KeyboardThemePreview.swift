@@ -9,9 +9,15 @@ struct KeyboardThemePreview: View {
     var custom = CustomThemeColors()
     var photo: UIImage? = nil
     var dim = 0.35
+    var glassTransparency = 1.0
 
     var body: some View {
-        let palette = KeyboardPalette.make(theme: option, systemIsDark: systemIsDark, custom: custom)
+        let palette = KeyboardPalette.make(
+            theme: option,
+            systemIsDark: systemIsDark,
+            custom: custom,
+            glassTransparency: glassTransparency
+        )
         ZStack {
             if option == .photo, let photo {
                 Image(uiImage: photo)
@@ -28,6 +34,7 @@ struct KeyboardThemePreview: View {
                     endPoint: .bottomTrailing
                 )
                 .overlay(.ultraThinMaterial)
+                .overlay(palette.background)
             } else {
                 palette.background
             }

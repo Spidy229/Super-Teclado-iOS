@@ -3,7 +3,7 @@ import SwiftUI
 /// Colores de cada tema, inspirados en los de Gboard. Está en `Shared` para que la app pueda
 /// mostrar la vista previa de los temas con los mismos colores que el teclado.
 struct KeyboardPalette: Equatable {
-    let background: Color
+    var background: Color
     let key: Color
     let specialKey: Color
     let keyPressed: Color
@@ -26,7 +26,8 @@ struct KeyboardPalette: Equatable {
     static func make(
         theme: KeyboardThemeOption,
         systemIsDark: Bool,
-        custom: CustomThemeColors = CustomThemeColors()
+        custom: CustomThemeColors = CustomThemeColors(),
+        glassTransparency: Double = 1
     ) -> KeyboardPalette {
         switch theme {
         case .system: systemIsDark ? dark : light
@@ -68,7 +69,7 @@ struct KeyboardPalette: Equatable {
             )
         case .photo: photo
         case .custom: customPalette(custom)
-        case .glass: systemIsDark ? darkGlass : lightGlass
+        case .glass: glass(dark: systemIsDark, transparency: glassTransparency)
         case .aurora:
             gradientPalette([rgb(0.23, 0.11, 0.44), rgb(0.12, 0.31, 0.61)], dark: true, accent: rgb(0.8, 0.65, 1))
         case .dawn:
@@ -175,6 +176,17 @@ struct KeyboardPalette: Equatable {
         chip: Color.white.opacity(0.16),
         separator: Color.white.opacity(0.22)
     )
+
+    /// Cristal con la transparencia elegida: un velo del color de fondo sobre el fondo
+    /// translúcido de iOS, de nada (100 %) a opaco (0 %).
+    private static func glass(dark: Bool, transparency: Double) -> KeyboardPalette {
+        var palette = dark ? darkGlass : lightGlass
+        let veil = 1 - min(max(transparency, 0), 1)
+        if veil > 0.001 {
+            palette.background = (palette.solidBackground ?? palette.background).opacity(veil)
+        }
+        return palette
+    }
 
     /// Cristal: fondo transparente sobre el fondo translúcido del sistema.
     private static let darkGlass = KeyboardPalette(

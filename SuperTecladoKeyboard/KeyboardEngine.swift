@@ -745,6 +745,16 @@ final class KeyboardEngine: ObservableObject {
         loadBackgroundIfNeeded()
     }
 
+    /// Transparencia del tema «Cristal». Mientras se arrastra el control solo se redibuja; se
+    /// guarda al soltarlo.
+    func setGlassTransparency(_ value: Double, persist: Bool) {
+        let clamped = min(max(value, 0), 1)
+        if preferences.glassTransparency != clamped { preferences.glassTransparency = clamped }
+        if persist {
+            SharedClipboardStore.sharedDefaults?.set(clamped, forKey: KeyboardPreferenceKey.glassTransparency)
+        }
+    }
+
     func setKeyBorders(_ enabled: Bool) {
         preferences.keyBorders = enabled
         KeyboardPreferences.setKeyBorders(enabled)

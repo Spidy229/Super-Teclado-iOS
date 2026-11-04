@@ -131,6 +131,8 @@ enum KeyboardPreferenceKey {
     static let customBackgroundEnd = "keyboardCustomBackgroundEnd"
     static let backgroundDim = "keyboardBackgroundDim"
     static let hapticsStrength = "keyboardHapticsStrength"
+    /// Transparencia del tema «Cristal»: 1 deja ver del todo el fondo translúcido de iOS.
+    static let glassTransparency = "keyboardGlassTransparency"
     static let hapticsStyle = "keyboardHapticsStyle"
     static let keyLabelSize = "keyboardKeyLabelSize"
     static let customBackground = "keyboardCustomBackground"
@@ -174,6 +176,7 @@ struct KeyboardPreferences: Equatable {
     var favorites = KeyboardPreferences.defaultFavorites
     /// Oscurecimiento de la foto de fondo (0 a 0,7).
     var backgroundDim = 0.35
+    var glassTransparency = 1.0
     /// Intensidad de la vibración de 0,1 a 1.
     var hapticsStrength = 0.6
     var hapticsStyle: HapticStyleOption = .light
@@ -232,6 +235,9 @@ struct KeyboardPreferences: Equatable {
         if defaults.object(forKey: KeyboardPreferenceKey.backgroundDim) != nil {
             preferences.backgroundDim = min(max(defaults.double(forKey: KeyboardPreferenceKey.backgroundDim), 0), 0.7)
         }
+        if defaults.object(forKey: KeyboardPreferenceKey.glassTransparency) != nil {
+            preferences.glassTransparency = min(max(defaults.double(forKey: KeyboardPreferenceKey.glassTransparency), 0), 1)
+        }
         if defaults.object(forKey: KeyboardPreferenceKey.hapticsStrength) != nil {
             preferences.hapticsStrength = min(max(defaults.double(forKey: KeyboardPreferenceKey.hapticsStrength), 0.1), 1)
         }
@@ -278,6 +284,7 @@ struct KeyboardPreferences: Equatable {
             KeyboardPreferenceKey.longPressDelay: longPressDelay,
             KeyboardPreferenceKey.incognito: incognito,
             KeyboardPreferenceKey.backgroundDim: backgroundDim,
+            KeyboardPreferenceKey.glassTransparency: glassTransparency,
             KeyboardPreferenceKey.hapticsStrength: hapticsStrength,
             KeyboardPreferenceKey.hapticsStyle: hapticsStyle.rawValue,
             KeyboardPreferenceKey.keyLabelSize: keyLabelSize.rawValue,

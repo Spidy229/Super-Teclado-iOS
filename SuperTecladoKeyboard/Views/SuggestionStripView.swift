@@ -60,7 +60,8 @@ struct SuggestionStripView: View {
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                         .contentShape(Rectangle())
                 }
-                .buttonStyle(.plain)
+                // Vibra al tocar la sugerencia, como una tecla.
+                .buttonStyle(KeyFeedbackButtonStyle())
                 .disabled(item == nil)
             }
         }
@@ -95,7 +96,7 @@ struct SuggestionStripView: View {
             .frame(maxWidth: 230, minHeight: 32)
             .background(palette.chip, in: Capsule())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(KeyFeedbackButtonStyle())
         .accessibilityLabel("Pegar lo último copiado")
     }
 

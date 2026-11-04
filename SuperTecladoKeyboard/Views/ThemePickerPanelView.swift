@@ -24,7 +24,8 @@ struct ThemePickerPanelView: View {
                                     systemIsDark: engine.isDark,
                                     custom: engine.preferences.customColors,
                                     photo: engine.backgroundImage,
-                                    dim: engine.preferences.backgroundDim
+                                    dim: engine.preferences.backgroundDim,
+                                    glassTransparency: engine.preferences.glassTransparency
                                 )
                                 .frame(height: 58)
                                 .overlay {
@@ -46,6 +47,36 @@ struct ThemePickerPanelView: View {
                     }
                 }
                 .padding(10)
+            }
+
+            if engine.preferences.theme == .glass {
+                HStack(spacing: 10) {
+                    Text("Transparencia")
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(palette.text)
+                    Slider(
+                        value: Binding(
+                            get: { engine.preferences.glassTransparency },
+                            set: { engine.setGlassTransparency($0, persist: false) }
+                        ),
+                        in: 0...1,
+                        step: 0.05
+                    ) { editing in
+                        if !editing {
+                            engine.setGlassTransparency(engine.preferences.glassTransparency, persist: true)
+                            engine.keyFeedback(.character)
+                        }
+                    }
+                    .tint(palette.accent)
+                    .accessibilityLabel("Transparencia del cristal")
+                    Text("\(Int((engine.preferences.glassTransparency * 100).rounded())) %")
+                        .font(.system(size: 12, weight: .medium).monospacedDigit())
+                        .foregroundStyle(palette.secondaryText)
+                        .frame(width: 42, alignment: .trailing)
+                }
+                .padding(.horizontal, 14)
+                .frame(height: 40)
+                .background(palette.specialKey.opacity(0.55))
             }
 
             HStack(spacing: 10) {

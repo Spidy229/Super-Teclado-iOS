@@ -37,6 +37,30 @@ struct KeyCapView: View {
     }
 }
 
+/// Botón de la barra que vibra (y suena) al tocarlo, igual que las teclas, y se atenúa mientras
+/// se mantiene pulsado.
+struct KeyFeedbackButtonStyle: ButtonStyle {
+    var kind: KeyFeedbackKind = .character
+
+    func makeBody(configuration: Configuration) -> some View {
+        FeedbackLabel(configuration: configuration, kind: kind)
+    }
+
+    private struct FeedbackLabel: View {
+        @EnvironmentObject private var engine: KeyboardEngine
+        let configuration: ButtonStyleConfiguration
+        let kind: KeyFeedbackKind
+
+        var body: some View {
+            configuration.label
+                .opacity(configuration.isPressed ? 0.55 : 1)
+                .onChange(of: configuration.isPressed) { _, pressed in
+                    if pressed { engine.keyFeedback(kind) }
+                }
+        }
+    }
+}
+
 /// Botón para volver al teclado desde los paneles. Es ancho y está separado del borde de la
 /// pantalla, porque iOS retrasa o descarta los toques pegados al borde por sus propios gestos.
 struct PanelBackButton: View {
@@ -58,7 +82,7 @@ struct PanelBackButton: View {
             .background(palette.chip, in: Capsule())
             .contentShape(Capsule())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(KeyFeedbackButtonStyle(kind: .modifier))
         .padding(.leading, 6)
         .accessibilityLabel("Volver")
     }
@@ -80,7 +104,7 @@ struct StripButton: View {
                 .frame(width: 44, height: 36)
                 .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(KeyFeedbackButtonStyle(kind: .modifier))
         .accessibilityLabel(label ?? symbol)
     }
 }

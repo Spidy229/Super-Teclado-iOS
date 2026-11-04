@@ -7,7 +7,8 @@ struct KeyboardRootView: View {
         let palette = KeyboardPalette.make(
             theme: engine.preferences.theme,
             systemIsDark: engine.isDark,
-            custom: engine.preferences.customColors
+            custom: engine.preferences.customColors,
+            glassTransparency: engine.preferences.glassTransparency
         )
         let showsFavorites = engine.metrics.favoritesRowHeight > 0 && engine.panel == .typing
         VStack(spacing: 0) {

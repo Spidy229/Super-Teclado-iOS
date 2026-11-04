@@ -52,6 +52,29 @@ final class ThemeAndHapticsTests: XCTestCase {
         XCTAssertEqual(KeyboardPreferences.load(from: defaults), preferences)
     }
 
+    func testGlassTransparencyIsClampedSavedAndVeilsTheBackground() throws {
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: "super-teclado-tests-\(UUID().uuidString)"))
+        XCTAssertEqual(KeyboardPreferences.load(from: defaults).glassTransparency, 1, accuracy: 0.001)
+
+        defaults.set(-2.0, forKey: KeyboardPreferenceKey.glassTransparency)
+        XCTAssertEqual(KeyboardPreferences.load(from: defaults).glassTransparency, 0, accuracy: 0.001)
+
+        var preferences = KeyboardPreferences()
+        preferences.glassTransparency = 0.4
+        preferences.save(to: defaults)
+        XCTAssertEqual(KeyboardPreferences.load(from: defaults).glassTransparency, 0.4, accuracy: 0.001)
+
+        // 100 %: sin velo, se ve el fondo translúcido de iOS. Menos: un velo cada vez más opaco.
+        let clear = KeyboardPalette.make(theme: .glass, systemIsDark: true, glassTransparency: 1)
+        let veiled = KeyboardPalette.make(theme: .glass, systemIsDark: true, glassTransparency: 0.4)
+        XCTAssertEqual(clear.background, .clear)
+        XCTAssertNotEqual(veiled.background, clear.background)
+        XCTAssertEqual(
+            KeyboardPalette.make(theme: .dark, systemIsDark: true, glassTransparency: 0.2),
+            KeyboardPalette.make(theme: .dark, systemIsDark: true)
+        )
+    }
+
     func testCustomThemeIsIncludedInThemeList() {
         XCTAssertTrue(KeyboardThemeOption.allCases.contains(.custom))
         XCTAssertNil(KeyboardThemeOption.custom.isDark)
