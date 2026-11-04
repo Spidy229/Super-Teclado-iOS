@@ -76,7 +76,8 @@ final class ShareViewController: UIViewController {
 
     private func loadData(from provider: NSItemProvider, type: UTType) async -> Data? {
         await withCheckedContinuation { continuation in
-            _ = provider.loadDataRepresentation(for: type) { data, _ in
+            // @Sendable: iOS entrega el resultado en otro hilo; sin esto Swift 6 cerraría la extensión.
+            _ = provider.loadDataRepresentation(for: type) { @Sendable data, _ in
                 continuation.resume(returning: data)
             }
         }
@@ -84,7 +85,7 @@ final class ShareViewController: UIViewController {
 
     private func loadURL(from provider: NSItemProvider) async -> URL? {
         await withCheckedContinuation { continuation in
-            _ = provider.loadObject(ofClass: URL.self) { url, _ in
+            _ = provider.loadObject(ofClass: URL.self) { @Sendable url, _ in
                 continuation.resume(returning: url)
             }
         }
@@ -92,7 +93,7 @@ final class ShareViewController: UIViewController {
 
     private func loadText(from provider: NSItemProvider) async -> String? {
         await withCheckedContinuation { continuation in
-            _ = provider.loadObject(ofClass: String.self) { text, _ in
+            _ = provider.loadObject(ofClass: String.self) { @Sendable text, _ in
                 continuation.resume(returning: text)
             }
         }
