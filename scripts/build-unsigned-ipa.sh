@@ -20,6 +20,12 @@ xcodebuild \
 APP_PATH="build/Build/Products/Release-iphoneos/SuperTeclado.app"
 test -d "$APP_PATH"
 
+# Sin el catálogo compilado iOS muestra el icono genérico de cuadrícula.
+if [ ! -f "$APP_PATH/Assets.car" ] || ! /usr/libexec/PlistBuddy -c 'Print :CFBundleIcons:CFBundlePrimaryIcon' "$APP_PATH/Info.plist" >/dev/null 2>&1; then
+  echo "error: la app no incluye el icono (falta Assets.car o CFBundleIcons)" >&2
+  exit 1
+fi
+
 KEYBOARD_PATH="$APP_PATH/PlugIns/SuperTecladoKeyboard.appex"
 test -d "$KEYBOARD_PATH"
 
