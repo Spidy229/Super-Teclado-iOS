@@ -39,6 +39,19 @@ final class ThemeAndHapticsTests: XCTestCase {
         XCTAssertGreaterThan(preferences.keyLabelSize.scale, 1)
     }
 
+    func testPreferencesChangedInTheKeyboardAreSaved() throws {
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: "super-teclado-tests-\(UUID().uuidString)"))
+        var preferences = KeyboardPreferences()
+        preferences.hapticsStrength = 0.9
+        preferences.hapticsStyle = .rigid
+        preferences.sound = true
+        preferences.numberRow = true
+        preferences.secondaryLanguage = .english
+        preferences.save(to: defaults)
+
+        XCTAssertEqual(KeyboardPreferences.load(from: defaults), preferences)
+    }
+
     func testCustomThemeIsIncludedInThemeList() {
         XCTAssertTrue(KeyboardThemeOption.allCases.contains(.custom))
         XCTAssertNil(KeyboardThemeOption.custom.isDark)

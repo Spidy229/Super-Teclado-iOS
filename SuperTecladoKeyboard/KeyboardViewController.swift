@@ -64,6 +64,25 @@ final class KeyboardViewController: UIInputViewController {
         startClipboardMonitoring()
     }
 
+    override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        // iOS puede dar el valor definitivo de «acceso total» cuando el teclado ya está visible.
+        if engine.hasFullAccess != hasFullAccess { engine.hasFullAccess = hasFullAccess }
+        removeSystemTouchDelays()
+    }
+
+    /// Los gestos del sistema (bordes de la pantalla, barra de inicio) retrasan los toques del
+    /// teclado hasta descartar que sean suyos. Eso hacía que las teclas de los bordes y el botón
+    /// de volver respondieran tarde o no respondieran.
+    private func removeSystemTouchDelays() {
+        var current: UIView? = view
+        while let candidate = current {
+            candidate.gestureRecognizers?.forEach { $0.delaysTouchesBegan = false }
+            current = candidate.superview
+        }
+        view.window?.gestureRecognizers?.forEach { $0.delaysTouchesBegan = false }
+    }
+
     override func viewWillDisappear(_ animated: Bool) {
         super.viewWillDisappear(animated)
         clipboardTimer?.invalidate()

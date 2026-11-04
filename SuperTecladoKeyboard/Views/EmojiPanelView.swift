@@ -6,7 +6,7 @@ struct EmojiHeaderView: View {
 
     var body: some View {
         HStack(spacing: 4) {
-            StripButton(symbol: "arrow.left", label: "Volver al teclado") { engine.closePanel() }
+            PanelBackButton { engine.closePanel() }
             Button { engine.openEmojiSearch() } label: {
                 HStack(spacing: 6) {
                     Image(systemName: "magnifyingglass")
@@ -185,7 +185,7 @@ struct EmojiSearchBarView: View {
 
     var body: some View {
         HStack(spacing: 4) {
-            StripButton(symbol: "arrow.left", label: "Volver a los emojis") { engine.open(.emoji) }
+            PanelBackButton(title: "😀") { engine.open(.emoji) }
             HStack(spacing: 4) {
                 Image(systemName: "magnifyingglass")
                     .foregroundStyle(palette.secondaryText)

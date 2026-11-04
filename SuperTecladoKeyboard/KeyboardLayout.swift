@@ -19,6 +19,8 @@ enum KeyboardPanel: Equatable {
     case editing
     /// Selector de temas dentro del teclado.
     case themes
+    /// Ajustes rápidos (vibración, sonido…) y estado del acceso total.
+    case settings
 }
 
 enum ShiftState {

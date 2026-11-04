@@ -8,7 +8,19 @@ struct KeyboardStatusView: View {
 
     var body: some View {
         Group {
-            if let lastActive {
+            if !SharedClipboardStore.isAppGroupAvailable {
+                Label {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("La app no puede comunicarse con el teclado")
+                            .font(.subheadline.weight(.semibold))
+                        Text("La firma de la IPA no incluye el App Group, así que la app no ve si el teclado tiene acceso total ni le puede pasar ajustes ni el portapapeles. El teclado funciona igual: cambia la vibración, el sonido y lo demás desde el engranaje de su barra. Para que se comuniquen, firma con un certificado que permita App Groups (en Feather, sin quitar los App Groups).")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                } icon: {
+                    Image(systemName: "link.badge.plus").foregroundStyle(.orange)
+                }
+            } else if let lastActive {
                 Label {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Teclado activado con acceso total")

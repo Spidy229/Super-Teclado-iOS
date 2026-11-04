@@ -85,6 +85,10 @@ enum SharedClipboardStore {
 
     static var sharedDefaults: UserDefaults? { UserDefaults(suiteName: appGroupID) }
 
+    /// `false` si la firma de la app no incluye el App Group: entonces la app y el teclado no
+    /// comparten ajustes ni portapapeles (cada uno guarda los suyos).
+    static var isAppGroupAvailable: Bool { containerURL() != nil }
+
     static var automaticCaptureEnabled: Bool {
         get {
             guard sharedDefaults?.object(forKey: automaticCaptureKey) != nil else { return true }

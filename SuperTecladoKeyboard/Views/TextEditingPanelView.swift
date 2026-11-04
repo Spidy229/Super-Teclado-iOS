@@ -7,7 +7,7 @@ struct PanelHeaderView: View {
 
     var body: some View {
         HStack(spacing: 4) {
-            StripButton(symbol: "arrow.left", label: "Volver al teclado") { engine.closePanel() }
+            PanelBackButton { engine.closePanel() }
             Text(title)
                 .font(.system(size: 16, weight: .semibold))
                 .foregroundStyle(palette.text)

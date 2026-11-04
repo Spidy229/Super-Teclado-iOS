@@ -59,7 +59,7 @@ struct ClipboardHeaderView: View {
 
     var body: some View {
         HStack(spacing: 2) {
-            StripButton(symbol: "arrow.left", label: "Volver al teclado") { engine.closePanel() }
+            PanelBackButton { engine.closePanel() }
             Text(engine.isEditingClips ? editingTitle : "Portapapeles")
                 .font(.system(size: 16, weight: .semibold))
                 .foregroundStyle(palette.text)
@@ -702,7 +702,7 @@ struct ClipboardSearchBarView: View {
 
     var body: some View {
         HStack(spacing: 4) {
-            StripButton(symbol: "arrow.left", label: "Volver al portapapeles") { engine.open(.clipboard) }
+            PanelBackButton(title: "") { engine.open(.clipboard) }
             HStack(spacing: 4) {
                 Image(systemName: "magnifyingglass")
                     .foregroundStyle(palette.secondaryText)

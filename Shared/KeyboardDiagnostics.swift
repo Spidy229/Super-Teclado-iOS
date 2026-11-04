@@ -93,6 +93,7 @@ struct KeyboardDiagnostics: Equatable {
     /// Texto para copiar y enviar cuando algo falla.
     func report(appVersion: String, lastActive: Date?) -> String {
         var lines = ["Super Teclado \(appVersion) · diagnóstico"]
+        lines.append("App Group: \(SharedClipboardStore.isAppGroupAvailable ? "disponible" : "no disponible (la firma no lo incluye)")")
         lines.append("Último uso del teclado: \(lastActive.map { $0.formatted(date: .abbreviated, time: .shortened) } ?? "nunca")")
         lines.append("Memoria disponible: \(availableMemoryMB.map { String(format: "%.0f MB", $0) } ?? "sin datos")")
         lines.append("Memoria disponible mínima: \(lowestAvailableMemoryMB.map { String(format: "%.0f MB", $0) } ?? "sin datos")")

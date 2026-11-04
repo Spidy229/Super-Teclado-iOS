@@ -60,6 +60,7 @@ final class KeyboardEngine: ObservableObject {
     private var quickPasteDate = Date.distantPast
     private var traitStyle: UIUserInterfaceStyle = .unspecified
     private var toastTask: Task<Void, Never>?
+    private var suggestionTask: Task<Void, Never>?
     private var toastAction: (() -> Void)?
     /// Último borrado del portapapeles, para poder deshacerlo durante unos segundos.
     private var undoDeletion: (saved: [SharedClipboardClip], temporary: [SharedTemporaryClip])?
@@ -156,7 +157,7 @@ final class KeyboardEngine: ObservableObject {
         }
         updateAppearance()
         updateShiftState()
-        refreshSuggestions()
+        scheduleSuggestions()
     }
 
     func setTraitStyle(_ style: UIUserInterfaceStyle) {
@@ -317,7 +318,18 @@ final class KeyboardEngine: ObservableObject {
 
     private func afterEdit() {
         updateShiftState()
-        refreshSuggestions()
+        scheduleSuggestions()
+    }
+
+    /// Las sugerencias se calculan justo después de escribir, sin bloquear la pulsación: al
+    /// teclear rápido solo se calculan para la última letra.
+    private func scheduleSuggestions() {
+        suggestionTask?.cancel()
+        suggestionTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .milliseconds(30))
+            guard !Task.isCancelled, let self else { return }
+            self.refreshSuggestions()
+        }
     }
 
     // MARK: Escritura
@@ -334,7 +346,7 @@ final class KeyboardEngine: ObservableObject {
         }
         guard let proxy else { return }
         let output = displayText(for: value, caseSensitive: caseSensitive)
-        showsToolbar = false
+        if showsToolbar { showsToolbar = false }
         let isPunctuation = [".", ",", "?", "!", ";", ":"].contains(output)
         if isPunctuation, autoSpaceInserted, proxy.documentContextBeforeInput?.hasSuffix(" ") == true {
             // «hola ,» → «hola, »: el signo se pega a la palabra elegida en la barra.
@@ -583,7 +595,7 @@ final class KeyboardEngine: ObservableObject {
         proxy.insertText(styled[0])
         pendingAutocorrection = nil
         autoSpaceInserted = false
-        showsToolbar = false
+        if showsToolbar { showsToolbar = false }
         lastGlide = (styled[0], styled)
         if shift == .on { shift = .off }
         afterEdit()
@@ -674,6 +686,27 @@ final class KeyboardEngine: ObservableObject {
         selectedClipIDs = []
         panel = .typing
         afterEdit()
+    }
+
+    /// Cambia ajustes desde el panel del teclado y los guarda. Funciona aunque la firma no
+    /// comparta el App Group con la app.
+    func updatePreferences(_ change: (inout KeyboardPreferences) -> Void) {
+        var updated = preferences
+        change(&updated)
+        guard updated != preferences else { return }
+        let layoutChanged = updated.numberRow != preferences.numberRow
+            || updated.height != preferences.height
+            || updated.favoritesRow != preferences.favoritesRow
+        preferences = updated
+        updated.save()
+        updateAppearance()
+        if !safeMode { loadDictionaryIfNeeded() }
+        if layoutChanged { controller?.view.setNeedsLayout() }
+    }
+
+    /// Vibración de prueba con el tipo e intensidad elegidos.
+    func previewHaptic() {
+        keyFeedback(.character)
     }
 
     func setTheme(_ theme: KeyboardThemeOption) {
@@ -1024,7 +1057,7 @@ final class KeyboardEngine: ObservableObject {
     // MARK: Respuesta táctil y avisos
 
     func keyFeedback(_ kind: KeyFeedbackKind) {
-        if preferences.haptics, hasFullAccess {
+        if preferences.haptics, controller?.hasFullAccess ?? hasFullAccess {
             let strength = preferences.hapticsStrength
             // Las teclas especiales vibran algo más, como en Gboard.
             let intensity = kind == .character ? strength : min(1, strength + 0.2)

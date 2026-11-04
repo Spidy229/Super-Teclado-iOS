@@ -120,12 +120,8 @@ struct SuggestionStripView: View {
                 Spacer(minLength: 0)
                 StripButton(symbol: "paintpalette", label: "Temas") { engine.open(.themes) }
                 Spacer(minLength: 0)
-                StripButton(
-                    symbol: engine.preferences.incognito ? "eye.slash.fill" : "eye.slash",
-                    isActive: engine.preferences.incognito,
-                    label: "Modo incógnito"
-                ) {
-                    engine.toggleIncognito()
+                StripButton(symbol: "gearshape", isActive: engine.preferences.incognito, label: "Ajustes del teclado") {
+                    engine.open(.settings)
                 }
                 Spacer(minLength: 0)
                 StripButton(symbol: "keyboard.chevron.compact.down", label: "Ocultar teclado") { engine.dismissKeyboard() }

@@ -21,11 +21,46 @@ struct KeyCapView: View {
 
     var body: some View {
         let showsBorder = engine.preferences.keyBorders || alwaysFilled
-        RoundedRectangle(cornerRadius: 7, style: .continuous)
-            .fill(isPressed ? palette.keyPressed : (showsBorder ? fill : Color.clear))
-            .shadow(color: showsBorder ? palette.shadow : .clear, radius: 0, x: 0, y: 1)
-            .padding(.horizontal, 3)
-            .padding(.vertical, 4)
+        // La sombra se dibuja como una segunda forma desplazada: `.shadow` obliga a renderizar
+        // cada tecla fuera de pantalla y hacía el teclado más lento.
+        ZStack {
+            if showsBorder {
+                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                    .fill(palette.shadow)
+                    .offset(y: 1)
+            }
+            RoundedRectangle(cornerRadius: 7, style: .continuous)
+                .fill(isPressed ? palette.keyPressed : (showsBorder ? fill : Color.clear))
+        }
+        .padding(.horizontal, 3)
+        .padding(.vertical, 4)
+    }
+}
+
+/// Botón para volver al teclado desde los paneles. Es ancho y está separado del borde de la
+/// pantalla, porque iOS retrasa o descarta los toques pegados al borde por sus propios gestos.
+struct PanelBackButton: View {
+    @Environment(\.keyboardPalette) private var palette
+    var title = "ABC"
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 4) {
+                Image(systemName: "chevron.left")
+                    .font(.system(size: 14, weight: .bold))
+                Text(title)
+                    .font(.system(size: 14, weight: .semibold))
+            }
+            .foregroundStyle(palette.text)
+            .padding(.horizontal, 12)
+            .frame(minWidth: 72, minHeight: 34)
+            .background(palette.chip, in: Capsule())
+            .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .padding(.leading, 6)
+        .accessibilityLabel("Volver")
     }
 }
 

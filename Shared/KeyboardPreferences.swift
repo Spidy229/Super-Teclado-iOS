@@ -253,6 +253,45 @@ struct KeyboardPreferences: Equatable {
         favorites.filter { !$0.isWhitespace }.map(String.init)
     }
 
+    /// Guarda todos los ajustes (los que se cambian desde el propio teclado).
+    func save(to defaults: UserDefaults? = SharedClipboardStore.sharedDefaults) {
+        guard let defaults else { return }
+        let values: [String: Any] = [
+            KeyboardPreferenceKey.theme: theme.rawValue,
+            KeyboardPreferenceKey.keyBorders: keyBorders,
+            KeyboardPreferenceKey.sound: sound,
+            KeyboardPreferenceKey.haptics: haptics,
+            KeyboardPreferenceKey.autocorrect: autocorrect,
+            KeyboardPreferenceKey.autocapitalize: autocapitalize,
+            KeyboardPreferenceKey.doubleSpacePeriod: doubleSpacePeriod,
+            KeyboardPreferenceKey.suggestions: suggestions,
+            KeyboardPreferenceKey.numberRow: numberRow,
+            KeyboardPreferenceKey.keyPopups: keyPopups,
+            KeyboardPreferenceKey.longPressSymbols: longPressSymbols,
+            KeyboardPreferenceKey.quickPaste: quickPaste,
+            KeyboardPreferenceKey.oneHandedMode: oneHandedMode.rawValue,
+            KeyboardPreferenceKey.glideTyping: glideTyping,
+            KeyboardPreferenceKey.glideTrail: glideTrail,
+            KeyboardPreferenceKey.nextWordPrediction: nextWordPrediction,
+            KeyboardPreferenceKey.emojiSuggestions: emojiSuggestions,
+            KeyboardPreferenceKey.height: height.rawValue,
+            KeyboardPreferenceKey.longPressDelay: longPressDelay,
+            KeyboardPreferenceKey.incognito: incognito,
+            KeyboardPreferenceKey.backgroundDim: backgroundDim,
+            KeyboardPreferenceKey.hapticsStrength: hapticsStrength,
+            KeyboardPreferenceKey.hapticsStyle: hapticsStyle.rawValue,
+            KeyboardPreferenceKey.keyLabelSize: keyLabelSize.rawValue,
+            KeyboardPreferenceKey.primaryLanguage: primaryLanguage.rawValue,
+            KeyboardPreferenceKey.secondaryLanguage: secondaryLanguage?.rawValue ?? "",
+            KeyboardPreferenceKey.layout: layoutOverride?.rawValue ?? "auto",
+            KeyboardPreferenceKey.soundStyle: soundStyle.rawValue,
+            KeyboardPreferenceKey.favoritesRow: favoritesRow,
+            KeyboardPreferenceKey.favorites: favorites
+        ]
+        for (key, value) in values { defaults.set(value, forKey: key) }
+        customColors.save(to: defaults)
+    }
+
     static func setKeyBorders(_ enabled: Bool) {
         SharedClipboardStore.sharedDefaults?.set(enabled, forKey: KeyboardPreferenceKey.keyBorders)
     }
@@ -326,10 +365,13 @@ struct RGBColor: Equatable {
     var green: Double
     var blue: Double
 
+    /// Se redondea a 8 bits por canal, igual que al guardarlo, para que guardar y volver a
+    /// leer dé exactamente el mismo color.
     init(red: Double, green: Double, blue: Double) {
-        self.red = min(max(red, 0), 1)
-        self.green = min(max(green, 0), 1)
-        self.blue = min(max(blue, 0), 1)
+        func channel(_ value: Double) -> Double { (min(max(value, 0), 1) * 255).rounded() / 255 }
+        self.red = channel(red)
+        self.green = channel(green)
+        self.blue = channel(blue)
     }
 
     init?(hex: String) {

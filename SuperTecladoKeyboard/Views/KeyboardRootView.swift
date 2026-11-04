@@ -43,6 +43,7 @@ struct KeyboardRootView: View {
         case .clipboardSearch: ClipboardSearchBarView()
         case .editing: PanelHeaderView(title: "Edición de texto")
         case .themes: PanelHeaderView(title: "Temas")
+        case .settings: PanelHeaderView(title: "Ajustes")
         }
     }
 
@@ -60,6 +61,7 @@ struct KeyboardRootView: View {
             }
         case .editing: TextEditingPanelView()
         case .themes: ThemePickerPanelView()
+        case .settings: KeyboardSettingsPanelView()
         }
     }
 

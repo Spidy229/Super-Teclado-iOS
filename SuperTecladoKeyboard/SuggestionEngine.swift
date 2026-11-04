@@ -43,6 +43,8 @@ final class SuggestionEngine {
     private var bigrams: [String: [String: Int]] = [:]
     private var rejected: Set<String> = []
     private var pendingSave = false
+    /// Sugerencias ya calculadas por palabra; se vacía cuando cambia lo aprendido o el diccionario.
+    private var cache: [String: SuggestionResult] = [:]
 
     /// Puntuación mínima (log de frecuencia ajustado por el tipo de errata) para autocorregir.
     private let typoThreshold = 8.0
@@ -54,6 +56,7 @@ final class SuggestionEngine {
 
     /// Idioma del corrector de iOS (UITextChecker) más parecido al pedido.
     func setLanguage(_ code: String) {
+        cache.removeAll()
         language = Self.checkerLanguage(for: code)
     }
 
@@ -68,9 +71,11 @@ final class SuggestionEngine {
 
     func setDictionary(_ dictionary: WordDictionary) {
         self.dictionary = dictionary
+        cache.removeAll()
     }
 
     func setLexicon(_ entries: [(input: String, replacement: String)]) {
+        cache.removeAll()
         var shortcuts: [String: String] = [:]
         var words: Set<String> = []
         for entry in entries {
@@ -86,6 +91,7 @@ final class SuggestionEngine {
     }
 
     func reloadPersonalData() {
+        cache.removeAll()
         guard !pendingSave else { return }
         learned = PersonalDictionary.learnedWords()
         bigrams = PersonalDictionary.learnedBigrams()
@@ -101,6 +107,16 @@ final class SuggestionEngine {
 
     func suggestions(for word: String, includeEmoji: Bool) -> SuggestionResult {
         guard !word.isEmpty, word.contains(where: \.isLetter), word.count <= 40 else { return .empty }
+        // Al pulsar espacio se vuelve a pedir la misma palabra: se reutiliza el resultado.
+        let cacheKey = "\(includeEmoji ? 1 : 0)\(word)"
+        if let cached = cache[cacheKey] { return cached }
+        let result = computeSuggestions(for: word, includeEmoji: includeEmoji)
+        if cache.count > 300 { cache.removeAll(keepingCapacity: true) }
+        cache[cacheKey] = result
+        return result
+    }
+
+    private func computeSuggestions(for word: String, includeEmoji: Bool) -> SuggestionResult {
         let lower = word.lowercased()
         let range = NSRange(location: 0, length: (word as NSString).length)
         let isKnown = isKnownWord(lower, original: word, range: range)
@@ -114,11 +130,17 @@ final class SuggestionEngine {
             others.append(KeyboardTextLogic.matchCase(candidate, to: word))
         }
 
+        // La corrección de erratas se calcula una sola vez y sirve para la corrección y la barra.
+        let typos = (!isKnown && lower.count >= 3 && dictionary != nil)
+            ? TypoCorrector.candidates(for: lower, in: dictionary!, layout: layout, limit: 2)
+            : []
+
         var correction: String?
         if let shortcut = (personalShortcuts[lower] ?? lexiconShortcuts[lower]).map({ ShortcutVariables.expand($0) }) {
             correction = shortcut
             seen.insert(shortcut.lowercased())
-        } else if !isKnown, !rejected.contains(lower), let best = bestCorrection(for: word, range: range) {
+        } else if !isKnown, !rejected.contains(lower),
+                  let best = bestCorrection(for: word, range: range, typos: typos) {
             correction = KeyboardTextLogic.matchCase(best, to: word)
             seen.insert(best.lowercased())
         }
@@ -131,13 +153,14 @@ final class SuggestionEngine {
         if let dictionary {
             dictionary.completions(for: word, limit: 4).forEach(append)
         }
-        if others.count < 2 {
+        // El corrector de iOS es lento: solo se usa mientras no ha cargado el diccionario.
+        if dictionary == nil, others.count < 2 {
             (checker.completions(forPartialWordRange: range, in: word, language: language) ?? [])
                 .prefix(3)
                 .forEach(append)
         }
-        if !isKnown, correction == nil, let dictionary {
-            TypoCorrector.candidates(for: lower, in: dictionary, layout: layout, limit: 2).forEach { append($0.word) }
+        if correction == nil {
+            typos.forEach { append($0.word) }
         }
 
         let typed = SuggestionItem(text: word, kind: .typed)
@@ -185,7 +208,7 @@ final class SuggestionEngine {
         bigramModel = model
     }
 
-    private func bestCorrection(for word: String, range: NSRange) -> String? {
+    private func bestCorrection(for word: String, range: NSRange, typos: [TypoCorrector.Candidate]) -> String? {
         let lower = word.lowercased()
         if let dictionary {
             // Tildes y «ñ» olvidadas o mal puestas: «tambien» → «también», «manana» → «mañana».
@@ -193,11 +216,11 @@ final class SuggestionEngine {
             if lower.count >= 2, let form = dictionary.bestForm(matching: lower), form != lower {
                 return form
             }
-            if lower.count >= 3,
-               let candidate = TypoCorrector.candidates(for: lower, in: dictionary, layout: layout, limit: 1).first,
-               candidate.score >= typoThreshold {
+            if let candidate = typos.first, candidate.score >= typoThreshold {
                 return candidate.word
             }
+            // Con diccionario no se recurre a UITextChecker.guesses, que es muy lento.
+            return nil
         }
         let guesses = checker.guesses(forWordRange: range, in: word, language: language) ?? []
         let plausible = guesses.filter { isPlausibleCorrection($0, for: word) }
@@ -210,6 +233,7 @@ final class SuggestionEngine {
     // MARK: Aprendizaje
 
     func learn(_ word: String) {
+        cache.removeAll()
         let lower = word.lowercased()
         guard lower.count >= 2, lower.count <= 30, lower.contains(where: \.isLetter) else { return }
         learned[lower, default: 0] += 1
@@ -244,6 +268,7 @@ final class SuggestionEngine {
 
     /// El usuario deshizo una corrección o eligió lo que había escrito: se respeta su palabra.
     func reject(_ word: String, persist: Bool = true) {
+        cache.removeAll()
         let lower = word.lowercased()
         guard !lower.isEmpty else { return }
         rejected.insert(lower)
