@@ -13,7 +13,7 @@ struct KeyboardStatusView: View {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("La app no puede comunicarse con el teclado")
                             .font(.subheadline.weight(.semibold))
-                        Text("La firma de la IPA no incluye el App Group, así que la app no ve si el teclado tiene acceso total ni le puede pasar ajustes ni el portapapeles. El teclado funciona igual: cambia la vibración, el sonido y lo demás desde el engranaje de su barra. Para que se comuniquen, firma con un certificado que permita App Groups (en Feather, sin quitar los App Groups).")
+                        Text("La firma de la IPA no incluye el App Group, así que la app no ve si el teclado tiene acceso total ni le pasa sola los ajustes ni el portapapeles. El teclado funciona igual: cambia los ajustes desde el engranaje de su barra, o aquí y pulsa «Enviar ajustes al teclado». Para que se comuniquen, firma con un certificado que permita App Groups (en Feather, sin quitar los App Groups).")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }

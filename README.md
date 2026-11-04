@@ -10,7 +10,7 @@ Teclado para iPhone y iPad inspirado en Gboard, con portapapeles completo.
 - QWERTY español (con **ñ**) con **temas** al estilo Gboard: automático, claro, oscuro, negro, **cristal translúcido** (con su **transparencia ajustable** desde la paleta del teclado o la app), océano, bosque, atardecer, rosa, lavanda, **degradados** (aurora, amanecer, menta, noche), **personalizado con tus colores** (fondo liso o degradado, teclas, letras y acento) o **una foto propia** de fondo; con o sin bordes de tecla. El tema se cambia desde la **paleta de la barra del teclado** o desde la app.
 - **Escritura deslizando** (*glide typing*): desliza de letra en letra sin levantar el dedo, con estela, **la palabra en la barra mientras deslizas**, alternativas al terminar y borrado de la palabra entera con un toque.
 - **Idiomas**: español, catalán, portugués, inglés, francés, italiano y alemán, con un segundo idioma opcional a la vez, y **distribuciones** QWERTY española (ñ), QWERTY con ç, QWERTY, AZERTY y QWERTZ. Diccionarios de 30 000-40 000 palabras ordenadas por frecuencia para completar, corregir y reconocer trazos.
-- Barra de sugerencias con tres propuestas, **autocorrección** de erratas y tildes («qeu» → «que», «tambien» → «también») al pulsar espacio o puntuación, y deshacer la corrección pulsando borrar justo después.
+- Barra de sugerencias con tres propuestas, **autocorrección** de erratas y tildes («qeu» → «que», «tambien» → «también») al pulsar espacio o puntuación, y deshacer la corrección pulsando borrar justo después. La propuesta solo sale en azul cuando se va a aplicar: con la autocorrección desactivada aparece como una sugerencia normal y el espacio no cambia nada.
 - **Predicción de la siguiente palabra desde el primer día**, con una base de pares de palabras de frases reales (Tatoeba) en cada idioma que se combina con lo que aprende de ti, y **sugerencias de emojis** («jaja» → 😂).
 - Al escribir «hoy» o «ahora», la barra ofrece la fecha o la hora; los atajos admiten `{fecha}`, `{fecha_larga}`, `{hora}` y `{dia}`.
 - Al elegir una sugerencia y escribir un signo, el espacio se recoloca («hola, » en vez de «hola ,»).
@@ -52,6 +52,10 @@ Teclado para iPhone y iPad inspirado en Gboard, con portapapeles completo.
 - **Guía de bienvenida** paso a paso para activar el teclado, que detecta cuándo ya funciona.
 - La app muestra si el teclado está **activado con acceso total**.
 - **Ajustes › Ajustes del teclado** reúne las preferencias del teclado, una guía para activarlo, un campo para probarlo y el **diccionario personal** (palabras aprendidas y atajos).
+
+### Sin App Group
+
+Si la firma (p. ej. un firmador con certificado compartido) quita el App Group, la app y el teclado no comparten datos. El teclado funciona igual y sus ajustes se cambian desde el engranaje ⚙︎ de su barra; los de la app se pasan con **«Enviar ajustes al teclado»** (Ajustes del teclado o Temas), que los manda por el portapapeles con un tipo propio que el teclado aplica y borra al abrirse.
 
 ### Limitaciones de iOS
 

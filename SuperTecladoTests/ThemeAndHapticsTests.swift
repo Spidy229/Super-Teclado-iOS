@@ -75,6 +75,24 @@ final class ThemeAndHapticsTests: XCTestCase {
         )
     }
 
+    func testSettingsTransferCopiesSettingsButNotWhatTheKeyboardLearned() throws {
+        let app = try XCTUnwrap(UserDefaults(suiteName: "super-teclado-tests-\(UUID().uuidString)"))
+        let keyboard = try XCTUnwrap(UserDefaults(suiteName: "super-teclado-tests-\(UUID().uuidString)"))
+        app.set(false, forKey: KeyboardPreferenceKey.autocorrect)
+        app.set(KeyboardThemeOption.glass.rawValue, forKey: KeyboardPreferenceKey.theme)
+        app.set(["hola": 9], forKey: KeyboardPreferenceKey.learnedWords)
+        keyboard.set(["mio": 4], forKey: KeyboardPreferenceKey.learnedWords)
+
+        let data = try XCTUnwrap(KeyboardSettingsTransfer.payload(from: app))
+        XCTAssertGreaterThan(KeyboardSettingsTransfer.apply(data, to: keyboard), 0)
+
+        let preferences = KeyboardPreferences.load(from: keyboard)
+        XCTAssertFalse(preferences.autocorrect)
+        XCTAssertEqual(preferences.theme, .glass)
+        XCTAssertEqual(keyboard.dictionary(forKey: KeyboardPreferenceKey.learnedWords) as? [String: Int], ["mio": 4])
+        XCTAssertEqual(KeyboardSettingsTransfer.apply(Data("no".utf8), to: keyboard), 0)
+    }
+
     func testCustomThemeIsIncludedInThemeList() {
         XCTAssertTrue(KeyboardThemeOption.allCases.contains(.custom))
         XCTAssertNil(KeyboardThemeOption.custom.isDark)

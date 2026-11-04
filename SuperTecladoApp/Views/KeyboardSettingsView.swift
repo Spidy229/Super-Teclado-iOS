@@ -48,6 +48,8 @@ struct KeyboardSettingsView: View {
                 KeyboardStatusView()
             }
 
+            KeyboardSettingsTransferSection()
+
             Section {
                 setupStep(1, "Abre Ajustes › Super Teclado › Teclados.")
                 setupStep(2, "Activa «Super Teclado» y «Permitir acceso total».")

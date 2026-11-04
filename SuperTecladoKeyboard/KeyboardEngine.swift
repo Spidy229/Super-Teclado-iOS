@@ -310,7 +310,12 @@ final class KeyboardEngine: ObservableObject {
             // Con el diccionario cargado se calculan en segundo plano, como en Gboard.
             let result = await suggestionEngine.result(for: word)
             guard !Task.isCancelled, currentWord == word else { return }
-            newSuggestions = suggestionEngine.slots(for: result, word: word, includeEmoji: preferences.emojiSuggestions)
+            let slots = suggestionEngine.slots(for: result, word: word, includeEmoji: preferences.emojiSuggestions)
+            // En azul solo lo que se va a corregir al pulsar espacio: sin autocorrección, la
+            // propuesta se muestra como una sugerencia normal.
+            newSuggestions = autocorrectAllowed ? slots : slots.map { item in
+                item.map { $0.kind == .correction ? SuggestionItem(text: $0.text, kind: .completion) : $0 }
+            }
         }
         if newSuggestions != suggestions { suggestions = newSuggestions }
         if quickPaste != nil, Date().timeIntervalSince(quickPasteDate) > 180 { quickPaste = nil }

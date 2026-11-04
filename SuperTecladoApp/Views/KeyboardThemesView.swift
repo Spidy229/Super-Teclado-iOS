@@ -25,6 +25,8 @@ struct KeyboardThemesView: View {
         // La etiqueta de PhotosPicker es un cierre Sendable: no puede leer el estado de la vista.
         let pickerTitle = photo == nil ? "Elegir una foto" : "Cambiar foto"
         Form {
+            KeyboardSettingsTransferSection()
+
             Section {
                 LazyVGrid(columns: columns, spacing: 16) {
                     ForEach(KeyboardThemeOption.allCases.filter { $0 != .photo }) { option in

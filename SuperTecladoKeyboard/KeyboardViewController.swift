@@ -124,6 +124,11 @@ final class KeyboardViewController: UIInputViewController {
         let changeCount = pasteboard.changeCount
         guard changeCount != lastSeenChangeCount else { return }
         lastSeenChangeCount = changeCount
+        // Ajustes enviados desde la app cuando no hay App Group: se aplican y no se guardan.
+        if pasteboard.contains(pasteboardTypes: [KeyboardSettingsTransfer.pasteboardType]) {
+            applySettingsFromApp(pasteboard)
+            return
+        }
         guard engine.ownPasteboardChangeCount != changeCount,
               !engine.isIncognito,
               SharedClipboardStore.automaticCaptureEnabled else { return }
@@ -134,6 +139,19 @@ final class KeyboardViewController: UIInputViewController {
 
         engine.reloadClips()
         if captured { engine.offerQuickPaste() }
+    }
+
+    private func applySettingsFromApp(_ pasteboard: UIPasteboard) {
+        guard let data = pasteboard.data(forPasteboardType: KeyboardSettingsTransfer.pasteboardType),
+              KeyboardSettingsTransfer.apply(data, to: SharedClipboardStore.sharedDefaults) > 0 else { return }
+        // Se borra para que no se quede en el portapapeles ni se vuelva a aplicar.
+        pasteboard.items = []
+        lastSeenChangeCount = pasteboard.changeCount
+        engine.ownPasteboardChangeCount = pasteboard.changeCount
+        engine.loadPreferences()
+        updateMetrics()
+        engine.refreshContext()
+        engine.showToast("Ajustes de la app aplicados")
     }
 
     private func startClipboardMonitoring() {
