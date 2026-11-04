@@ -139,7 +139,7 @@ final class KeyboardViewController: UIInputViewController {
     private func startClipboardMonitoring() {
         clipboardTimer?.invalidate()
         clipboardTimer = Timer.scheduledTimer(
-            timeInterval: 0.8,
+            timeInterval: 1.5,
             target: self,
             selector: #selector(pollClipboard),
             userInfo: nil,
@@ -148,6 +148,9 @@ final class KeyboardViewController: UIInputViewController {
     }
 
     @objc private func pollClipboard() {
+        // Mientras se escribe no se pregunta a iOS por el portapapeles (es una consulta a otro
+        // proceso): lo copiado se recoge en cuanto se deja de teclear o al abrir el panel.
+        guard ProcessInfo.processInfo.systemUptime - engine.lastKeyTouch > 1.5 else { return }
         checkPasteboard()
     }
 

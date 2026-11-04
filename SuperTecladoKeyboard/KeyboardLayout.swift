@@ -110,7 +110,7 @@ enum KeyboardLayout {
     }
 }
 
-struct KeySpec: Identifiable {
+struct KeySpec: Identifiable, Equatable {
     enum Kind: Equatable {
         case character(String)
         case shift

@@ -36,7 +36,7 @@ struct KeyboardRootView: View {
     @ViewBuilder
     private var topStrip: some View {
         switch engine.panel {
-        case .typing: SuggestionStripView()
+        case .typing: SuggestionStripView(bar: engine.bar)
         case .clipboard: ClipboardHeaderView()
         case .emoji: EmojiHeaderView()
         case .emojiSearch: EmojiSearchBarView()

@@ -9,6 +9,15 @@ enum KeyFeedbackKind {
     case modifier
 }
 
+/// Lo que cambia con cada pulsación (sugerencias, pegado rápido) va aparte del motor: así solo
+/// se vuelve a dibujar la barra de sugerencias y no todo el teclado.
+@MainActor
+final class SuggestionBarState: ObservableObject {
+    @Published var suggestions: [SuggestionItem?] = []
+    @Published var showsToolbar = false
+    @Published var quickPaste: KeyboardClip?
+}
+
 /// Estado y lógica del teclado. Las vistas SwiftUI solo leen este objeto y le envían acciones.
 @MainActor
 final class KeyboardEngine: ObservableObject {
@@ -17,9 +26,6 @@ final class KeyboardEngine: ObservableObject {
     @Published var panel: KeyboardPanel = .typing
     @Published var page: KeyboardPage = .letters
     @Published var shift: ShiftState = .off
-    @Published var suggestions: [SuggestionItem?] = []
-    @Published var showsToolbar = false
-    @Published var quickPaste: KeyboardClip?
     @Published var savedClips: [KeyboardClip] = []
     @Published var recentClips: [KeyboardClip] = []
     @Published var folders: [String] = []
@@ -35,7 +41,6 @@ final class KeyboardEngine: ObservableObject {
     @Published var metrics = KeyboardMetrics.make(isPad: false, isLandscape: false, numberRow: false)
     @Published var toast: String?
     @Published var recentEmojis: [String] = []
-    @Published var isCursorMode = false
     @Published private(set) var isGliding = false
     @Published private(set) var backgroundImage: UIImage?
     @Published private(set) var searchQuery = ""
@@ -45,6 +50,25 @@ final class KeyboardEngine: ObservableObject {
     @Published private(set) var toastActionTitle: String?
 
     let glideTrail = GlideTrail()
+    let bar = SuggestionBarState()
+
+    var suggestions: [SuggestionItem?] {
+        get { bar.suggestions }
+        set { bar.suggestions = newValue }
+    }
+
+    var showsToolbar: Bool {
+        get { bar.showsToolbar }
+        set { bar.showsToolbar = newValue }
+    }
+
+    var quickPaste: KeyboardClip? {
+        get { bar.quickPaste }
+        set { bar.quickPaste = newValue }
+    }
+
+    /// Última pulsación de una tecla (para no consultar el portapapeles mientras se escribe).
+    private(set) var lastKeyTouch: TimeInterval = 0
 
     /// Cambio del portapapeles hecho por el propio teclado (para no volver a capturarlo).
     var ownPasteboardChangeCount: Int?
@@ -92,8 +116,6 @@ final class KeyboardEngine: ObservableObject {
     var currentWord: String {
         KeyboardTextLogic.currentWord(before: proxy?.documentContextBeforeInput)
     }
-
-    var hasSuggestions: Bool { suggestions.contains { $0 != nil } }
 
     var isWebField: Bool { keyboardType == .URL || keyboardType == .webSearch }
 
@@ -209,7 +231,7 @@ final class KeyboardEngine: ObservableObject {
             guard let self, let dictionary = loaded.dictionary, self.loadedLanguages == languages else { return }
             self.suggestionEngine.setDictionary(dictionary)
             self.suggestionEngine.setBigramModel(loaded.bigrams)
-            self.refreshSuggestions()
+            self.scheduleSuggestions()
             if self.hasFullAccess {
                 KeyboardDiagnostics.recordDictionary(
                     milliseconds: Int(Date().timeIntervalSince(started) * 1000),
@@ -271,7 +293,7 @@ final class KeyboardEngine: ObservableObject {
         if newState != shift { shift = newState }
     }
 
-    private func refreshSuggestions() {
+    private func refreshSuggestions() async {
         let word = currentWord
         if let glide = lastGlide, glide.word != word { lastGlide = nil }
 
@@ -285,10 +307,10 @@ final class KeyboardEngine: ObservableObject {
         } else if word.isEmpty {
             newSuggestions = predictions()
         } else {
-            newSuggestions = suggestionEngine.suggestions(
-                for: word,
-                includeEmoji: preferences.emojiSuggestions
-            ).slots
+            // Con el diccionario cargado se calculan en segundo plano, como en Gboard.
+            let result = await suggestionEngine.result(for: word)
+            guard !Task.isCancelled, currentWord == word else { return }
+            newSuggestions = suggestionEngine.slots(for: result, word: word, includeEmoji: preferences.emojiSuggestions)
         }
         if newSuggestions != suggestions { suggestions = newSuggestions }
         if quickPaste != nil, Date().timeIntervalSince(quickPasteDate) > 180 { quickPaste = nil }
@@ -326,9 +348,9 @@ final class KeyboardEngine: ObservableObject {
     private func scheduleSuggestions() {
         suggestionTask?.cancel()
         suggestionTask = Task { @MainActor [weak self] in
-            try? await Task.sleep(for: .milliseconds(30))
+            try? await Task.sleep(for: .milliseconds(12))
             guard !Task.isCancelled, let self else { return }
-            self.refreshSuggestions()
+            await self.refreshSuggestions()
         }
     }
 
@@ -414,7 +436,7 @@ final class KeyboardEngine: ObservableObject {
         let context = proxy.documentContextBeforeInput
         if !word.isEmpty,
            autocorrectAllowed,
-           let correction = suggestionEngine.suggestions(for: word, includeEmoji: false).autocorrection,
+           let correction = suggestionEngine.autocorrection(for: word),
            correction != word {
             for _ in 0..<word.count { proxy.deleteBackward() }
             proxy.insertText(correction + separator)
@@ -531,13 +553,11 @@ final class KeyboardEngine: ObservableObject {
         lastGlidePreview = .distantPast
         isGliding = true
         glideTrail.preview = nil
-        if preferences.glideTrail { glideTrail.begin(at: point) }
     }
 
     func extendGlide(to point: CGPoint) {
         guard isGliding, let last = glidePoints.last, GlideDecoder.distance(last, point) >= 2 else { return }
         glidePoints.append(point)
-        if preferences.glideTrail { glideTrail.add(point) }
         updateGlidePreview()
     }
 
@@ -568,7 +588,6 @@ final class KeyboardEngine: ObservableObject {
         glidePreviewTask?.cancel()
         glidePreviewTask = nil
         glideTrail.preview = nil
-        glideTrail.finish()
         let path = glidePoints
         glidePoints = []
         guard let target = glideTarget else { return false }
@@ -600,6 +619,16 @@ final class KeyboardEngine: ObservableObject {
         if shift == .on { shift = .off }
         afterEdit()
         return true
+    }
+
+    /// El sistema canceló el toque (p. ej. un gesto de la pantalla): no se escribe nada.
+    func cancelGlide() {
+        guard isGliding else { return }
+        isGliding = false
+        glidePreviewTask?.cancel()
+        glidePreviewTask = nil
+        glideTrail.preview = nil
+        glidePoints = []
     }
 
     private func applyShift(_ word: String) -> String {
@@ -1056,16 +1085,25 @@ final class KeyboardEngine: ObservableObject {
 
     // MARK: Respuesta táctil y avisos
 
+    /// Cola propia para el sonido: `AudioServicesPlaySystemSound` espera al servidor de audio
+    /// y en el hilo principal retrasaba la siguiente pulsación.
+    private static let soundQueue = DispatchQueue(label: "super-teclado.key-sound", qos: .userInteractive)
+
     func keyFeedback(_ kind: KeyFeedbackKind) {
-        if preferences.haptics, controller?.hasFullAccess ?? hasFullAccess {
+        lastKeyTouch = ProcessInfo.processInfo.systemUptime
+        // Se usa el valor guardado de «acceso total»: preguntarlo a iOS en cada pulsación es lento.
+        if preferences.haptics, hasFullAccess {
             let strength = preferences.hapticsStrength
             // Las teclas especiales vibran algo más, como en Gboard.
             let intensity = kind == .character ? strength : min(1, strength + 0.2)
-            hapticGenerator().impactOccurred(intensity: CGFloat(intensity))
+            let generator = hapticGenerator()
+            generator.impactOccurred(intensity: CGFloat(intensity))
+            // Mantiene el motor de vibración listo para la siguiente tecla, sin retraso.
+            generator.prepare()
         }
         if preferences.sound {
-            let sound = preferences.soundStyle.soundID(isDelete: kind == .delete, isModifier: kind == .modifier)
-            AudioServicesPlaySystemSound(SystemSoundID(sound))
+            let sound = SystemSoundID(preferences.soundStyle.soundID(isDelete: kind == .delete, isModifier: kind == .modifier))
+            Self.soundQueue.async { @Sendable in AudioServicesPlaySystemSound(sound) }
         }
     }
 

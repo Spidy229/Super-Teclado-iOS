@@ -2,7 +2,7 @@ import SwiftUI
 
 /// Colores de cada tema, inspirados en los de Gboard. Está en `Shared` para que la app pueda
 /// mostrar la vista previa de los temas con los mismos colores que el teclado.
-struct KeyboardPalette {
+struct KeyboardPalette: Equatable {
     let background: Color
     let key: Color
     let specialKey: Color

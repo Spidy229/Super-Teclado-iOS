@@ -6,6 +6,7 @@ Teclado para iPhone y iPad inspirado en Gboard, con portapapeles completo.
 
 ### Teclado
 
+- **Sin retraso al escribir**, como Gboard y el teclado de Apple: las teclas se dibujan y se tocan con UIKit en una sola vista que resalta la tecla al instante, escribe al levantar el dedo y, si tocas otra tecla antes de soltar la anterior, escribe la anterior en ese momento para no perder ni desordenar letras. Las sugerencias se calculan en segundo plano y la vibración y el sonido no bloquean la pulsación.
 - QWERTY español (con **ñ**) con **temas** al estilo Gboard: automático, claro, oscuro, negro, **cristal translúcido**, océano, bosque, atardecer, rosa, lavanda, **degradados** (aurora, amanecer, menta, noche), **personalizado con tus colores** (fondo liso o degradado, teclas, letras y acento) o **una foto propia** de fondo; con o sin bordes de tecla. El tema se cambia desde la **paleta de la barra del teclado** o desde la app.
 - **Escritura deslizando** (*glide typing*): desliza de letra en letra sin levantar el dedo, con estela, **la palabra en la barra mientras deslizas**, alternativas al terminar y borrado de la palabra entera con un toque.
 - **Idiomas**: español, catalán, portugués, inglés, francés, italiano y alemán, con un segundo idioma opcional a la vez, y **distribuciones** QWERTY española (ñ), QWERTY con ç, QWERTY, AZERTY y QWERTZ. Diccionarios de 30 000-40 000 palabras ordenadas por frecuencia para completar, corregir y reconocer trazos.

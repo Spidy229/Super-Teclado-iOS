@@ -40,7 +40,8 @@ struct TypingKeyboardView: View {
     }
 }
 
-/// Construye las filas de teclas para la página actual y reparte el ancho en unidades.
+/// Construye las filas de teclas para la página actual. Las teclas las dibuja y las toca
+/// `KeyGridUIView` (UIKit), que solo se actualiza cuando cambia algo de lo que muestra.
 private struct KeyGridView: View {
     @EnvironmentObject private var engine: KeyboardEngine
     @Environment(\.keyboardPalette) private var palette
@@ -48,158 +49,24 @@ private struct KeyGridView: View {
     let height: CGFloat
 
     var body: some View {
-        let rows = makeRows()
-        let geometry = KeyGridGeometry(
-            size: CGSize(width: width, height: height),
+        KeyGridRepresentable(engine: engine, configuration: configuration, palette: palette)
+            .frame(width: width, height: height)
+    }
+
+    private var configuration: KeyGridConfiguration {
+        KeyGridConfiguration(
+            rows: makeRows(),
             showsNumberRow: engine.page == .letters && engine.preferences.numberRow,
-            rowCount: rows.count
+            page: engine.page,
+            shift: engine.shift,
+            returnKeyType: engine.returnKeyType,
+            spaceTitle: engine.spaceBarTitle,
+            keyBorders: engine.preferences.keyBorders,
+            keyPopups: engine.preferences.keyPopups,
+            labelScale: CGFloat(engine.preferences.keyLabelSize.scale),
+            longPressDelay: engine.preferences.longPressDelay,
+            showsGlideTrail: engine.preferences.glideTrail
         )
-        let horizontalPadding = KeyGridGeometry.horizontalPadding
-        // El iPad tiene filas más largas (intro, comas, segunda tecla de mayúsculas…).
-        let totalUnits = max(10, rows.map { $0.reduce(0) { $0 + $1.units } }.max() ?? 10)
-        let unit = (width - horizontalPadding * 2) / totalUnits
-        let glideCenters = letterCenters(rows: rows, geometry: geometry, unit: unit)
-
-        VStack(spacing: 0) {
-            ForEach(Array(rows.enumerated()), id: \.offset) { index, row in
-                let currentHeight = geometry.height(ofRow: index)
-                let originY = geometry.originY(ofRow: index)
-                let rowWidth = row.reduce(0) { $0 + $1.units } * unit
-                let inset = max(0, (width - horizontalPadding * 2 - rowWidth) / 2)
-                HStack(spacing: 0) {
-                    ForEach(Array(row.enumerated()), id: \.element.id) { keyIndex, spec in
-                        let originX = horizontalPadding + inset
-                            + row.prefix(keyIndex).reduce(0) { $0 + $1.units } * unit
-                        keyView(
-                            for: spec,
-                            size: CGSize(width: spec.units * unit, height: currentHeight),
-                            origin: CGPoint(x: originX, y: originY),
-                            glide: GlideTarget(centers: glideCenters, keyWidth: unit)
-                        )
-                    }
-                }
-                .frame(width: width - horizontalPadding * 2)
-                // Las filas inferiores van encima para que sus ventanas emergentes cubran la fila superior.
-                .zIndex(Double(index))
-            }
-        }
-        .padding(.horizontal, horizontalPadding)
-        .padding(.vertical, KeyGridGeometry.verticalPadding)
-        .frame(width: width, height: height)
-        .overlay {
-            if engine.preferences.glideTrail {
-                GlideTrailView(trail: engine.glideTrail, color: palette.accent)
-            }
-        }
-    }
-
-    /// Centro de cada letra tal y como se dibuja, para reconocer la escritura deslizando.
-    private func letterCenters(rows: [[KeySpec]], geometry: KeyGridGeometry, unit: CGFloat) -> [Character: CGPoint] {
-        guard engine.page == .letters else { return [:] }
-        var centers: [Character: CGPoint] = [:]
-        let horizontalPadding = KeyGridGeometry.horizontalPadding
-        for (index, row) in rows.enumerated() {
-            let rowWidth = row.reduce(0) { $0 + $1.units } * unit
-            var x = horizontalPadding + max(0, (width - horizontalPadding * 2 - rowWidth) / 2)
-            let y = geometry.originY(ofRow: index) + geometry.height(ofRow: index) / 2
-            for spec in row {
-                if case .character(let value) = spec.kind, value.count == 1, let letter = value.first,
-                   letter.isLetter || letter == "'" {
-                    centers[letter] = CGPoint(x: x + spec.units * unit / 2, y: y)
-                }
-                x += spec.units * unit
-            }
-        }
-        return centers
-    }
-
-    @ViewBuilder
-    private func keyView(for spec: KeySpec, size: CGSize, origin: CGPoint, glide: GlideTarget) -> some View {
-        switch spec.kind {
-        case .character(let value):
-            CharacterKeyView(
-                value: value,
-                hint: spec.hint,
-                alternates: spec.alternates,
-                caseSensitive: spec.isLetter,
-                size: size,
-                origin: origin,
-                gridSize: CGSize(width: width, height: height),
-                glide: glide
-            )
-        case .dismiss:
-            FunctionKeyView(size: size, accessibilityText: "Ocultar teclado", action: { engine.dismissKeyboard() }) {
-                Image(systemName: "keyboard.chevron.compact.down")
-                    .font(.system(size: min(19, size.height * 0.36)))
-                    .foregroundStyle(palette.text)
-            }
-        case .shift:
-            FunctionKeyView(
-                size: size,
-                fill: engine.shift == .off ? nil : palette.key,
-                accessibilityText: "Mayúsculas",
-                action: { engine.tapShift() }
-            ) {
-                Image(systemName: shiftSymbol)
-                    .font(.system(size: min(20, size.height * 0.38), weight: .medium))
-                    .foregroundStyle(engine.shift == .locked ? palette.accent : palette.text)
-            }
-        case .delete:
-            DeleteKeyView(size: size)
-        case .space:
-            SpaceKeyView(size: size)
-        case .returnKey:
-            FunctionKeyView(
-                size: size,
-                fill: palette.accent,
-                alwaysFilled: true,
-                accessibilityText: "Intro",
-                action: { engine.insertReturn() }
-            ) {
-                Image(systemName: returnSymbol)
-                    .font(.system(size: min(20, size.height * 0.38), weight: .semibold))
-                    .foregroundStyle(palette.accentText)
-            }
-        case .globe:
-            FunctionKeyView(size: size, accessibilityText: "Siguiente teclado", action: { engine.advanceToNextInputMode() }) {
-                Image(systemName: "globe")
-                    .font(.system(size: min(19, size.height * 0.36)))
-                    .foregroundStyle(palette.text)
-            }
-        case .emoji:
-            FunctionKeyView(size: size, accessibilityText: "Emojis", action: { engine.open(.emoji) }) {
-                Image(systemName: "face.smiling")
-                    .font(.system(size: min(20, size.height * 0.38)))
-                    .foregroundStyle(palette.text)
-            }
-        case .page(let target, let title):
-            FunctionKeyView(size: size, accessibilityText: title, action: { engine.setPage(target) }) {
-                Text(title)
-                    .font(.system(size: min(15, size.height * 0.3), weight: .medium))
-                    .foregroundStyle(palette.text)
-            }
-        }
-    }
-
-    private var shiftSymbol: String {
-        switch engine.shift {
-        case .off: "shift"
-        case .on: "shift.fill"
-        case .locked: "capslock.fill"
-        }
-    }
-
-    private var returnSymbol: String {
-        switch engine.returnKeyType {
-        case .go, .join, .continue: "arrow.right"
-        case .google, .search, .yahoo: "magnifyingglass"
-        case .send: "paperplane.fill"
-        case .next: "arrow.right.to.line"
-        case .done: "checkmark"
-        case .route: "arrow.triangle.turn.up.right.diamond"
-        case .emergencyCall: "phone.fill"
-        default: "return"
-        }
     }
 
     // MARK: Filas

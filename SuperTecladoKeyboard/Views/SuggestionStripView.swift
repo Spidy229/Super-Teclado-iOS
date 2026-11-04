@@ -1,26 +1,28 @@
 import SwiftUI
 
 /// Barra superior: sugerencias mientras se escribe y herramientas (emoji, portapapeles…) en reposo.
+/// Observa solo `SuggestionBarState`: al escribir se vuelve a dibujar la barra, no el teclado.
 struct SuggestionStripView: View {
     @EnvironmentObject private var engine: KeyboardEngine
+    @ObservedObject var bar: SuggestionBarState
     @Environment(\.keyboardPalette) private var palette
 
     var body: some View {
-        let quickPaste = engine.currentWord.isEmpty ? engine.quickPaste : nil
-        let hasContent = engine.hasSuggestions || quickPaste != nil
+        let quickPaste = engine.currentWord.isEmpty ? bar.quickPaste : nil
+        let hasContent = bar.suggestions.contains { $0 != nil } || quickPaste != nil
         HStack(spacing: 0) {
             if hasContent {
                 StripButton(
-                    symbol: engine.showsToolbar ? "chevron.left" : "square.grid.2x2",
-                    label: engine.showsToolbar ? "Ver sugerencias" : "Ver herramientas"
+                    symbol: bar.showsToolbar ? "chevron.left" : "square.grid.2x2",
+                    label: bar.showsToolbar ? "Ver sugerencias" : "Ver herramientas"
                 ) {
-                    engine.showsToolbar.toggle()
+                    bar.showsToolbar.toggle()
                 }
             }
 
             if engine.isGliding {
                 GlidePreviewView(trail: engine.glideTrail)
-            } else if engine.showsToolbar || !hasContent {
+            } else if bar.showsToolbar || !hasContent {
                 toolbarIcons(compact: false)
             } else if let quickPaste {
                 // Lo recién copiado tiene prioridad sobre la predicción de la siguiente palabra.
@@ -37,7 +39,7 @@ struct SuggestionStripView: View {
 
     private var suggestionsRow: some View {
         HStack(spacing: 0) {
-            ForEach(Array(engine.suggestions.enumerated()), id: \.offset) { index, item in
+            ForEach(Array(bar.suggestions.enumerated()), id: \.offset) { index, item in
                 if index > 0 {
                     Rectangle()
                         .fill(palette.separator)
@@ -65,7 +67,7 @@ struct SuggestionStripView: View {
     }
 
     private func title(for item: SuggestionItem) -> String {
-        let hasCorrection = engine.suggestions.contains { $0?.kind == .correction }
+        let hasCorrection = bar.suggestions.contains { $0?.kind == .correction }
         return item.kind == .typed && hasCorrection ? "«\(item.text)»" : item.text
     }
 
