@@ -1,0 +1,234 @@
+# Super Teclado: contexto para agentes
+
+Resumen de todo lo hecho hasta la **versión 2.6.8**, para que otro agente (Claude Code, Codex…) pueda seguir el trabajo sin repetir errores. El `README.md` describe las funciones para el usuario; este documento explica **cómo está hecho, por qué y qué falta**.
+
+---
+
+## 1. Objetivo y usuario
+
+- **Objetivo:** un teclado para iPhone/iPad lo más parecido posible a **Gboard de Android**, con un **portapapeles completo** con historial, hasta donde permite iOS.
+- **Idioma:** el usuario escribe en **español** y quiere las respuestas en español. Los textos de la interfaz y los comentarios del código están en español; los mensajes de commit, en inglés.
+- **Cómo instala:** descarga la **IPA sin firmar** del release de GitHub y la firma en el móvil con **KravaSigner** (a veces Feather).
+  - **KravaSigner quita el App Group** (certificado compartido): la app y el teclado **no comparten datos** en su instalación. Ver §6.
+  - Tiene activado el **acceso total** del teclado.
+- **Prioridades que ha pedido:**
+  - que no haya retraso al escribir;
+  - vibración ajustable que funcione;
+  - temas, incluida la transparencia del cristal;
+  - que la autocorrección se pueda desactivar de verdad;
+  - icono propio (un pato amarillo).
+
+## 2. Repositorio, ramas y publicación
+
+- Repo: `Spidy229/Super-Teclado-iOS`. Rama de trabajo: `claude/wizardly-knuth-yy92cs`.
+- **PR #1** (https://github.com/Spidy229/Super-Teclado-iOS/pull/1): abierta y **sin fusionar**; no fusionarla sin que lo pida el usuario.
+- **CI** (`.github/workflows/build-ipa.yml`, macOS 15, Xcode 16.4) se lanza con cada push a `main`, `codex/**` y `claude/**`. Pasos:
+  1. XcodeGen genera el proyecto.
+  2. Compila y ejecuta las pruebas en el primer simulador de iPhone disponible.
+  3. `scripts/build-unsigned-ipa.sh` genera la IPA sin firmar.
+  4. **Publica un release** `v<MARKETING_VERSION>-build<run_number>` con `Super-Teclado-unsigned.ipa`.
+  - Enlace de descarga: `https://github.com/Spidy229/Super-Teclado-iOS/releases/download/<tag>/Super-Teclado-unsigned.ipa`.
+  - Para commits solo de documentación, usar `[skip ci]` y así no crear un release repetido.
+- **Subir versión** en cada cambio que se entregue, en dos sitios que deben coincidir:
+  - `project.yml`: `MARKETING_VERSION` y `CURRENT_PROJECT_VERSION`, **4 veces cada uno** (app, teclado, share y widget).
+  - `SuperTecladoApp/Package.swift`: `displayVersion` y `bundleVersion`.
+  - Estado actual: 2.6.8 / 17 en `project.yml`, 2.6.8 / 22 en `Package.swift`.
+- `scripts/build-unsigned-ipa.sh`:
+  - firma ad hoc (`codesign -s -`) cada appex con sus entitlements y después la app;
+  - **falla si falta `Assets.car` o `CFBundleIcons`** (comprobación añadida en 2.6.6).
+- `scripts/validate-project.ps1`: comprobación estática antigua (PowerShell) que **CI no ejecuta**. Además está desfasada: busca `SharedClipboardStore.captureTemporaryText` en `KeyboardViewController.swift`, que ya no existe.
+- No hay Mac en el entorno de los agentes en la nube: **solo CI compila con UIKit**. En Linux se puede usar un toolchain de Swift 6 para:
+  - `swiftc -parse` (sintaxis);
+  - compilar y ejecutar la lógica pura de `Shared/` (diccionario, glide, sugerencias en segundo plano, traspaso de ajustes).
+
+## 3. Estructura y destinos (XcodeGen, Swift 6, iOS 18)
+
+| Destino | Carpeta(s) | Bundle ID | Qué es |
+|---|---|---|---|
+| App `SuperTeclado` | `SuperTecladoApp`, `Shared`, `SharedIntents` | `com.spidy229.superteclado` | App SwiftUI + SwiftData: historial del portapapeles, ajustes, temas, diccionario personal, copia de seguridad, diagnóstico, bienvenida |
+| `SuperTecladoKeyboard` | `SuperTecladoKeyboard`, `Shared` | `…superteclado.keyboard` | La extensión de teclado (`UIInputViewController`) |
+| `SuperTecladoShare` | `SuperTecladoShare`, `Shared` | `…superteclado.share` | Extensión «Compartir» para guardar en el portapapeles |
+| `SuperTecladoWidget` | `SuperTecladoWidget`, `SharedIntents`, `Shared` | `…superteclado.widget` | Widget + control del Centro de control (iOS 18) |
+| `SuperTecladoTests` | `SuperTecladoTests` | `…superteclado.tests` | XCTest sobre la app (`@testable import SuperTeclado`, incluye `Shared`) |
+
+- App Group: `group.com.spidy229.superteclado`. `SharedClipboardStore.sharedDefaults` es `UserDefaults(suiteName:)` de ese grupo.
+  - Sin el grupo en la firma, esos `UserDefaults` siguen funcionando, pero **cada proceso guarda los suyos**.
+  - `isAppGroupAvailable` devuelve `containerURL != nil`.
+- Recursos del teclado (`SuperTecladoKeyboard/Resources`):
+  - `words-<idioma>.txt`: 40 000 palabras en es y 30 000 en ca/pt/en/fr/it/de, de FrequencyWords, CC BY-SA 4.0;
+  - `bigrams-<idioma>.txt`: pares de palabras de Tatoeba, CC BY 2.0 FR, sin nombres propios;
+  - `es-emojis.txt`: nombres de los emojis según CLDR.
+  - Licencias en `THIRD_PARTY_NOTICES.md`.
+- Icono: `SuperTecladoApp/Assets.xcassets/AppIcon.appiconset/AppIcon.png` (pato, 1024×1024 sobre blanco).
+
+## 4. Arquitectura del teclado
+
+### Controlador: `KeyboardViewController.swift`
+- Aloja `KeyboardRootView` (SwiftUI) en un `UIHostingController`. La altura sale de `KeyboardMetrics` (franja superior + fila de favoritos + teclas).
+- `viewDidLoad`:
+  - marca la sesión para detectar cierres inesperados;
+  - activa el **modo seguro** si hubo 2 cierres seguidos (sin diccionarios, contactos ni foto);
+  - carga ajustes y el portapapeles;
+  - pide el léxico de iOS (`requestSupplementaryLexicon`).
+- `viewDidAppear`:
+  - vuelve a leer `hasFullAccess`, porque iOS puede darlo tarde;
+  - `removeSystemTouchDelays()` pone `delaysTouchesBegan = false` en los reconocedores del sistema. Si no, se retrasaban los toques en los bordes.
+- **Portapapeles:**
+  - `checkPasteboard()` solo lee si cambia `changeCount`;
+  - se consulta cada 1,5 s, **excepto si se ha tocado una tecla en los últimos 1,5 s**;
+  - también al aparecer el teclado y al abrir el panel.
+- **Traspaso de ajustes** (2.6.8): si el portapapeles trae el tipo `com.spidy229.superteclado.settings`, se aplican los ajustes, se vacía el portapapeles y se muestra un aviso (ver §6).
+
+### Estado y lógica: `KeyboardEngine.swift` (`@MainActor ObservableObject`)
+- Guarda panel, página, mayúsculas, preferencias, métricas, portapapeles, emojis, avisos y glide.
+- **Lo que cambia con cada pulsación va aparte**, en `SuggestionBarState` (`engine.bar`): `suggestions`, `showsToolbar` y `quickPaste`. Solo lo observa `SuggestionStripView`, así que escribir no redibuja el teclado entero.
+  - `engine.suggestions`, `showsToolbar` y `quickPaste` son propiedades calculadas que reenvían a `bar`.
+- `insertCharacter`, `insertSpace`, `commitWord` (autocorrección con deshacer al borrar), `deleteBackward`, `selectSuggestion`, glide (`beginGlide`, `extendGlide`, `endGlide`, `cancelGlide`), cursor y emojis.
+- `keyFeedback(kind)`:
+  - **vibración** con el `hasFullAccess` guardado, `impactOccurred(intensity:)` y luego `prepare()` para la siguiente tecla;
+  - **sonido** con `AudioServicesPlaySystemSound` en una cola propia, para no bloquear el hilo principal;
+  - apunta `lastKeyTouch`.
+- `scheduleSuggestions()`: espera 12 ms, luego `refreshSuggestions() async`.
+- `autocorrectAllowed` = preferencia activada + sugerencias permitidas + el campo no la prohíbe. Si es `false`, las propuestas `.correction` se muestran como `.completion` (sin azul) y el espacio no cambia nada (2.6.8).
+
+### Teclas: `Views/KeyGridUIView.swift` (UIKit, desde 2.6.5)
+Este archivo es la solución al **retraso al escribir**. Antes cada tecla era una vista SwiftUI con `DragGesture` y todo se redibujaba en cada pulsación.
+- `KeyGridRepresentable` (`UIViewRepresentable`) recibe un `KeyGridConfiguration` (`Equatable`) y la paleta. `apply()` no hace nada si no cambian.
+  - Las teclas se reutilizan por `KeySpec.id`.
+  - Si las filas no cambian, solo se actualizan textos y colores.
+- **Una sola vista recibe todos los dedos** (`touchesBegan`, `Moved`, `Ended`, `Cancelled`, con `isMultipleTouchEnabled`). La tecla tocada es la más cercana de su fila, así que los huecos cuentan para la tecla de al lado.
+  - Al tocar: resalta la tecla y la ventana emergente, vibra/suena y programa la pulsación larga.
+  - Al levantar: escribe.
+  - **Rollover:** si toca otro dedo antes de levantar el anterior, la letra o el espacio anterior se escriben ya (estado `.committed`).
+  - Mayúsculas y `?123` actúan al tocar. Intro, emoji y ocultar actúan al levantar.
+  - Borrar: borra al tocar, repite (420 ms y después cada 65 ms; tras 20, por palabras) y deslizar a la izquierda borra palabras.
+  - Espacio: deslizar mueve el cursor (fase `.cursor`).
+  - Globo: `handleInputModeList(from:with:)`.
+  - Glide:
+    - empieza si una letra se mueve más de `max(18, ancho de tecla × 0,6)` y solo hay un dedo activo;
+    - usa los toques intermedios (`coalescedTouches`);
+    - el trazo es un `CAShapeLayer` con las animaciones implícitas desactivadas.
+  - Sin glide, deslizar cambia a la letra que queda bajo el dedo.
+- Las ventanas emergentes (`KeyPopupUIView`) se añaden a **`engine.controller.view`**, para que nada las recorte por encima de la fila superior. Se reutilizan y se quitan en `tearDown()`.
+- `KeyCapUIView` reproduce el aspecto de Gboard: tapa con esquinas de 7 pt (continuas), sombra desplazada 1 pt, etiqueta, símbolo de la esquina e icono SF.
+- **Mantener `KeySpec` y `KeyboardPalette` como `Equatable`**; la configuración depende de ello.
+- `TypingKeyboardView.swift` construye las filas (`makeRows`: letras, `?123`, `=\<`, teclado numérico y distribución ancha de iPad) y la configuración. `KeyGridGeometry` reparte las alturas (la fila de números ocupa 0,78 de una fila normal).
+- `Views/KeyViews.swift` conserva las teclas SwiftUI (`FunctionKeyView`, `DeleteKeyView`, `RepeatingKeyView`) que usan los paneles de emojis y edición, y `GlideTrail` (solo `preview`).
+
+### Sugerencias: `SuggestionEngine.swift`
+- `SuggestionSnapshot` (`Sendable`) calcula las sugerencias **en segundo plano** (`Task.detached`) a partir de una copia de:
+  - diccionario, distribución, palabras aprendidas, léxico de iOS, atajos y rechazadas.
+- Funcionamiento:
+  - **completar** con el diccionario;
+  - **tildes** con `bestForm`;
+  - **erratas** a distancia 1, con más peso para las teclas vecinas (`TypoCorrector`);
+  - las tres casillas, como en Gboard.
+- **UITextChecker** solo se usa en el hilo principal:
+  - antes de cargar el diccionario;
+  - para confirmar (`needsSpellCheck`) una errata probable en una palabra que no está en el diccionario. Si iOS la da por buena, no se corrige.
+- Caché por palabra con `cacheGeneration`, que se invalida al aprender o rechazar palabras y al cambiar de diccionario o léxico. `autocorrection(for:)` es síncrona al pulsar espacio y casi siempre sale de la caché.
+- Fecha y hora («hoy», «ahora») y emojis (`EmojiKeywords`) se añaden en `slots(for:word:includeEmoji:)`.
+- `predictions(after:)` combina los pares de Tatoeba (`BigramModel`) con lo que aprende del usuario.
+- Mide unos 1,7 ms por palabra con `-O` en Linux, fuera del hilo principal.
+
+### Otras vistas del teclado
+- `KeyboardRootView`: franja superior según el panel, fila de favoritos, panel, fondo (tema, degradado o foto) y aviso flotante.
+- `SuggestionStripView`: sugerencias, pegado rápido y herramientas (emoji, portapapeles, edición, una mano, temas y ⚙︎ ajustes).
+- `KeyFeedbackButtonStyle` (`KeyboardTheme.swift`) **vibra al tocar** (no al soltar) y atenúa el botón. Lo usan las sugerencias, el pegado rápido, `StripButton` y `PanelBackButton` (2.6.7).
+- Paneles:
+  - `ClipboardPanelView`: Recientes y Fijados, carpetas, búsqueda, selección múltiple, deshacer al borrar e imágenes;
+  - `EmojiPanelView`: categorías, recientes, búsqueda y tonos de piel;
+  - `TextEditingPanelView`;
+  - `ThemePickerPanelView`: temas y **control de transparencia del cristal**;
+  - `KeyboardSettingsPanelView` (⚙︎): vibración (tipo e intensidad), sonido, glide, autocorrección, fila de números, bordes, incógnito, y el estado del acceso total y del App Group.
+
+## 5. App y datos compartidos
+
+- `Shared/SharedClipboardStore.swift`:
+  - guarda Fijados y la bandeja temporal (Recientes) en JSON dentro del contenedor del grupo, y las imágenes en una carpeta;
+  - sin contenedor, recurre a `UserDefaults`;
+  - registra borrados para no volver a importar lo eliminado, aplica retención y límites, y permite carpetas.
+- `ClipboardCapture`: captura textos, enlaces e imágenes, también varios a la vez. No guarda lo que los gestores de contraseñas marcan como privado.
+- `KeyboardHistorySync.commit`: sincroniza en ambos sentidos el historial de SwiftData de la app con el del teclado.
+- `KeyboardPreferences`: todos los ajustes, con `load(from:)` y `save(to:)`.
+  - Las claves están en `KeyboardPreferenceKey` y empiezan por `keyboard`.
+  - Los colores se guardan con 8 bits por canal para que coincidan al volver a leerlos.
+- App:
+  - `KeyboardSettingsView` y `KeyboardThemesView` usan `@AppStorage` sobre el grupo;
+  - `KeyboardStatusView` muestra el estado del teclado;
+  - además: `DiagnosticsView`, `BackupView`/`BackupService` (JSON), `PersonalDictionaryView`, `OnboardingView`, Face ID (`AppLockController`) y OCR.
+- Diagnóstico (`KeyboardDiagnostics`): cierres seguidos, modo seguro, memoria libre (`os_proc_available_memory`) y tiempos del diccionario.
+
+## 6. El problema del App Group (importante para este usuario)
+
+- KravaSigner firma con un certificado compartido: **elimina el App Group**. Consecuencias:
+  - la app no ve lo que copia el teclado (en la app sale «Temporales 0 / Guardados 0»);
+  - lo que se cambia **en la app no llega solo al teclado**;
+  - la app no sabe si hay acceso total.
+- El teclado funciona por su cuenta y sus ajustes se cambian desde ⚙︎.
+- Solución añadida en 2.6.8 (`Shared/KeyboardSettingsTransfer.swift`):
+  - La app muestra **«Enviar ajustes al teclado»** (`KeyboardSettingsTransferSection`) en Ajustes del teclado y en Temas.
+  - El botón pone en el portapapeles los ajustes (`keyboard*` y los del portapapeles) como plist, con un tipo propio, solo en este dispositivo y con caducidad de 10 min.
+  - El teclado los aplica al abrirse y vacía el portapapeles.
+  - **No se envían las palabras ni los pares aprendidos** (`learnedWords`, `learnedBigrams`), ni `lastActive`.
+- Solución completa: firmar con un certificado propio que conserve los App Groups (Feather con certificado propio, AltStore/SideStore/Sideloadly).
+
+## 7. Historial de versiones
+
+| Versión | Cambios |
+|---|---|
+| 1.0 – 2.0 | QWERTY español al estilo Gboard, portapapeles con historial, temporales y fijados |
+| 2.1 – 2.2 | Escritura deslizando (decodificador con alineación dinámica, ~95 % de acierto top-1), diccionario de frecuencias, autocorrección, predicción, temas, búsqueda de emojis, tonos de piel, incógnito, inglés |
+| 2.3 | Portapapeles «hasta el límite de iOS»: varios elementos, privados, imágenes, carpetas, búsqueda, selección múltiple, extensión Compartir, App Intents |
+| 2.4 | Vibración ajustable, selector de temas en el teclado, tema personalizado |
+| 2.5 | 7 idiomas y distribuciones (QWERTY, ç, AZERTY, QWERTZ), sonidos, temas en degradado y cristal, fila de favoritos, bienvenida |
+| 2.6 | Base de predicción (Tatoeba), fecha y hora, diccionario compacto (índices `Int32`), diagnóstico, copia de seguridad, widget y control, distribución de iPad, vista previa del glide |
+| 2.6.1 | **Cierre al abrir:** el cierre del léxico se ejecutaba en otra cola con aislamiento `@MainActor` → `dispatch_assert_queue_fail`. Arreglo: `@Sendable` + `nonisolated(unsafe)` + `Task { @MainActor }` |
+| 2.6.2 | Lo mismo, por prevención, en las respuestas de `NSItemProvider` de la extensión Compartir |
+| 2.6.3 | Botones de volver de los paneles (cápsula separada del borde + `removeSystemTouchDelays`), primeras mejoras del retraso, panel ⚙︎ en el teclado, aviso de App Group en la app |
+| 2.6.4 | Icono del pato (no se veía: ver 2.6.6) |
+| 2.6.5 | **Teclas en UIKit** (`KeyGridUIView`), barra con estado propio, sugerencias en segundo plano, vibración y sonido sin bloquear, portapapeles sin consultar mientras se escribe |
+| 2.6.6 | **Icono:** `project.yml` usaba una clave `resources:` que **no existe en XcodeGen** y además excluía `Assets.xcassets` de `sources`, así que nunca se compilaba. Ahora va en `sources` y el script lo comprueba |
+| 2.6.7 | Vibración en sugerencias y botones de la barra; control de **transparencia del cristal** (`glassTransparency`, 0–1, por defecto 1) en el teclado y en la app |
+| 2.6.8 | Sin azul ni corrección en el espacio con la autocorrección desactivada; «Enviar ajustes al teclado» |
+
+## 8. Errores ya resueltos (no repetirlos)
+
+- **Swift 6 y las respuestas del sistema:** todo cierre que iOS llame desde otra cola debe ser **`@Sendable` explícito**; si no, hereda `@MainActor` y se cierra al entrar. Esto incluye `requestSupplementaryLexicon`, `NSItemProvider.loadItem` y las colas de `DispatchQueue`.
+  - Si el valor no es `Sendable`, se pasa con `nonisolated(unsafe) let` y se usa dentro de `Task { @MainActor in … }`.
+- El cierre de la etiqueta de `PhotosPicker` es `Sendable`: calcular el texto **antes** del `Form`.
+- **XcodeGen:** los recursos (`.xcassets`, `.txt`) van en `sources`; no existe una clave `resources:` a nivel de destino.
+- El script de validación cuenta llaves en bruto: no escribir `"{"` en cadenas (usar `"\u{7B}"`).
+- Memoria del teclado (límite estricto de iOS):
+  - diccionarios en segundo plano con índices `Int32`;
+  - foto de fondo reducida a 1 400 px;
+  - en modo seguro no se cargan.
+- No reconstruir las teclas en SwiftUI ni publicar en `KeyboardEngine` datos que cambian con cada pulsación (usar `engine.bar` o estado local).
+- No llamar a `controller.hasFullAccess` en cada pulsación (es lento): usar `engine.hasFullAccess`, que se actualiza en `viewDidLoad`, `viewWillAppear` y `viewDidAppear`.
+- En la primera subida el usuario envió un registro de cierre equivocado (AccessoryCrash de unos auriculares): pedir siempre el `.ips` de `SuperTecladoKeyboard-…`.
+
+## 9. Pendiente y sin verificar
+
+- **La cuadrícula UIKit (2.6.5+) no se ha probado en un dispositivo real**; el usuario aún no ha confirmado si ha desaparecido el retraso. Puntos a vigilar:
+  - posición de las ventanas emergentes en la fila superior y en modo una mano;
+  - tecla del globo (`handleInputModeList`);
+  - VoiceOver;
+  - toques cancelados por gestos del sistema (ahora no escriben nada).
+- No está verificado en un iPhone que «Enviar ajustes al teclado» funcione con KravaSigner (debería, con acceso total).
+- El usuario aún no ha dicho qué muestra el panel ⚙︎ (estado del acceso total y del App Group).
+- `scripts/validate-project.ps1` está desfasado (§2).
+- Ideas posibles:
+  - pulsación larga en `?123` para escribir números sin cambiar de página;
+  - más ajustes de la app dentro del panel ⚙︎ (idiomas, altura), para quien no tiene App Group.
+
+## 10. Cómo trabajar en este repo
+
+1. Trabajar en la rama indicada; no fusionar la PR.
+2. Cambios de interfaz o lógica:
+   1. revisar la sintaxis (`swiftc -parse`) y el equilibrio de llaves;
+   2. subir la versión (§2);
+   3. hacer commit y push;
+   4. esperar a CI (~10 min);
+   5. dar al usuario el enlace directo a la IPA del nuevo release.
+3. Si se puede, probar la lógica de `Shared/` fuera de iOS; añadir pruebas en `SuperTecladoTests` (por ejemplo, `ThemeAndHapticsTests` cubre preferencias, cristal y traspaso de ajustes).
+4. Responder al usuario en español, claro y sin tecnicismos.
