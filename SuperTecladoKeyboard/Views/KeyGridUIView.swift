@@ -1,5 +1,6 @@
 import SwiftUI
 import UIKit
+import UIKit.UIGestureRecognizerSubclass
 
 /// Lo que la cuadrícula necesita para dibujarse. Si no cambia, no se toca ninguna tecla.
 struct KeyGridConfiguration: Equatable {
@@ -113,6 +114,39 @@ private final class TouchState {
     }
 }
 
+/// Recibe los dedos para la cuadrícula. iOS entrega los toques a los reconocedores de gestos al
+/// instante, mientras que a las vistas puede retrasárselos (cerca de los bordes de la pantalla,
+/// o mientras otros gestos deciden): así ninguna tecla espera. Nunca «reconoce» nada ni puede
+/// ser anulado por otros gestos, para no interferir ni perder dedos.
+private final class KeyTouchRecognizer: UIGestureRecognizer {
+    weak var grid: KeyGridUIView?
+
+    override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent) {
+        grid?.fingersBegan(touches, event: event)
+    }
+
+    override func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent) {
+        grid?.fingersMoved(touches, event: event)
+    }
+
+    override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent) {
+        grid?.fingersEnded(touches, event: event)
+    }
+
+    override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent) {
+        grid?.fingersCancelled(touches, event: event)
+    }
+
+    override func canBePrevented(by preventingGestureRecognizer: UIGestureRecognizer) -> Bool { false }
+
+    override func canPrevent(_ preventedGestureRecognizer: UIGestureRecognizer) -> Bool { false }
+
+    override func reset() {
+        super.reset()
+        grid?.fingersReset()
+    }
+}
+
 final class KeyGridUIView: UIView {
     private struct GridKey {
         let id: String
@@ -152,10 +186,9 @@ final class KeyGridUIView: UIView {
     /// Última letra o espacio escritos al tocar: si hace muy poco, se está tecleando deprisa.
     private var lastTapCommit: CFTimeInterval = 0
     private var lastTouchDown: CFTimeInterval = 0
-
-    /// Puntos que la cuadrícula se mete por debajo de la barra superior: un toque algo alto en
-    /// la primera fila cuenta como esa fila en vez de perderse.
-    static let topOverlap: CGFloat = 6
+    /// Capa propia para las ventanas emergentes, encima de todo el teclado. Se crea una vez:
+    /// así mostrar una ventana no obliga a recolocar el resto del teclado en cada toque.
+    private var popupContainer: UIView?
 
     init(engine: KeyboardEngine) {
         self.engine = engine
@@ -173,6 +206,12 @@ final class KeyGridUIView: UIView {
             "bounds": NSNull(), "position": NSNull()
         ]
         layer.addSublayer(trailLayer)
+        let recognizer = KeyTouchRecognizer(target: nil, action: nil)
+        recognizer.grid = self
+        recognizer.cancelsTouchesInView = false
+        recognizer.delaysTouchesBegan = false
+        recognizer.delaysTouchesEnded = false
+        addGestureRecognizer(recognizer)
     }
 
     @available(*, unavailable)
@@ -214,12 +253,41 @@ final class KeyGridUIView: UIView {
         allPopups.forEach { $0.removeFromSuperview() }
         allPopups = []
         popupPool = []
+        popupContainer?.removeFromSuperview()
+        popupContainer = nil
     }
 
     override func didMoveToWindow() {
         super.didMoveToWindow()
-        if window == nil { cancelAllTouches() }
+        if window == nil {
+            cancelAllTouches()
+        } else {
+            removeTouchDelays()
+        }
     }
+
+    /// Ningún gesto del sistema ni de SwiftUI debe retrasar los toques de las teclas.
+    private func removeTouchDelays() {
+        var current: UIView? = superview
+        while let view = current {
+            view.gestureRecognizers?.forEach {
+                $0.delaysTouchesBegan = false
+                $0.delaysTouchesEnded = false
+            }
+            current = view.superview
+        }
+        window?.gestureRecognizers?.forEach {
+            $0.delaysTouchesBegan = false
+            $0.delaysTouchesEnded = false
+        }
+    }
+
+    // Los dedos llegan por `KeyTouchRecognizer`. La vista no hace nada con ellos para que no
+    // suban a SwiftUI ni se cuenten dos veces.
+    override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {}
+    override func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent?) {}
+    override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent?) {}
+    override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent?) {}
 
     private func rebuildKeys() {
         var unused = keyViews
@@ -254,12 +322,7 @@ final class KeyGridUIView: UIView {
     private func layoutKeys() {
         let rows = configuration.rows
         let width = bounds.width
-        let inset = min(Self.topOverlap, bounds.height / 4)
-        let geometry = KeyGridGeometry(
-            size: CGSize(width: bounds.width, height: bounds.height - inset),
-            showsNumberRow: configuration.showsNumberRow,
-            rowCount: rows.count
-        )
+        let geometry = KeyGridGeometry(size: bounds.size, showsNumberRow: configuration.showsNumberRow, rowCount: rows.count)
         let padding = KeyGridGeometry.horizontalPadding
         // El iPad tiene filas más largas (intro, comas, segunda tecla de mayúsculas…).
         let totalUnits = max(10, rows.map { $0.reduce(0) { $0 + $1.units } }.max() ?? 10)
@@ -272,7 +335,7 @@ final class KeyGridUIView: UIView {
         var flatIndex = 0
         for (rowIndex, row) in rows.enumerated() {
             let height = geometry.height(ofRow: rowIndex)
-            let originY = inset + geometry.originY(ofRow: rowIndex)
+            let originY = geometry.originY(ofRow: rowIndex)
             let rowWidth = row.reduce(0) { $0 + $1.units } * unit
             var x = padding + max(0, (width - padding * 2 - rowWidth) / 2)
             let first = newKeys.count
@@ -436,7 +499,7 @@ final class KeyGridUIView: UIView {
         return best
     }
 
-    override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
+    fileprivate func fingersBegan(_ touches: Set<UITouch>, event: UIEvent?) {
         dropTouchesThatEnded(keeping: event?.allTouches)
         // Con varios dedos a la vez, de izquierda a derecha si llegan en el mismo instante.
         let ordered = touches.sorted {
@@ -471,7 +534,7 @@ final class KeyGridUIView: UIView {
         touchOrder.removeAll { !live.contains($0) }
     }
 
-    override func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent?) {
+    fileprivate func fingersMoved(_ touches: Set<UITouch>, event: UIEvent?) {
         for touch in touches {
             guard let state = states[ObjectIdentifier(touch)] else { continue }
             if state.phase == .gliding {
@@ -494,7 +557,7 @@ final class KeyGridUIView: UIView {
         }
     }
 
-    override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent?) {
+    fileprivate func fingersEnded(_ touches: Set<UITouch>, event: UIEvent?) {
         // En el orden en que tocaron, para que dos letras levantadas a la vez no se crucen.
         let ordered = touches.sorted { first, second in
             let a = touchOrder.firstIndex(of: ObjectIdentifier(first)) ?? .max
@@ -507,10 +570,17 @@ final class KeyGridUIView: UIView {
         syncWithEngine()
     }
 
-    override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent?) {
+    fileprivate func fingersCancelled(_ touches: Set<UITouch>, event: UIEvent?) {
         for touch in touches {
             end(touch, event: event, cancelled: true)
         }
+        syncWithEngine()
+    }
+
+    /// Al terminar la secuencia de dedos no debería quedar ninguno; si queda, se cierra.
+    fileprivate func fingersReset() {
+        guard !states.isEmpty else { return }
+        dropTouchesThatEnded(keeping: [])
         syncWithEngine()
     }
 
@@ -588,13 +658,13 @@ final class KeyGridUIView: UIView {
     }
 
     /// Como el teclado de Apple: si el dedo cae cerca del borde entre letras, gana la que forma
-    /// con lo ya escrito palabras más usadas. Solo decide dentro de la franja del 25 % junto al
+    /// con lo ya escrito palabras más usadas. Solo decide dentro de la franja del 15 % junto al
     /// borde; un toque claro sobre una tecla escribe siempre esa tecla.
     private func smartKeyIndex(at point: CGPoint, nearest index: Int) -> Int {
         let key = keys[index]
         guard let letter = key.letter, engine.smartTouchAllowed, let dictionary = engine.dictionary else { return index }
-        let marginX = key.frame.width * 0.25
-        let marginY = key.frame.height * 0.25
+        let marginX = key.frame.width * 0.15
+        let marginY = key.frame.height * 0.15
         var candidates: [(index: Int, letter: String)] = [(index, letter)]
         for (other, candidate) in keys.enumerated() where other != index {
             guard let otherLetter = candidate.letter else { continue }
@@ -614,7 +684,7 @@ final class KeyGridUIView: UIView {
             let spatial = -2 * (dx * dx + dy * dy)
             // Lo usadas que son las palabras que siguen así (0 si no hay ninguna).
             let weight = Double(dictionary.prefixWeight(prefix + candidate.letter))
-            return spatial + 0.25 * log(weight + 1)
+            return spatial + 0.2 * log(weight + 1)
         }
         var best = candidates[0]
         var bestScore = score(best)
@@ -629,16 +699,35 @@ final class KeyGridUIView: UIView {
     }
 
     private func commitPendingTouches(except newID: ObjectIdentifier) {
+        let now = CACurrentMediaTime()
         for id in touchOrder where id != newID {
-            guard let state = states[id], state.phase == .pressed else { continue }
+            guard let state = states[id] else { continue }
+            if state.phase == .alternates {
+                // Otra tecla mientras está abierta la pulsación larga: era un dedo apoyado, no
+                // se escribe ningún símbolo al levantarlo.
+                state.phase = .ignored
+                hidePopup(of: state)
+                engine.touchDiagnostics.ignored += 1
+                engine.touchDiagnostics.log("dedo apoyado (sin símbolo)")
+                refreshKey(state.keyID)
+                continue
+            }
+            guard state.phase == .pressed else { continue }
             switch state.spec.kind {
             case .character, .space:
                 state.timer?.cancel()
                 state.timer = nil
-                state.phase = .committed
                 hidePopup(of: state)
-                engine.touchDiagnostics.rollovers += 1
-                commit(state, note: "otro dedo")
+                if now - state.beganAt > 0.6 {
+                    // Un dedo que lleva rato quieto está apoyado, no pulsando: no escribe.
+                    state.phase = .ignored
+                    engine.touchDiagnostics.ignored += 1
+                    engine.touchDiagnostics.log("dedo apoyado (no escrito)")
+                } else {
+                    state.phase = .committed
+                    engine.touchDiagnostics.rollovers += 1
+                    commit(state, note: "otro dedo")
+                }
                 refreshKey(state.keyID)
             case .delete:
                 // Al tocar otra tecla deja de repetir, para no borrar lo que se acaba de escribir.
@@ -783,6 +872,11 @@ final class KeyGridUIView: UIView {
     private func finish(_ state: TouchState, event: UIEvent?) {
         switch state.phase {
         case .pressed:
+            if case .space = state.spec.kind, abs(state.last.y - state.start.y) > state.frame.height * 0.8 {
+                // Un deslizamiento vertical desde la barra espaciadora es un gesto, no un espacio.
+                engine.touchDiagnostics.log("espacio deslizado (no escrito)")
+                return
+            }
             commit(state)
         case .alternates:
             if state.spec.alternates.indices.contains(state.selectedAlternate) {
@@ -890,10 +984,18 @@ final class KeyGridUIView: UIView {
 
     // MARK: Ventanas emergentes
 
-    /// Las ventanas emergentes van en la vista raíz del teclado para poder salir por encima de
-    /// la fila superior sin que nada las recorte.
+    /// Las ventanas emergentes van en una capa sobre la vista raíz del teclado para poder salir
+    /// por encima de la fila superior sin que nada las recorte.
     private var overlayHost: UIView {
-        engine.controller?.view ?? self
+        if let popupContainer, popupContainer.superview != nil { return popupContainer }
+        guard let root = engine.controller?.view else { return self }
+        let container = UIView(frame: root.bounds)
+        container.isUserInteractionEnabled = false
+        container.backgroundColor = .clear
+        container.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        root.addSubview(container)
+        popupContainer = container
+        return container
     }
 
     private func dequeuePopup() -> KeyPopupUIView {
@@ -908,8 +1010,6 @@ final class KeyGridUIView: UIView {
         if popup.superview !== host {
             popup.removeFromSuperview()
             host.addSubview(popup)
-        } else {
-            host.bringSubviewToFront(popup)
         }
         popup.isHidden = false
         return popup

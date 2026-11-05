@@ -49,10 +49,7 @@ private struct KeyGridView: View {
     let height: CGFloat
 
     var body: some View {
-        // La cuadrícula sube unos puntos por debajo de la barra: un toque un poco alto en la
-        // fila superior escribe la letra en vez de perderse en la barra de sugerencias.
         KeyGridRepresentable(engine: engine, configuration: KeyGridConfiguration(engine: engine), palette: palette)
-            .frame(width: width, height: height + KeyGridUIView.topOverlap)
-            .padding(.top, -KeyGridUIView.topOverlap)
+            .frame(width: width, height: height)
     }
 }

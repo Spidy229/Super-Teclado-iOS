@@ -25,7 +25,6 @@ final class KeyboardViewController: UIInputViewController {
         engine.controller = self
         engine.hasFullAccess = hasFullAccess
         engine.loadPreferences()
-        engine.reloadClips()
         installKeyboardView()
 
         let constraint = view.heightAnchor.constraint(equalToConstant: engine.metrics.totalHeight)
@@ -56,18 +55,36 @@ final class KeyboardViewController: UIInputViewController {
         }
         engine.loadPreferences()
         engine.setTraitStyle(traitCollection.userInterfaceStyle)
+        if engine.needsInputModeSwitchKey != needsInputModeSwitchKey {
+            engine.needsInputModeSwitchKey = needsInputModeSwitchKey
+        }
         updateMetrics()
-        engine.reloadClips()
-        checkPasteboard()
         engine.prepareForNewField()
         engine.refreshContext()
+        // El portapapeles (leer lo copiado, imágenes incluidas, y guardarlo) se mira un momento
+        // después de aparecer: así las primeras teclas no esperan a nada.
+        scheduleFirstClipboardCheck()
         startClipboardMonitoring()
+    }
+
+    private func scheduleFirstClipboardCheck() {
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .milliseconds(700))
+            guard let self, self.view.window != nil else { return }
+            self.engine.reloadClips()
+            // Si ya está escribiendo, lo hará el sondeo en la siguiente pausa.
+            guard ProcessInfo.processInfo.systemUptime - self.engine.lastKeyTouch > 1.5 else { return }
+            self.checkPasteboard()
+        }
     }
 
     override func viewDidAppear(_ animated: Bool) {
         super.viewDidAppear(animated)
         // iOS puede dar el valor definitivo de «acceso total» cuando el teclado ya está visible.
         if engine.hasFullAccess != hasFullAccess { engine.hasFullAccess = hasFullAccess }
+        if engine.needsInputModeSwitchKey != needsInputModeSwitchKey {
+            engine.needsInputModeSwitchKey = needsInputModeSwitchKey
+        }
         removeSystemTouchDelays()
     }
 
@@ -77,10 +94,16 @@ final class KeyboardViewController: UIInputViewController {
     private func removeSystemTouchDelays() {
         var current: UIView? = view
         while let candidate = current {
-            candidate.gestureRecognizers?.forEach { $0.delaysTouchesBegan = false }
+            candidate.gestureRecognizers?.forEach {
+                $0.delaysTouchesBegan = false
+                $0.delaysTouchesEnded = false
+            }
             current = candidate.superview
         }
-        view.window?.gestureRecognizers?.forEach { $0.delaysTouchesBegan = false }
+        view.window?.gestureRecognizers?.forEach {
+            $0.delaysTouchesBegan = false
+            $0.delaysTouchesEnded = false
+        }
     }
 
     override func viewWillDisappear(_ animated: Bool) {
@@ -97,9 +120,7 @@ final class KeyboardViewController: UIInputViewController {
 
     override func viewWillLayoutSubviews() {
         super.viewWillLayoutSubviews()
-        if engine.needsInputModeSwitchKey != needsInputModeSwitchKey {
-            engine.needsInputModeSwitchKey = needsInputModeSwitchKey
-        }
+        // Solo lo barato: esto se ejecuta en cada recolocación de la vista.
         engine.setTraitStyle(traitCollection.userInterfaceStyle)
         updateMetrics()
     }

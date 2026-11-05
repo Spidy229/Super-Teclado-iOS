@@ -402,8 +402,14 @@ final class SuggestionEngine {
             try? await Task.sleep(for: .seconds(2))
             guard let self else { return }
             self.pendingSave = false
-            PersonalDictionary.saveLearnedWords(self.learned)
-            PersonalDictionary.saveLearnedBigrams(self.bigrams)
+            // Guardar miles de palabras y pares lleva unos milisegundos: se hace fuera del hilo
+            // principal para no frenar la siguiente tecla.
+            let learned = self.learned
+            let bigrams = self.bigrams
+            Task.detached(priority: .utility) {
+                PersonalDictionary.saveLearnedWords(learned)
+                PersonalDictionary.saveLearnedBigrams(bigrams)
+            }
         }
     }
 }

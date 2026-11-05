@@ -174,7 +174,7 @@ struct KeyboardSettingsPanelView: View {
                 diagnosticRow("Cancelados por iOS y escritos", diagnostics.cancelledTyped)
                 diagnosticRow("Cancelados por iOS y perdidos", diagnostics.cancelledLost)
                 diagnosticRow("Sin aviso de fin (escritos)", diagnostics.unfinished)
-                diagnosticRow("Ignorados mientras deslizabas", diagnostics.ignored)
+                diagnosticRow("Ignorados (deslizando o dedo apoyado)", diagnostics.ignored)
                 diagnosticRow("Deslizamientos", diagnostics.glides)
                 diagnosticRow("Deslizamientos que eran toques", diagnostics.glidesAsTaps)
                 diagnosticRow("Cursor con la barra espaciadora", diagnostics.cursorSwipes)

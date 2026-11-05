@@ -1,6 +1,6 @@
 # Super Teclado: contexto para agentes
 
-Resumen de todo lo hecho hasta la **versión 2.7.0**, para que otro agente (Claude Code, Codex…) pueda seguir el trabajo sin repetir errores. El `README.md` describe las funciones para el usuario; este documento explica **cómo está hecho, por qué y qué falta**.
+Resumen de todo lo hecho hasta la **versión 2.7.1**, para que otro agente (Claude Code, Codex…) pueda seguir el trabajo sin repetir errores. El `README.md` describe las funciones para el usuario; este documento explica **cómo está hecho, por qué y qué falta**.
 
 ---
 
@@ -32,7 +32,7 @@ Resumen de todo lo hecho hasta la **versión 2.7.0**, para que otro agente (Clau
 - **Subir versión** en cada cambio que se entregue, en dos sitios que deben coincidir:
   - `project.yml`: `MARKETING_VERSION` y `CURRENT_PROJECT_VERSION`, **4 veces cada uno** (app, teclado, share y widget).
   - `SuperTecladoApp/Package.swift`: `displayVersion` y `bundleVersion`.
-  - Estado actual: 2.7.0 / 19 en `project.yml`, 2.7.0 / 24 en `Package.swift`.
+  - Estado actual: 2.7.1 / 20 en `project.yml`, 2.7.1 / 25 en `Package.swift`.
 - `scripts/build-unsigned-ipa.sh`:
   - firma ad hoc (`codesign -s -`) cada appex con sus entitlements y después la app;
   - **falla si falta `Assets.car` o `CFBundleIcons`** (comprobación añadida en 2.6.6).
@@ -96,7 +96,11 @@ Este archivo es la solución al **retraso al escribir**. Antes cada tecla era un
 - `KeyGridRepresentable` (`UIViewRepresentable`) recibe un `KeyGridConfiguration` (`Equatable`) y la paleta. `apply()` no hace nada si no cambian.
   - Las teclas se reutilizan por `KeySpec.id`.
   - Si las filas no cambian, solo se actualizan textos y colores.
-- **Una sola vista recibe todos los dedos** (`touchesBegan`, `Moved`, `Ended`, `Cancelled`, con `isMultipleTouchEnabled`). La tecla tocada es la más cercana de su fila, así que los huecos cuentan para la tecla de al lado.
+- **Una sola vista recibe todos los dedos**, a través de `KeyTouchRecognizer` (2.7.1).
+  - Es un `UIGestureRecognizer` que nunca reconoce nada (`canBePrevented` y `canPrevent` devuelven `false`, `cancelsTouchesInView = false`).
+  - iOS entrega los toques a los reconocedores al instante; a las vistas puede retrasarlos (bordes de la pantalla, otros gestos).
+  - Los `touches…` de la vista están vacíos a propósito.
+  - `fingersReset()` cierra los dedos que quedaran al terminar la secuencia. La tecla tocada es la más cercana de su fila, así que los huecos cuentan para la tecla de al lado.
   - Al tocar: resalta la tecla y la ventana emergente, vibra/suena y programa la pulsación larga.
   - Al levantar: escribe.
   - **Rollover:** si toca otro dedo antes de levantar el anterior, la letra o el espacio anterior se escriben ya (estado `.committed`).
@@ -109,13 +113,12 @@ Este archivo es la solución al **retraso al escribir**. Antes cada tecla era un
     - usa los toques intermedios (`coalescedTouches`);
     - el trazo es un `CAShapeLayer` con las animaciones implícitas desactivadas.
   - Sin glide, deslizar cambia a la letra que queda bajo el dedo.
-- Las ventanas emergentes (`KeyPopupUIView`) se añaden a **`engine.controller.view`**, para que nada las recorte por encima de la fila superior. Se reutilizan y se quitan en `tearDown()`.
+- Las ventanas emergentes (`KeyPopupUIView`) van en una capa propia (`popupContainer`) añadida una sola vez a `engine.controller.view`. Así nada las recorta y mostrarlas no obliga a recolocar el teclado en cada toque. Se reutilizan y se quitan en `tearDown()`.
 - `KeyCapUIView` reproduce el aspecto de Gboard: tapa con esquinas de 7 pt (continuas), sombra desplazada 1 pt, etiqueta, símbolo de la esquina e icono SF.
 - **Mantener `KeySpec` y `KeyboardPalette` como `Equatable`**; la configuración depende de ello.
 - Las filas (`keyRows()`: letras, `?123`, `=\<`, teclado numérico y distribución ancha de iPad) y `KeyGridConfiguration(engine:)` están en `KeyRows.swift`.
   - La cuadrícula se pone al día con el motor después de cada toque (`syncWithEngine()`), sin esperar a SwiftUI; así el siguiente dedo ya ve la página y las mayúsculas correctas.
   - `KeyGridGeometry` reparte las alturas (la fila de números ocupa 0,78 de una fila normal).
-  - La cuadrícula se mete `topOverlap` (6 pt) por debajo de la barra superior, para que un toque algo alto cuente como fila superior.
 - **Reglas para no perder toques al teclear deprisa** (2.6.9):
   - el glide solo empieza si el dedo sale de su tecla y recorre más de `max(26, 0,8 × ancho)`, o `1,3 × ancho` si hubo otra letra hace menos de 0,3 s;
   - si toca un segundo dedo con un trazo todavía corto (< 2,5 teclas), el trazo se convierte en pulsación de la tecla inicial;
@@ -124,9 +127,11 @@ Este archivo es la solución al **retraso al escribir**. Antes cada tecla era un
   - sin glide, deslizar solo cambia de letra si el dedo entra bien en otra tecla (20 % hacia dentro);
   - un toque cancelado por iOS se escribe si era corto (< 0,4 s y < 14 pt);
   - los dedos de los que iOS no avisó al levantarse se cierran (`dropTouchesThatEnded`), para que no bloqueen el teclado;
-  - tocar otra tecla detiene la repetición de borrar.
+  - tocar otra tecla detiene la repetición de borrar;
+  - un dedo quieto más de 0,6 s (apoyado) o con la pulsación larga abierta no escribe nada cuando toca otro dedo (2.7.1);
+  - un deslizamiento vertical desde la barra espaciadora no escribe un espacio (2.7.1).
 - **Precisión inteligente** (2.7.0, `smartKeyIndex`, preferencia `smartTouch`, activada por defecto):
-  - si el toque cae a menos del 25 % del borde de otra letra, se puntúa cada candidata con `−2·(dx²+dy²)` (distancia normalizada al centro) más `0,25·log(peso+1)`;
+  - si el toque cae a menos del 15 % del borde de otra letra, se puntúa cada candidata con `−2·(dx²+dy²)` (distancia normalizada al centro) más `0,2·log(peso+1)` (2.7.1; en 2.7.0 eran 25 % y 0,25);
   - el peso es `WordDictionary.prefixWeight(palabra + letra)`: índice ordenado de palabras como teclas con sumas acumuladas, unos 0,6 µs por consulta;
   - la palabra sale de `engine.wordForPrediction`: el contexto del documento completado con `typedWord`, porque el contexto puede ir una letra por detrás al teclear deprisa;
   - el rollover se escribe antes de elegir la tecla nueva, para que esa letra cuente;
@@ -213,6 +218,7 @@ Este archivo es la solución al **retraso al escribir**. Antes cada tecla era un
 | 2.6.8 | Sin azul ni corrección en el espacio con la autocorrección desactivada; «Enviar ajustes al teclado» |
 | 2.6.9 | Toques más fiables al teclear deprisa (ver reglas en §4) y cuadrícula que se actualiza sin esperar a SwiftUI |
 | 2.7.0 | Precisión inteligente al tocar entre dos letras, diagnóstico de toques en ⚙︎, pulsación larga de 400 ms ajustable en ⚙︎ |
+| 2.7.1 | Toques por reconocedor de gestos, capa propia para las ventanas emergentes, sin solape con la barra, dedos apoyados ignorados, precisión más prudente; portapapeles y clips se leen 0,7 s después de abrir, y el diccionario personal se guarda fuera del hilo principal |
 
 ## 8. Errores ya resueltos (no repetirlos)
 
