@@ -1,6 +1,6 @@
 # Super Teclado: contexto para agentes
 
-Resumen de todo lo hecho hasta la **versión 2.8.0**, para que otro agente (Claude Code, Codex…) pueda seguir el trabajo sin repetir errores. El `README.md` describe las funciones para el usuario; este documento explica **cómo está hecho, por qué y qué falta**.
+Resumen de todo lo hecho hasta la **versión 2.8.1**, para que otro agente (Claude Code, Codex…) pueda seguir el trabajo sin repetir errores. El `README.md` describe las funciones para el usuario; este documento explica **cómo está hecho, por qué y qué falta**.
 
 ---
 
@@ -32,7 +32,7 @@ Resumen de todo lo hecho hasta la **versión 2.8.0**, para que otro agente (Clau
 - **Subir versión** en cada cambio que se entregue, en dos sitios que deben coincidir:
   - `project.yml`: `MARKETING_VERSION` y `CURRENT_PROJECT_VERSION`, **4 veces cada uno** (app, teclado, share y widget).
   - `SuperTecladoApp/Package.swift`: `displayVersion` y `bundleVersion`.
-  - Estado actual: 2.8.0 / 21 en `project.yml`, 2.8.0 / 26 en `Package.swift`.
+  - Estado actual: 2.8.1 / 22 en `project.yml`, 2.8.1 / 27 en `Package.swift`.
 - `scripts/build-unsigned-ipa.sh`:
   - firma ad hoc (`codesign -s -`) cada appex con sus entitlements y después la app;
   - **falla si falta `Assets.car` o `CFBundleIcons`** (comprobación añadida en 2.6.6).
@@ -95,6 +95,10 @@ Resumen de todo lo hecho hasta la **versión 2.8.0**, para que otro agente (Clau
   - **sonido** con `AudioServicesPlaySystemSound` en una cola propia, para no bloquear el hilo principal;
   - apunta `lastKeyTouch`.
 - `scheduleSuggestions()`: espera 12 ms, luego `refreshSuggestions() async`.
+- Espacio tras elegir una sugerencia (2.8.1, `addSpaceAfterSuggestion`, preferencia `spaceAfterSuggestion`, activada por defecto). Usa `KeyboardTextLogic.suggestionSpace(before:)` con el texto detrás del cursor:
+  - si hay un espacio, el cursor salta detrás de él en vez de duplicarlo;
+  - delante de un signo, unas comillas o un salto de línea no se pone espacio.
+  - Pulsar espacio justo después de una sugerencia no añade otro (`autoSpaceInserted`); un segundo espacio seguido pone el punto.
 - `autocorrectAllowed` = preferencia activada + sugerencias permitidas + el campo no la prohíbe. Si es `false`, las propuestas `.correction` se muestran como `.completion` (sin azul) y el espacio no cambia nada (2.6.8).
 
 ### Teclas: `Views/KeyGridUIView.swift` (UIKit, desde 2.6.5)
@@ -230,6 +234,7 @@ Este archivo es la solución al **retraso al escribir**. Antes cada tecla era un
 | 2.7.0 | Precisión inteligente al tocar entre dos letras, diagnóstico de toques en ⚙︎, pulsación larga de 400 ms ajustable en ⚙︎ |
 | 2.7.1 | Toques por reconocedor de gestos, capa propia para las ventanas emergentes, sin solape con la barra, dedos apoyados ignorados, precisión más prudente; portapapeles y clips se leen 0,7 s después de abrir, y el diccionario personal se guarda fuera del hilo principal |
 | 2.8.0 | Teclas y fondo fuera de SwiftUI (subvistas UIKit de la vista del teclado), medidas de retraso y bloqueos en el diagnóstico, sin UITextChecker al mostrar sugerencias, vibración preparada al aparecer |
+| 2.8.1 | Espacio tras una sugerencia sin duplicar el que ya hay ni ponerlo delante de signos; se puede desactivar |
 
 ## 8. Errores ya resueltos (no repetirlos)
 

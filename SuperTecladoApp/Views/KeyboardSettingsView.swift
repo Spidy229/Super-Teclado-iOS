@@ -31,6 +31,7 @@ struct KeyboardSettingsView: View {
     @AppStorage(KeyboardPreferenceKey.layout, store: UserDefaults(suiteName: SharedClipboardStore.appGroupID)) private var layoutCode = "auto"
     @AppStorage(KeyboardPreferenceKey.incognito, store: UserDefaults(suiteName: SharedClipboardStore.appGroupID)) private var incognito = false
     @AppStorage(KeyboardPreferenceKey.smartTouch, store: UserDefaults(suiteName: SharedClipboardStore.appGroupID)) private var smartTouch = true
+    @AppStorage(KeyboardPreferenceKey.spaceAfterSuggestion, store: UserDefaults(suiteName: SharedClipboardStore.appGroupID)) private var spaceAfterSuggestion = true
 
     @AppStorage(KeyboardPreferenceKey.hapticsStrength, store: UserDefaults(suiteName: SharedClipboardStore.appGroupID)) private var hapticsStrength = 0.6
     @AppStorage(KeyboardPreferenceKey.hapticsStyle, store: UserDefaults(suiteName: SharedClipboardStore.appGroupID)) private var hapticsStyle: HapticStyleOption = .light
@@ -92,6 +93,7 @@ struct KeyboardSettingsView: View {
                     Text("Largo").tag(550)
                 }
                 Toggle("Precisión inteligente", isOn: $smartTouch)
+                Toggle("Espacio tras elegir una sugerencia", isOn: $spaceAfterSuggestion)
             } header: {
                 Text("Preferencias")
             } footer: {

@@ -9,6 +9,15 @@ final class KeyboardTextLogicTests: XCTestCase {
         XCTAssertEqual(KeyboardTextLogic.currentWord(before: nil), "")
     }
 
+    func testSuggestionSpaceDoesNotDoubleExistingSpaces() {
+        XCTAssertEqual(KeyboardTextLogic.suggestionSpace(before: nil), .insert)
+        XCTAssertEqual(KeyboardTextLogic.suggestionSpace(before: "mundo"), .insert)
+        XCTAssertEqual(KeyboardTextLogic.suggestionSpace(before: " mundo"), .skipExisting)
+        XCTAssertEqual(KeyboardTextLogic.suggestionSpace(before: ", y luego"), .none)
+        XCTAssertEqual(KeyboardTextLogic.suggestionSpace(before: "?"), .none)
+        XCTAssertEqual(KeyboardTextLogic.suggestionSpace(before: "\nAdiós"), .none)
+    }
+
     func testSentenceCapitalization() {
         XCTAssertTrue(KeyboardTextLogic.shouldCapitalize(context: nil, mode: .sentences))
         XCTAssertTrue(KeyboardTextLogic.shouldCapitalize(context: "Hola. ", mode: .sentences))

@@ -494,8 +494,16 @@ final class KeyboardEngine: ObservableObject {
             return
         }
         guard let proxy else { return }
-        autoSpaceInserted = false
         let now = Date()
+        if autoSpaceInserted, proxy.documentContextBeforeInput?.hasSuffix(" ") == true {
+            // La sugerencia ya dejó el espacio: pulsar espacio justo después no lo duplica (otro
+            // espacio seguido sí pone el punto, como siempre).
+            autoSpaceInserted = false
+            lastSpaceTap = now
+            afterEdit()
+            return
+        }
+        autoSpaceInserted = false
         if preferences.doubleSpacePeriod,
            now.timeIntervalSince(lastSpaceTap) < 0.5,
            KeyboardTextLogic.shouldConvertDoubleSpace(context: proxy.documentContextBeforeInput) {
@@ -609,6 +617,8 @@ final class KeyboardEngine: ObservableObject {
         guard let proxy else { return }
         let word = currentWord
         let context = proxy.documentContextBeforeInput
+        // Lo que hay detrás del cursor se mira antes de escribir nada.
+        let textAfterCursor = proxy.documentContextAfterInput
         pendingAutocorrection = nil
         lastSpaceTap = .distantPast
 
@@ -620,25 +630,45 @@ final class KeyboardEngine: ObservableObject {
             proxy.insertText(item.text)
             lastGlide = (item.text, glide.alternatives)
         case .emoji:
-            proxy.insertText(word.isEmpty ? item.text + " " : " " + item.text + " ")
+            proxy.insertText(word.isEmpty ? item.text : " " + item.text)
             recordWord(word, context: context)
             rememberEmoji(item.text)
             lastGlide = nil
-            autoSpaceInserted = true
+            addSpaceAfterSuggestion(textAfterCursor: textAfterCursor)
         case .prediction:
-            proxy.insertText(item.text + " ")
+            proxy.insertText(item.text)
             recordWord(item.text, context: context)
-            autoSpaceInserted = true
+            addSpaceAfterSuggestion(textAfterCursor: textAfterCursor)
         case .typed, .correction, .completion:
             for _ in 0..<word.count { proxy.deleteBackward() }
-            proxy.insertText(item.text + " ")
+            proxy.insertText(item.text)
             if item.kind == .typed { suggestionEngine.reject(item.text, persist: !isIncognito) }
             recordWord(item.text, context: context)
             lastGlide = nil
-            autoSpaceInserted = true
+            addSpaceAfterSuggestion(textAfterCursor: textAfterCursor)
         }
         if shift == .on { shift = .off }
         afterEdit()
+    }
+
+    /// Espacio tras la palabra elegida, como en Gboard, pero sin duplicar uno que ya esté detrás
+    /// del cursor (entonces el cursor salta detrás de él) ni ponerlo delante de un signo. Se
+    /// puede desactivar en el engranaje ⚙︎.
+    private func addSpaceAfterSuggestion(textAfterCursor: String?) {
+        guard preferences.spaceAfterSuggestion, let proxy else {
+            autoSpaceInserted = false
+            return
+        }
+        switch KeyboardTextLogic.suggestionSpace(before: textAfterCursor) {
+        case .insert:
+            proxy.insertText(" ")
+            autoSpaceInserted = true
+        case .skipExisting:
+            proxy.adjustTextPosition(byCharacterOffset: 1)
+            autoSpaceInserted = true
+        case .none:
+            autoSpaceInserted = false
+        }
     }
 
     // MARK: Escritura deslizando

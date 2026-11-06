@@ -138,6 +138,9 @@ struct KeyboardSettingsPanelView: View {
             toggleRow("Autocorrección", isOn: engine.preferences.autocorrect) { value in
                 engine.updatePreferences { $0.autocorrect = value }
             }
+            toggleRow("Espacio tras elegir una sugerencia", isOn: engine.preferences.spaceAfterSuggestion) { value in
+                engine.updatePreferences { $0.spaceAfterSuggestion = value }
+            }
             toggleRow("Precisión inteligente", isOn: engine.preferences.smartTouch) { value in
                 engine.updatePreferences { $0.smartTouch = value }
             }

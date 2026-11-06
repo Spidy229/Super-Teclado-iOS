@@ -97,6 +97,7 @@ final class ThemeAndHapticsTests: XCTestCase {
         let defaults = try XCTUnwrap(UserDefaults(suiteName: "super-teclado-tests-\(UUID().uuidString)"))
         var preferences = KeyboardPreferences.load(from: defaults)
         XCTAssertTrue(preferences.smartTouch)
+        XCTAssertTrue(preferences.spaceAfterSuggestion)
         XCTAssertEqual(preferences.longPressDelay, 400)
 
         // El antiguo «Normal» (330 ms) pasa al nuevo; un valor elegido se respeta.

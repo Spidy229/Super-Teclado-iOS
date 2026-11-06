@@ -15,7 +15,7 @@ Teclado para iPhone y iPad inspirado en Gboard, con portapapeles completo.
 - Barra de sugerencias con tres propuestas, **autocorrección** de erratas y tildes («qeu» → «que», «tambien» → «también») al pulsar espacio o puntuación, y deshacer la corrección pulsando borrar justo después. La propuesta solo sale en azul cuando se va a aplicar: con la autocorrección desactivada aparece como una sugerencia normal y el espacio no cambia nada.
 - **Predicción de la siguiente palabra desde el primer día**, con una base de pares de palabras de frases reales (Tatoeba) en cada idioma que se combina con lo que aprende de ti, y **sugerencias de emojis** («jaja» → 😂).
 - Al escribir «hoy» o «ahora», la barra ofrece la fecha o la hora; los atajos admiten `{fecha}`, `{fecha_larga}`, `{hora}` y `{dia}`.
-- Al elegir una sugerencia y escribir un signo, el espacio se recoloca («hola, » en vez de «hola ,»).
+- Al elegir una sugerencia se añade un espacio, pero nunca uno doble: si ya hay un espacio detrás del cursor, el cursor salta detrás de él; delante de un signo no se pone espacio; y pulsar espacio justo después no añade otro. Si escribes un signo, el espacio se recoloca («hola, » en vez de «hola ,»). El espacio automático se puede desactivar en el engranaje ⚙︎.
 - Aprende las palabras que escribes, usa las sustituciones de texto y los contactos de iOS, y permite atajos propios desde el **diccionario personal** de la app.
 - Mayúsculas automáticas (también tras «¿» y «¡»), doble toque en mayúsculas para bloquearlas y punto con doble espacio.
 - Ventana emergente al pulsar y **pulsación larga** para acentos (á, é, ü…) y para los símbolos que se ven en la esquina de cada tecla.

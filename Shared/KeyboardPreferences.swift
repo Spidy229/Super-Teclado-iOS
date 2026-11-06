@@ -120,6 +120,8 @@ enum KeyboardPreferenceKey {
     static let incognito = "keyboardIncognito"
     /// Elegir entre dos teclas según la palabra que se está escribiendo al tocar entre ellas.
     static let smartTouch = "keyboardSmartTouch"
+    /// Espacio automático después de elegir una sugerencia.
+    static let spaceAfterSuggestion = "keyboardSpaceAfterSuggestion"
     /// Clave antigua (versión 2.2): inglés como segundo idioma.
     static let englishSecondLanguage = "keyboardEnglishSecondLanguage"
     static let primaryLanguage = "keyboardPrimaryLanguage"
@@ -171,6 +173,7 @@ struct KeyboardPreferences: Equatable {
     /// Sin aprender palabras ni guardar lo copiado.
     var incognito = false
     var smartTouch = true
+    var spaceAfterSuggestion = true
     var primaryLanguage: KeyboardLanguage = .spanish
     var secondaryLanguage: KeyboardLanguage?
     /// `nil` usa la distribución del idioma principal.
@@ -222,6 +225,7 @@ struct KeyboardPreferences: Equatable {
         preferences.longPressDelay = delay > 0 && delay != 330 ? delay : fallback.longPressDelay
         preferences.incognito = bool(KeyboardPreferenceKey.incognito, fallback.incognito)
         preferences.smartTouch = bool(KeyboardPreferenceKey.smartTouch, fallback.smartTouch)
+        preferences.spaceAfterSuggestion = bool(KeyboardPreferenceKey.spaceAfterSuggestion, fallback.spaceAfterSuggestion)
         preferences.primaryLanguage = defaults.string(forKey: KeyboardPreferenceKey.primaryLanguage)
             .flatMap(KeyboardLanguage.init(rawValue:)) ?? fallback.primaryLanguage
         if let code = defaults.string(forKey: KeyboardPreferenceKey.secondaryLanguage) {
@@ -290,6 +294,7 @@ struct KeyboardPreferences: Equatable {
             KeyboardPreferenceKey.longPressDelay: longPressDelay,
             KeyboardPreferenceKey.incognito: incognito,
             KeyboardPreferenceKey.smartTouch: smartTouch,
+            KeyboardPreferenceKey.spaceAfterSuggestion: spaceAfterSuggestion,
             KeyboardPreferenceKey.backgroundDim: backgroundDim,
             KeyboardPreferenceKey.glassTransparency: glassTransparency,
             KeyboardPreferenceKey.hapticsStrength: hapticsStrength,

@@ -72,6 +72,27 @@ enum KeyboardTextLogic {
         return sentenceTerminators.contains(candidate)
     }
 
+    /// Qué hacer con el espacio después de elegir una sugerencia.
+    enum SuggestionSpace: Equatable {
+        /// Escribir el espacio.
+        case insert
+        /// Ya hay un espacio justo después del cursor: se salta en vez de duplicarlo.
+        case skipExisting
+        /// Sigue un signo, unas comillas o un salto de línea: no hace falta espacio.
+        case none
+    }
+
+    /// Mira lo que hay justo después del cursor, como Gboard: no duplica un espacio que ya está
+    /// ni deja un espacio delante de un signo.
+    static func suggestionSpace(before textAfterCursor: String?) -> SuggestionSpace {
+        guard let next = textAfterCursor?.first else { return .insert }
+        if next == " " { return .skipExisting }
+        if next.isWhitespace { return .none }
+        // «\u{7D}» es la llave de cierre (escrita así para que cuadre el recuento de llaves).
+        if ".,;:!?…)]\u{7D}»\"'”’".contains(next) { return .none }
+        return .insert
+    }
+
     /// Punto automático al pulsar dos veces el espacio.
     static func shouldConvertDoubleSpace(context: String?) -> Bool {
         guard let context, context.hasSuffix(" ") else { return false }
