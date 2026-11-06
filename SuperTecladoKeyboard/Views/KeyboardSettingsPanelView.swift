@@ -63,6 +63,21 @@ struct KeyboardSettingsPanelView: View {
             if engine.safeMode {
                 statusRow(false, ok: "", missing: "Modo seguro: sin sugerencias tras varios cierres")
             }
+            // Resumen de la velocidad, a la vista sin bajar hasta el diagnóstico.
+            if !diagnostics.delivery.isEmpty {
+                Text("Velocidad · iOS \(TouchDiagnostics.summary(diagnostics.delivery)) · teclado \(TouchDiagnostics.summary(diagnostics.handling)) · bloqueos \(diagnostics.stalls)")
+                    .font(.system(size: 11).monospacedDigit())
+                    .foregroundStyle(palette.secondaryText)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Button {
+                engine.copyDiagnosticsReport()
+            } label: {
+                Label("Copiar informe de velocidad", systemImage: "doc.on.doc")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(palette.accent)
+            }
+            .buttonStyle(.plain)
         }
         .padding(10)
         .background(palette.tile, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
@@ -206,7 +221,7 @@ struct KeyboardSettingsPanelView: View {
             .font(.system(size: 13, weight: .medium))
             .foregroundStyle(palette.accent)
             .buttonStyle(.plain)
-            Text("Si notas que falla una tecla, abre esto justo después y haz una captura.")
+            Text("Si notas que falla una tecla, abre esto justo después y pulsa «Copiar informe de velocidad» (arriba): pégalo en tu mensaje.")
                 .font(.system(size: 11))
                 .foregroundStyle(palette.secondaryText)
                 .fixedSize(horizontal: false, vertical: true)

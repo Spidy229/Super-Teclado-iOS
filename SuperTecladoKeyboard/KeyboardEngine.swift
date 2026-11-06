@@ -1,4 +1,5 @@
 import AudioToolbox
+import os
 import SwiftUI
 import UIKit
 import UniformTypeIdentifiers
@@ -51,8 +52,11 @@ struct TouchDiagnostics {
         Self.append(seconds * 1000, to: &handling)
     }
 
-    mutating func recordFrameGap(_ seconds: Double) {
+    /// Retraso con que llega el temporizador de control: si pasa de 100 ms, el teclado estuvo
+    /// bloqueado ese tiempo.
+    mutating func recordMainThreadDelay(_ seconds: Double) {
         let milliseconds = seconds * 1000
+        guard milliseconds > 0 else { return }
         if milliseconds > 100 { stalls += 1 }
         longestStall = max(longestStall, milliseconds)
     }
@@ -865,6 +869,45 @@ final class KeyboardEngine: ObservableObject {
         updateAppearance()
         if !safeMode { loadDictionaryIfNeeded() }
         if layoutChanged { controller?.view.setNeedsLayout() }
+    }
+
+    /// Informe de los toques y de cómo está configurado el teclado, para pegarlo en un mensaje.
+    func diagnosticsReport() -> String {
+        let diagnostics = touchDiagnostics
+        let info = Bundle.main.infoDictionary
+        let version = "\(info?["CFBundleShortVersionString"] as? String ?? "?") (\(info?["CFBundleVersion"] as? String ?? "?"))"
+        var system = utsname()
+        uname(&system)
+        let model = withUnsafeBytes(of: &system.machine) { buffer in
+            String(decoding: buffer.prefix { $0 != 0 }, as: UTF8.self)
+        }
+        let memory = Double(os_proc_available_memory()) / 1_048_576
+        func on(_ value: Bool) -> String { value ? "sí" : "no" }
+        var lines = [
+            "Super Teclado \(version) · \(model) · iOS \(UIDevice.current.systemVersion)",
+            "Retraso de iOS al entregar el toque: \(TouchDiagnostics.summary(diagnostics.delivery))",
+            "Tiempo del teclado por toque: \(TouchDiagnostics.summary(diagnostics.handling))",
+            String(format: "Bloqueos de más de 100 ms: %d (el mayor %.0f ms)", diagnostics.stalls, diagnostics.longestStall),
+            String(format: "Memoria libre: %.0f MB", memory),
+            "Toques \(diagnostics.touches) · escritos \(diagnostics.typed) · con otro dedo \(diagnostics.rollovers)",
+            "Cancelados por iOS: escritos \(diagnostics.cancelledTyped), perdidos \(diagnostics.cancelledLost) · sin aviso de fin \(diagnostics.unfinished) · ignorados \(diagnostics.ignored)",
+            "Deslizamientos \(diagnostics.glides) (eran toques \(diagnostics.glidesAsTaps)) · cursor \(diagnostics.cursorSwipes) · pulsación larga \(diagnostics.alternates) · precisión \(diagnostics.smartChoices)",
+            "Vibración \(on(preferences.haptics && hasFullAccess)) (\(preferences.hapticsStyle.rawValue), \(Int(preferences.hapticsStrength * 100)) %) · sonido \(on(preferences.sound)) · ventana al pulsar \(on(preferences.keyPopups))",
+            "Escritura deslizando \(on(preferences.glideTyping)) · precisión inteligente \(on(preferences.smartTouch)) · autocorrección \(on(preferences.autocorrect)) · tema \(preferences.theme.rawValue)",
+            "Acceso total \(on(hasFullAccess)) · App Group \(on(SharedClipboardStore.isAppGroupAvailable))"
+        ]
+        if !diagnostics.recent.isEmpty {
+            lines.append("Últimos toques: " + diagnostics.recent.joined(separator: " | "))
+        }
+        return lines.joined(separator: "\n")
+    }
+
+    /// Copia el informe para pegarlo en un mensaje (no se guarda en el historial del teclado).
+    func copyDiagnosticsReport() {
+        guard requireFullAccess() else { return }
+        UIPasteboard.general.string = diagnosticsReport()
+        ownPasteboardChangeCount = UIPasteboard.general.changeCount
+        showToast("Informe copiado: pégalo en tu mensaje")
     }
 
     /// Deja el motor de vibración listo antes del primer toque.

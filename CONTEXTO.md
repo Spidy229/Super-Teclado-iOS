@@ -1,6 +1,6 @@
 # Super Teclado: contexto para agentes
 
-Resumen de todo lo hecho hasta la **versión 2.8.1**, para que otro agente (Claude Code, Codex…) pueda seguir el trabajo sin repetir errores. El `README.md` describe las funciones para el usuario; este documento explica **cómo está hecho, por qué y qué falta**.
+Resumen de todo lo hecho hasta la **versión 2.8.2**, para que otro agente (Claude Code, Codex…) pueda seguir el trabajo sin repetir errores. El `README.md` describe las funciones para el usuario; este documento explica **cómo está hecho, por qué y qué falta**.
 
 ---
 
@@ -32,7 +32,7 @@ Resumen de todo lo hecho hasta la **versión 2.8.1**, para que otro agente (Clau
 - **Subir versión** en cada cambio que se entregue, en dos sitios que deben coincidir:
   - `project.yml`: `MARKETING_VERSION` y `CURRENT_PROJECT_VERSION`, **4 veces cada uno** (app, teclado, share y widget).
   - `SuperTecladoApp/Package.swift`: `displayVersion` y `bundleVersion`.
-  - Estado actual: 2.8.1 / 22 en `project.yml`, 2.8.1 / 27 en `Package.swift`.
+  - Estado actual: 2.8.2 / 23 en `project.yml`, 2.8.2 / 28 en `Package.swift`.
 - `scripts/build-unsigned-ipa.sh`:
   - firma ad hoc (`codesign -s -`) cada appex con sus entitlements y después la app;
   - **falla si falta `Assets.car` o `CFBundleIcons`** (comprobación añadida en 2.6.6).
@@ -150,7 +150,8 @@ Este archivo es la solución al **retraso al escribir**. Antes cada tecla era un
   - contadores y los últimos 12 toques con los milisegundos entre toques;
   - desde 2.8.0, el retraso de entrega (`CACurrentMediaTime() − touch.timestamp`);
   - el tiempo de proceso de cada toque;
-  - los bloqueos del hilo principal de más de 100 ms, medidos con un `CADisplayLink`.
+  - los bloqueos del hilo principal de más de 100 ms, medidos con un temporizador de 0,1 s (desde 2.8.2; un `CADisplayLink` podía bajar la frecuencia de la pantalla);
+  - desde 2.8.2, «Copiar informe de velocidad» (`engine.diagnosticsReport()`), con modelo, iOS, memoria libre y ajustes. Es lo primero que hay que pedir al usuario si dice que va lento.
 - Pulsación larga: el valor por defecto pasa de 330 a **400 ms**; el 330 guardado se convierte al cargar. Se elige en ⚙︎ (250 / 400 / 550 ms).
 - `Views/KeyViews.swift` conserva las teclas SwiftUI (`FunctionKeyView`, `DeleteKeyView`, `RepeatingKeyView`) que usan los paneles de emojis y edición, y `GlideTrail` (solo `preview`).
 
@@ -235,6 +236,7 @@ Este archivo es la solución al **retraso al escribir**. Antes cada tecla era un
 | 2.7.1 | Toques por reconocedor de gestos, capa propia para las ventanas emergentes, sin solape con la barra, dedos apoyados ignorados, precisión más prudente; portapapeles y clips se leen 0,7 s después de abrir, y el diccionario personal se guarda fuera del hilo principal |
 | 2.8.0 | Teclas y fondo fuera de SwiftUI (subvistas UIKit de la vista del teclado), medidas de retraso y bloqueos en el diagnóstico, sin UITextChecker al mostrar sugerencias, vibración preparada al aparecer |
 | 2.8.1 | Espacio tras una sugerencia sin duplicar el que ya hay ni ponerlo delante de signos; se puede desactivar |
+| 2.8.2 | 120 Hz en el teclado (`CADisableMinimumFrameDurationOnPhone`), la tecla y su ventana se envían a la pantalla (`CATransaction.flush()`) antes de vibrar y sonar, tecla resaltada también con ventana emergente, informe de velocidad copiable |
 
 ## 8. Errores ya resueltos (no repetirlos)
 

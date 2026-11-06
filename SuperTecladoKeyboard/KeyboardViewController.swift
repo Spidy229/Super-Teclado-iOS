@@ -12,9 +12,11 @@ final class KeyboardViewController: UIInputViewController {
     private lazy var grid = KeyGridUIView(engine: engine)
     private var engineObserver: AnyCancellable?
     private var gridSyncScheduled = false
-    /// Mide si el hilo principal se queda atascado (para el diagnóstico de toques).
-    private var frameLink: CADisplayLink?
-    private var lastFrameTime: CFTimeInterval = 0
+    /// Mide si el hilo principal se queda atascado (para el diagnóstico de toques). Es un
+    /// temporizador y no un `CADisplayLink`, que podría cambiar la frecuencia de la pantalla.
+    private var stallTimer: Timer?
+    private var lastStallCheck: CFTimeInterval = 0
+    private static let stallInterval: CFTimeInterval = 0.1
     private var heightConstraint: NSLayoutConstraint?
     private var clipboardTimer: Timer?
     private static let lastChangeCountKey = "super-teclado-last-pasteboard-change"
@@ -120,8 +122,8 @@ final class KeyboardViewController: UIInputViewController {
 
     override func viewWillDisappear(_ animated: Bool) {
         super.viewWillDisappear(animated)
-        frameLink?.invalidate()
-        frameLink = nil
+        stallTimer?.invalidate()
+        stallTimer = nil
         grid.suspend()
         clipboardTimer?.invalidate()
         clipboardTimer = nil
@@ -316,19 +318,18 @@ final class KeyboardViewController: UIInputViewController {
     // MARK: Diagnóstico
 
     private func startFrameMonitor() {
-        frameLink?.invalidate()
-        let link = CADisplayLink(target: self, selector: #selector(frameTick(_:)))
-        link.preferredFrameRateRange = CAFrameRateRange(minimum: 20, maximum: 60, preferred: 30)
-        link.add(to: .main, forMode: .common)
-        frameLink = link
-        lastFrameTime = 0
+        stallTimer?.invalidate()
+        lastStallCheck = CACurrentMediaTime()
+        let timer = Timer(timeInterval: Self.stallInterval, target: self, selector: #selector(stallTick), userInfo: nil, repeats: true)
+        RunLoop.main.add(timer, forMode: .common)
+        stallTimer = timer
     }
 
-    /// Si entre dos fotogramas pasa mucho tiempo, el hilo principal estuvo ocupado y los toques
-    /// esperaron.
-    @objc private func frameTick(_ link: CADisplayLink) {
-        if lastFrameTime > 0 { engine.touchDiagnostics.recordFrameGap(link.timestamp - lastFrameTime) }
-        lastFrameTime = link.timestamp
+    /// Si el temporizador llega tarde, el hilo principal estuvo ocupado y los toques esperaron.
+    @objc private func stallTick() {
+        let now = CACurrentMediaTime()
+        engine.touchDiagnostics.recordMainThreadDelay(now - lastStallCheck - Self.stallInterval)
+        lastStallCheck = now
     }
 
     private func updateMetrics() {

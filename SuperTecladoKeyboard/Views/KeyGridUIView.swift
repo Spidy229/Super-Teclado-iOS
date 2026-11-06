@@ -167,6 +167,9 @@ final class KeyGridUIView: UIView {
     /// Última letra o espacio escritos al tocar: si hace muy poco, se está tecleando deprisa.
     private var lastTapCommit: CFTimeInterval = 0
     private var lastTouchDown: CFTimeInterval = 0
+    /// Vibración y sonido de los dedos que acaban de tocar: se reproducen después de mandar a la
+    /// pantalla la tecla resaltada, para que lo que se ve no espere a nada.
+    private var pendingFeedback: [KeyFeedbackKind] = []
     /// Capa propia para las ventanas emergentes, encima de todo el teclado. Se crea una vez:
     /// así mostrar una ventana no obliga a recolocar el resto del teclado en cada toque.
     private var popupContainer: UIView?
@@ -377,7 +380,8 @@ final class KeyGridUIView: UIView {
         switch key.spec.kind {
         case .character(let value):
             fill = colors.key
-            showsPressed = highlighted && !configuration.keyPopups
+            // La tecla se resalta bajo el dedo también con la ventana emergente, como en Gboard.
+            showsPressed = highlighted
             let text = displayText(value, caseSensitive: key.spec.isLetter)
             view.setText(text, font: .systemFont(ofSize: characterFontSize(value, height: height)), color: colors.text)
             view.setHint(
@@ -485,10 +489,15 @@ final class KeyGridUIView: UIView {
         let ordered = touches.sorted {
             $0.timestamp == $1.timestamp ? $0.location(in: self).x < $1.location(in: self).x : $0.timestamp < $1.timestamp
         }
+        pendingFeedback.removeAll(keepingCapacity: true)
         for touch in ordered {
             begin(touch, event: event)
         }
         syncWithEngine()
+        // La tecla resaltada y su ventana se envían ya a la pantalla; luego, vibración y sonido.
+        CATransaction.flush()
+        if let kind = pendingFeedback.first { engine.keyFeedback(kind) }
+        pendingFeedback.removeAll(keepingCapacity: true)
     }
 
     /// Si iOS no avisó del final de algún dedo, se da por levantado: su tecla se escribe y no
@@ -614,27 +623,27 @@ final class KeyGridUIView: UIView {
 
         switch key.spec.kind {
         case .character:
-            engine.keyFeedback(.character)
+            pendingFeedback.append(.character)
             showPreview(for: state)
             scheduleLongPress(for: state)
         case .space:
-            engine.keyFeedback(.character)
+            pendingFeedback.append(.character)
         case .delete:
-            engine.keyFeedback(.delete)
+            pendingFeedback.append(.delete)
             engine.deleteBackward()
             startDeleteRepeat(for: state)
         case .shift:
-            engine.keyFeedback(.modifier)
+            pendingFeedback.append(.modifier)
             engine.tapShift()
         case .page(let target, _):
-            engine.keyFeedback(.modifier)
+            pendingFeedback.append(.modifier)
             engine.setPage(target)
         case .globe:
             state.phase = .system
-            engine.keyFeedback(.modifier)
+            pendingFeedback.append(.modifier)
             if let event { engine.controller?.handleInputModeList(from: self, with: event) }
         case .returnKey, .emoji, .dismiss:
-            engine.keyFeedback(.modifier)
+            pendingFeedback.append(.modifier)
         }
         configure(key)
     }
