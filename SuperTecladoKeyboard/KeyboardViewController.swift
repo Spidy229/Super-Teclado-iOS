@@ -1,3 +1,4 @@
+import Combine
 import os
 import SwiftUI
 import UIKit
@@ -5,6 +6,15 @@ import UIKit
 final class KeyboardViewController: UIInputViewController {
     private let engine = KeyboardEngine()
     private var host: UIHostingController<KeyboardRootView>?
+    /// Fondo y teclas van en UIKit, fuera de SwiftUI: el fondo debajo de todo y las teclas encima
+    /// de la vista SwiftUI (barra, paneles). Un toque en una tecla no pasa nunca por SwiftUI.
+    private let backgroundView = KeyboardBackgroundView()
+    private lazy var grid = KeyGridUIView(engine: engine)
+    private var engineObserver: AnyCancellable?
+    private var gridSyncScheduled = false
+    /// Mide si el hilo principal se queda atascado (para el diagnóstico de toques).
+    private var frameLink: CADisplayLink?
+    private var lastFrameTime: CFTimeInterval = 0
     private var heightConstraint: NSLayoutConstraint?
     private var clipboardTimer: Timer?
     private static let lastChangeCountKey = "super-teclado-last-pasteboard-change"
@@ -80,6 +90,8 @@ final class KeyboardViewController: UIInputViewController {
 
     override func viewDidAppear(_ animated: Bool) {
         super.viewDidAppear(animated)
+        engine.prepareFeedback()
+        startFrameMonitor()
         // iOS puede dar el valor definitivo de «acceso total» cuando el teclado ya está visible.
         if engine.hasFullAccess != hasFullAccess { engine.hasFullAccess = hasFullAccess }
         if engine.needsInputModeSwitchKey != needsInputModeSwitchKey {
@@ -108,6 +120,9 @@ final class KeyboardViewController: UIInputViewController {
 
     override func viewWillDisappear(_ animated: Bool) {
         super.viewWillDisappear(animated)
+        frameLink?.invalidate()
+        frameLink = nil
+        grid.suspend()
         clipboardTimer?.invalidate()
         clipboardTimer = nil
         if engine.panel != .typing { engine.closePanel() }
@@ -123,6 +138,11 @@ final class KeyboardViewController: UIInputViewController {
         // Solo lo barato: esto se ejecuta en cada recolocación de la vista.
         engine.setTraitStyle(traitCollection.userInterfaceStyle)
         updateMetrics()
+    }
+
+    override func viewDidLayoutSubviews() {
+        super.viewDidLayoutSubviews()
+        syncGrid()
     }
 
     override func textDidChange(_ textInput: UITextInput?) {
@@ -203,6 +223,10 @@ final class KeyboardViewController: UIInputViewController {
     // MARK: Diseño
 
     private func installKeyboardView() {
+        backgroundView.frame = view.bounds
+        backgroundView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        view.addSubview(backgroundView)
+
         let controller = UIHostingController(rootView: KeyboardRootView(engine: engine))
         controller.view.backgroundColor = .clear
         controller.sizingOptions = []
@@ -217,6 +241,94 @@ final class KeyboardViewController: UIInputViewController {
         ])
         controller.didMove(toParent: self)
         host = controller
+
+        // Las teclas, encima de SwiftUI. Se colocan donde SwiftUI deja el hueco del teclado.
+        view.addSubview(grid)
+        engineObserver = engine.objectWillChange.sink { [weak self] _ in
+            self?.scheduleGridSync()
+        }
+        syncGrid()
+    }
+
+    /// Los cambios del motor se aplican a las teclas en cuanto termina el cambio (una vez aunque
+    /// cambien varias cosas a la vez).
+    private func scheduleGridSync() {
+        guard !gridSyncScheduled else { return }
+        gridSyncScheduled = true
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            self.gridSyncScheduled = false
+            self.syncGrid()
+        }
+    }
+
+    private func syncGrid() {
+        let preferences = engine.preferences
+        let palette = KeyboardPalette.make(
+            theme: preferences.theme,
+            systemIsDark: engine.isDark,
+            custom: preferences.customColors,
+            glassTransparency: preferences.glassTransparency
+        )
+        backgroundView.apply(
+            palette: palette,
+            photo: preferences.theme == .photo ? engine.backgroundImage : nil,
+            dim: preferences.backgroundDim
+        )
+        let panel = engine.panel
+        guard panel == .typing || panel == .emojiSearch || panel == .clipboardSearch else {
+            if !grid.isHidden {
+                grid.suspend()
+                grid.isHidden = true
+            }
+            return
+        }
+        let frame = gridFrame(for: panel)
+        if grid.frame != frame { grid.frame = frame }
+        grid.isHidden = false
+        grid.apply(KeyGridConfiguration(engine: engine), palette: palette)
+    }
+
+    /// El mismo hueco que deja `KeyboardRootView`: barra arriba, fila de favoritos si se ve,
+    /// resultados de la búsqueda del portapapeles y el panel lateral del modo una mano.
+    private func gridFrame(for panel: KeyboardPanel) -> CGRect {
+        let metrics = engine.metrics
+        let showsFavorites = metrics.favoritesRowHeight > 0 && panel == .typing
+        var top = metrics.stripHeight + (showsFavorites ? metrics.favoritesRowHeight : 0)
+        var height = metrics.keyAreaHeight + (showsFavorites ? 0 : metrics.favoritesRowHeight)
+        if panel == .clipboardSearch {
+            top += 50
+            height -= 50
+        }
+        // Los márgenes seguros (en horizontal, en iPhone con Face ID) los respeta SwiftUI igual.
+        let insets = view.safeAreaInsets
+        let width = view.bounds.width - insets.left - insets.right
+        let mode = engine.preferences.oneHandedMode
+        let side: CGFloat = mode == .off ? 0 : min(72, width * 0.17)
+        return CGRect(
+            x: insets.left + (mode == .right ? side : 0),
+            y: insets.top + top,
+            width: max(0, width - side),
+            height: max(0, height)
+        )
+    }
+
+    // MARK: Diagnóstico
+
+    private func startFrameMonitor() {
+        frameLink?.invalidate()
+        let link = CADisplayLink(target: self, selector: #selector(frameTick(_:)))
+        link.preferredFrameRateRange = CAFrameRateRange(minimum: 20, maximum: 60, preferred: 30)
+        link.add(to: .main, forMode: .common)
+        frameLink = link
+        lastFrameTime = 0
+    }
+
+    /// Si entre dos fotogramas pasa mucho tiempo, el hilo principal estuvo ocupado y los toques
+    /// esperaron.
+    @objc private func frameTick(_ link: CADisplayLink) {
+        if lastFrameTime > 0 { engine.touchDiagnostics.recordFrameGap(link.timestamp - lastFrameTime) }
+        lastFrameTime = link.timestamp
     }
 
     private func updateMetrics() {

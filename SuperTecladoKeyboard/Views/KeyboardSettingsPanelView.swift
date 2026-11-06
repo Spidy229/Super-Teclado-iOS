@@ -168,6 +168,12 @@ struct KeyboardSettingsPanelView: View {
     private var diagnosticsSection: some View {
         section("Diagnóstico de toques") {
             VStack(alignment: .leading, spacing: 4) {
+                timingRow("Retraso de iOS al entregar el toque", TouchDiagnostics.summary(diagnostics.delivery))
+                timingRow("Tiempo del teclado por toque", TouchDiagnostics.summary(diagnostics.handling))
+                timingRow(
+                    "Bloqueos de más de 100 ms",
+                    diagnostics.stalls == 0 ? "0" : String(format: "%d · el mayor %.0f ms", diagnostics.stalls, diagnostics.longestStall)
+                )
                 diagnosticRow("Toques", diagnostics.touches)
                 diagnosticRow("Escritos", diagnostics.typed)
                 diagnosticRow("Escritos al tocar con otro dedo", diagnostics.rollovers)
@@ -202,6 +208,15 @@ struct KeyboardSettingsPanelView: View {
                 .foregroundStyle(palette.secondaryText)
                 .fixedSize(horizontal: false, vertical: true)
         }
+    }
+
+    private func timingRow(_ title: String, _ value: String) -> some View {
+        VStack(alignment: .leading, spacing: 1) {
+            Text(title)
+            Text(value).monospacedDigit().foregroundStyle(palette.accent)
+        }
+        .font(.system(size: 12))
+        .foregroundStyle(palette.text)
     }
 
     private func diagnosticRow(_ title: String, _ value: Int) -> some View {

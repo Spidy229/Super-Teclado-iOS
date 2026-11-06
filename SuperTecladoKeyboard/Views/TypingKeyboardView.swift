@@ -10,7 +10,9 @@ struct TypingKeyboardView: View {
             let sideWidth: CGFloat = mode == .off ? 0 : min(72, proxy.size.width * 0.17)
             HStack(spacing: 0) {
                 if mode == .right { oneHandedPanel(width: sideWidth, height: proxy.size.height) }
-                KeyGridView(width: proxy.size.width - sideWidth, height: proxy.size.height)
+                // Hueco de las teclas: las dibuja `KeyGridUIView` (UIKit) encima de esta vista.
+                Color.clear
+                    .frame(width: proxy.size.width - sideWidth, height: proxy.size.height)
                 if mode == .left { oneHandedPanel(width: sideWidth, height: proxy.size.height) }
             }
         }
@@ -37,19 +39,5 @@ struct TypingKeyboardView: View {
         .font(.system(size: 20, weight: .medium))
         .foregroundStyle(palette.text.opacity(0.8))
         .frame(width: width, height: height)
-    }
-}
-
-/// Las teclas las dibuja y las toca `KeyGridUIView` (UIKit), que solo se actualiza cuando
-/// cambia algo de lo que muestra.
-private struct KeyGridView: View {
-    @EnvironmentObject private var engine: KeyboardEngine
-    @Environment(\.keyboardPalette) private var palette
-    let width: CGFloat
-    let height: CGFloat
-
-    var body: some View {
-        KeyGridRepresentable(engine: engine, configuration: KeyGridConfiguration(engine: engine), palette: palette)
-            .frame(width: width, height: height)
     }
 }

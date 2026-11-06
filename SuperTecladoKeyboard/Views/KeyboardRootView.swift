@@ -26,7 +26,7 @@ struct KeyboardRootView: View {
                 .zIndex(1)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        .background { background(palette: palette) }
+        // El fondo lo dibuja `KeyboardBackgroundView` (UIKit) debajo de esta vista.
         .overlay(alignment: .top) { toast(palette: palette) }
         .environment(\.keyboardPalette, palette)
         .environment(\.colorScheme, engine.isDark ? .dark : .light)
@@ -67,24 +67,6 @@ struct KeyboardRootView: View {
     }
 
     @ViewBuilder
-    private func background(palette: KeyboardPalette) -> some View {
-        if engine.preferences.theme == .photo, let image = engine.backgroundImage {
-            GeometryReader { proxy in
-                Image(uiImage: image)
-                    .resizable()
-                    .scaledToFill()
-                    .frame(width: proxy.size.width, height: proxy.size.height)
-                    .clipped()
-                    .overlay(Color.black.opacity(engine.preferences.backgroundDim))
-            }
-        } else if let gradient = palette.gradient {
-            LinearGradient(colors: gradient, startPoint: .topLeading, endPoint: .bottomTrailing)
-        } else {
-            palette.background
-        }
-    }
-
-    @ViewBuilder
     private func toast(palette: KeyboardPalette) -> some View {
         if let message = engine.toast {
             HStack(spacing: 12) {
@@ -103,7 +85,8 @@ struct KeyboardRootView: View {
             .padding(.vertical, 8)
             .background(palette.accent, in: Capsule())
             .shadow(color: .black.opacity(0.25), radius: 6, y: 2)
-            .padding(.top, engine.metrics.stripHeight + 6)
+            // Sobre la barra superior: las teclas van encima de SwiftUI y lo taparían.
+            .padding(.top, 4)
             .padding(.horizontal, 16)
             .transition(.opacity.combined(with: .move(edge: .top)))
             .allowsHitTesting(engine.toastActionTitle != nil)

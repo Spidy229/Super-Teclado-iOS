@@ -19,26 +19,7 @@ struct KeyGridConfiguration: Equatable {
 
 /// Las teclas se dibujan y se tocan con UIKit, como en Gboard y el teclado de Apple: una sola
 /// vista recibe todos los dedos, resalta la tecla en cuanto se toca y escribe al levantar el
-/// dedo sin pasar por SwiftUI.
-struct KeyGridRepresentable: UIViewRepresentable {
-    let engine: KeyboardEngine
-    let configuration: KeyGridConfiguration
-    let palette: KeyboardPalette
-
-    func makeUIView(context: Context) -> KeyGridUIView {
-        let view = KeyGridUIView(engine: engine)
-        view.apply(configuration, palette: palette)
-        return view
-    }
-
-    func updateUIView(_ view: KeyGridUIView, context: Context) {
-        view.apply(configuration, palette: palette)
-    }
-
-    static func dismantleUIView(_ view: KeyGridUIView, coordinator: ()) {
-        view.tearDown()
-    }
-}
+/// dedo. Va directamente en la vista del teclado, encima de SwiftUI (`KeyboardViewController`).
 
 /// Colores del tema ya convertidos para UIKit.
 struct KeyGridColors {
@@ -247,14 +228,9 @@ final class KeyGridUIView: UIView {
         apply(KeyGridConfiguration(engine: engine), palette: palette)
     }
 
-    /// La vista sale de pantalla (otro panel): se sueltan los dedos sin escribir nada.
-    func tearDown() {
+    /// Se oculta (otro panel o el teclado desaparece): se sueltan los dedos sin escribir nada.
+    func suspend() {
         cancelAllTouches()
-        allPopups.forEach { $0.removeFromSuperview() }
-        allPopups = []
-        popupPool = []
-        popupContainer?.removeFromSuperview()
-        popupContainer = nil
     }
 
     override func didMoveToWindow() {
@@ -500,6 +476,10 @@ final class KeyGridUIView: UIView {
     }
 
     fileprivate func fingersBegan(_ touches: Set<UITouch>, event: UIEvent?) {
+        let started = CACurrentMediaTime()
+        // Cuánto tardó iOS en entregar el toque y cuánto se tarda en atenderlo (diagnóstico).
+        for touch in touches { engine.touchDiagnostics.recordDelivery(started - touch.timestamp) }
+        defer { engine.touchDiagnostics.recordHandling(CACurrentMediaTime() - started) }
         dropTouchesThatEnded(keeping: event?.allTouches)
         // Con varios dedos a la vez, de izquierda a derecha si llegan en el mismo instante.
         let ordered = touches.sorted {
@@ -558,6 +538,8 @@ final class KeyGridUIView: UIView {
     }
 
     fileprivate func fingersEnded(_ touches: Set<UITouch>, event: UIEvent?) {
+        let started = CACurrentMediaTime()
+        defer { engine.touchDiagnostics.recordHandling(CACurrentMediaTime() - started) }
         // En el orden en que tocaron, para que dos letras levantadas a la vez no se crucen.
         let ordered = touches.sorted { first, second in
             let a = touchOrder.firstIndex(of: ObjectIdentifier(first)) ?? .max

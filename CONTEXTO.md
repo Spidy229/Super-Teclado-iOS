@@ -1,6 +1,6 @@
 # Super Teclado: contexto para agentes
 
-Resumen de todo lo hecho hasta la **versión 2.7.1**, para que otro agente (Claude Code, Codex…) pueda seguir el trabajo sin repetir errores. El `README.md` describe las funciones para el usuario; este documento explica **cómo está hecho, por qué y qué falta**.
+Resumen de todo lo hecho hasta la **versión 2.8.0**, para que otro agente (Claude Code, Codex…) pueda seguir el trabajo sin repetir errores. El `README.md` describe las funciones para el usuario; este documento explica **cómo está hecho, por qué y qué falta**.
 
 ---
 
@@ -32,7 +32,7 @@ Resumen de todo lo hecho hasta la **versión 2.7.1**, para que otro agente (Clau
 - **Subir versión** en cada cambio que se entregue, en dos sitios que deben coincidir:
   - `project.yml`: `MARKETING_VERSION` y `CURRENT_PROJECT_VERSION`, **4 veces cada uno** (app, teclado, share y widget).
   - `SuperTecladoApp/Package.swift`: `displayVersion` y `bundleVersion`.
-  - Estado actual: 2.7.1 / 20 en `project.yml`, 2.7.1 / 25 en `Package.swift`.
+  - Estado actual: 2.8.0 / 21 en `project.yml`, 2.8.0 / 26 en `Package.swift`.
 - `scripts/build-unsigned-ipa.sh`:
   - firma ad hoc (`codesign -s -`) cada appex con sus entitlements y después la app;
   - **falla si falta `Assets.car` o `CFBundleIcons`** (comprobación añadida en 2.6.6).
@@ -64,7 +64,13 @@ Resumen de todo lo hecho hasta la **versión 2.7.1**, para que otro agente (Clau
 ## 4. Arquitectura del teclado
 
 ### Controlador: `KeyboardViewController.swift`
-- Aloja `KeyboardRootView` (SwiftUI) en un `UIHostingController`. La altura sale de `KeyboardMetrics` (franja superior + fila de favoritos + teclas).
+- Capas de la vista del teclado, de abajo arriba (2.8.0):
+  1. `KeyboardBackgroundView` (UIKit): color, degradado o foto.
+  2. `KeyboardRootView` (SwiftUI) en un `UIHostingController`: barra, favoritos y paneles. En los paneles de escritura deja un hueco transparente para las teclas.
+  3. `KeyGridUIView` (UIKit), colocada por `gridFrame(for:)` en ese hueco (márgenes seguros y modo una mano incluidos). Así un toque en una tecla no pasa nunca por SwiftUI.
+  4. La capa de las ventanas emergentes.
+- `syncGrid()` actualiza el fondo, el marco, la visibilidad y la configuración de las teclas. Se llama tras `engine.objectWillChange` (agrupado en un `Task`) y en `viewDidLayoutSubviews`. El aviso flotante de SwiftUI se dibuja sobre la barra superior, porque las teclas lo taparían.
+- La altura sale de `KeyboardMetrics` (franja superior + fila de favoritos + teclas).
 - `viewDidLoad`:
   - marca la sesión para detectar cierres inesperados;
   - activa el **modo seguro** si hubo 2 cierres seguidos (sin diccionarios, contactos ni foto);
@@ -93,7 +99,7 @@ Resumen de todo lo hecho hasta la **versión 2.7.1**, para que otro agente (Clau
 
 ### Teclas: `Views/KeyGridUIView.swift` (UIKit, desde 2.6.5)
 Este archivo es la solución al **retraso al escribir**. Antes cada tecla era una vista SwiftUI con `DragGesture` y todo se redibujaba en cada pulsación.
-- `KeyGridRepresentable` (`UIViewRepresentable`) recibe un `KeyGridConfiguration` (`Equatable`) y la paleta. `apply()` no hace nada si no cambian.
+- `apply(_:palette:)` recibe un `KeyGridConfiguration` (`Equatable`) y la paleta, y no hace nada si no cambian. Ya no hay `UIViewRepresentable`: la cuadrícula es una subvista directa de la vista del teclado.
   - Las teclas se reutilizan por `KeySpec.id`.
   - Si las filas no cambian, solo se actualizan textos y colores.
 - **Una sola vista recibe todos los dedos**, a través de `KeyTouchRecognizer` (2.7.1).
@@ -136,7 +142,11 @@ Este archivo es la solución al **retraso al escribir**. Antes cada tecla era un
   - la palabra sale de `engine.wordForPrediction`: el contexto del documento completado con `typedWord`, porque el contexto puede ir una letra por detrás al teclear deprisa;
   - el rollover se escribe antes de elegir la tecla nueva, para que esa letra cuente;
   - no se usa en contraseñas, códigos, tarjetas, usuario, correo, web ni campos con `autocorrectionType = .no`.
-- **Diagnóstico de toques**: `engine.touchDiagnostics` (contadores + últimos 12 toques con milisegundos entre toques), visible en el panel ⚙︎ con «Poner a cero».
+- **Diagnóstico de toques**: `engine.touchDiagnostics`, visible en el panel ⚙︎ con «Poner a cero». Incluye:
+  - contadores y los últimos 12 toques con los milisegundos entre toques;
+  - desde 2.8.0, el retraso de entrega (`CACurrentMediaTime() − touch.timestamp`);
+  - el tiempo de proceso de cada toque;
+  - los bloqueos del hilo principal de más de 100 ms, medidos con un `CADisplayLink`.
 - Pulsación larga: el valor por defecto pasa de 330 a **400 ms**; el 330 guardado se convierte al cargar. Se elige en ⚙︎ (250 / 400 / 550 ms).
 - `Views/KeyViews.swift` conserva las teclas SwiftUI (`FunctionKeyView`, `DeleteKeyView`, `RepeatingKeyView`) que usan los paneles de emojis y edición, y `GlideTrail` (solo `preview`).
 
@@ -150,7 +160,7 @@ Este archivo es la solución al **retraso al escribir**. Antes cada tecla era un
   - las tres casillas, como en Gboard.
 - **UITextChecker** solo se usa en el hilo principal:
   - antes de cargar el diccionario;
-  - para confirmar (`needsSpellCheck`) una errata probable en una palabra que no está en el diccionario. Si iOS la da por buena, no se corrige.
+  - al pulsar espacio con la autocorrección activada, para confirmar (`needsSpellCheck`) una errata probable en una palabra que no está en el diccionario. Si iOS la da por buena, no se corrige. Desde 2.8.0, nunca se usa para la barra mientras se escribe.
 - Caché por palabra con `cacheGeneration`, que se invalida al aprender o rechazar palabras y al cambiar de diccionario o léxico. `autocorrection(for:)` es síncrona al pulsar espacio y casi siempre sale de la caché.
 - Fecha y hora («hoy», «ahora») y emojis (`EmojiKeywords`) se añaden en `slots(for:word:includeEmoji:)`.
 - `predictions(after:)` combina los pares de Tatoeba (`BigramModel`) con lo que aprende del usuario.
@@ -219,6 +229,7 @@ Este archivo es la solución al **retraso al escribir**. Antes cada tecla era un
 | 2.6.9 | Toques más fiables al teclear deprisa (ver reglas en §4) y cuadrícula que se actualiza sin esperar a SwiftUI |
 | 2.7.0 | Precisión inteligente al tocar entre dos letras, diagnóstico de toques en ⚙︎, pulsación larga de 400 ms ajustable en ⚙︎ |
 | 2.7.1 | Toques por reconocedor de gestos, capa propia para las ventanas emergentes, sin solape con la barra, dedos apoyados ignorados, precisión más prudente; portapapeles y clips se leen 0,7 s después de abrir, y el diccionario personal se guarda fuera del hilo principal |
+| 2.8.0 | Teclas y fondo fuera de SwiftUI (subvistas UIKit de la vista del teclado), medidas de retraso y bloqueos en el diagnóstico, sin UITextChecker al mostrar sugerencias, vibración preparada al aparecer |
 
 ## 8. Errores ya resueltos (no repetirlos)
 

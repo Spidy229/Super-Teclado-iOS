@@ -246,10 +246,11 @@ final class SuggestionEngine {
         guard dictionary != nil else { return computeNow(for: word) }
         let snapshot = snapshot
         let generation = cacheGeneration
-        let computed = await Task.detached(priority: .userInitiated) {
+        let result = await Task.detached(priority: .userInitiated) {
             snapshot.compute(for: word)
         }.value
-        let result = finalize(computed, for: word)
+        // Para la barra no se consulta el corrector de iOS (va en el hilo principal y frena la
+        // siguiente tecla); solo se hace si de verdad se va a corregir al pulsar espacio.
         if generation == cacheGeneration { store(result, for: word) }
         return result
     }
@@ -257,7 +258,12 @@ final class SuggestionEngine {
     /// Corrección que se aplica al pulsar espacio o un signo. Casi siempre ya está calculada.
     func autocorrection(for word: String) -> String? {
         guard Self.isSuggestible(word) else { return nil }
-        return (cache[word] ?? computeNow(for: word)).autocorrection
+        let result = cache[word] ?? computeNow(for: word)
+        let checked = finalize(result, for: word)
+        if checked.needsSpellCheck != result.needsSpellCheck || checked.autocorrection != result.autocorrection {
+            store(checked, for: word)
+        }
+        return checked.autocorrection
     }
 
     /// Huecos de la barra con la fecha, la hora o el emoji que correspondan a la palabra.
@@ -274,7 +280,7 @@ final class SuggestionEngine {
 
     private func computeNow(for word: String) -> SuggestionResult {
         let hints = dictionary == nil ? checkerHints(for: word) : nil
-        let result = finalize(snapshot.compute(for: word, hints: hints), for: word)
+        let result = snapshot.compute(for: word, hints: hints)
         store(result, for: word)
         return result
     }

@@ -30,10 +30,43 @@ struct TouchDiagnostics {
     var smartChoices = 0
     /// Últimos toques, del más reciente al más antiguo.
     var recent: [String] = []
+    /// Milisegundos desde que el dedo toca hasta que el teclado recibe el toque.
+    private(set) var delivery: [Double] = []
+    /// Milisegundos que tarda el teclado en atender cada toque.
+    private(set) var handling: [Double] = []
+    /// Veces que el teclado estuvo bloqueado más de 100 ms, y el bloqueo más largo.
+    private(set) var stalls = 0
+    private(set) var longestStall: Double = 0
 
     mutating func log(_ entry: String) {
         recent.insert(entry, at: 0)
         if recent.count > 12 { recent.removeLast(recent.count - 12) }
+    }
+
+    mutating func recordDelivery(_ seconds: Double) {
+        Self.append(seconds * 1000, to: &delivery)
+    }
+
+    mutating func recordHandling(_ seconds: Double) {
+        Self.append(seconds * 1000, to: &handling)
+    }
+
+    mutating func recordFrameGap(_ seconds: Double) {
+        let milliseconds = seconds * 1000
+        if milliseconds > 100 { stalls += 1 }
+        longestStall = max(longestStall, milliseconds)
+    }
+
+    private static func append(_ value: Double, to samples: inout [Double]) {
+        guard value.isFinite, value >= 0 else { return }
+        samples.append(value)
+        if samples.count > 80 { samples.removeFirst(samples.count - 80) }
+    }
+
+    static func summary(_ samples: [Double]) -> String {
+        guard !samples.isEmpty else { return "—" }
+        let average = samples.reduce(0, +) / Double(samples.count)
+        return String(format: "media %.0f ms · máx %.0f ms", average, samples.max() ?? 0)
     }
 }
 
@@ -802,6 +835,12 @@ final class KeyboardEngine: ObservableObject {
         updateAppearance()
         if !safeMode { loadDictionaryIfNeeded() }
         if layoutChanged { controller?.view.setNeedsLayout() }
+    }
+
+    /// Deja el motor de vibración listo antes del primer toque.
+    func prepareFeedback() {
+        guard preferences.haptics, hasFullAccess else { return }
+        hapticGenerator().prepare()
     }
 
     /// Vibración de prueba con el tipo e intensidad elegidos.
