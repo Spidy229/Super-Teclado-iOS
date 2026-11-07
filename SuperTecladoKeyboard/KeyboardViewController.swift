@@ -16,6 +16,7 @@ final class KeyboardViewController: UIInputViewController {
     /// temporizador y no un `CADisplayLink`, que podría cambiar la frecuencia de la pantalla.
     private var stallTimer: Timer?
     private var lastStallCheck: CFTimeInterval = 0
+    private var appearedAt: CFTimeInterval = 0
     private static let stallInterval: CFTimeInterval = 0.1
     private var heightConstraint: NSLayoutConstraint?
     private var clipboardTimer: Timer?
@@ -83,7 +84,7 @@ final class KeyboardViewController: UIInputViewController {
         Task { @MainActor [weak self] in
             try? await Task.sleep(for: .milliseconds(700))
             guard let self, self.view.window != nil else { return }
-            self.engine.reloadClips()
+            self.engine.reloadClipsInBackground()
             // Si ya está escribiendo, lo hará el sondeo en la siguiente pausa.
             guard ProcessInfo.processInfo.systemUptime - self.engine.lastKeyTouch > 1.5 else { return }
             self.checkPasteboard()
@@ -159,29 +160,61 @@ final class KeyboardViewController: UIInputViewController {
 
     // MARK: Portapapeles
 
+    private var clipboardCheckInFlight = false
+
+    /// Resultado de mirar el portapapeles fuera del hilo principal.
+    private enum PasteboardOutcome: Sendable {
+        case unchanged
+        case seen(Int)
+        case settings(Int)
+        case captured(Int, Bool)
+    }
+
     /// Captura lo copiado en otras apps. Solo lee el contenido cuando cambia `changeCount`, así
-    /// iOS muestra el aviso de «pegado» una sola vez por copia.
+    /// iOS muestra el aviso de «pegado» una sola vez por copia. Todo se hace fuera del hilo
+    /// principal: leer una imagen, o lo copiado en otro dispositivo con el portapapeles
+    /// universal, puede tardar medio segundo o más y congelaba el teclado.
     func checkPasteboard() {
-        guard hasFullAccess else { return }
+        guard hasFullAccess, !clipboardCheckInFlight else { return }
+        clipboardCheckInFlight = true
+        let lastSeen = lastSeenChangeCount
+        let ownChange = engine.ownPasteboardChangeCount
+        let canCapture = !engine.isIncognito
+        Task { @MainActor [weak self] in
+            let outcome = await Task.detached(priority: .utility) {
+                Self.readPasteboard(lastSeen: lastSeen, ownChange: ownChange, canCapture: canCapture)
+            }.value
+            guard let self else { return }
+            self.clipboardCheckInFlight = false
+            switch outcome {
+            case .unchanged:
+                break
+            case .seen(let changeCount):
+                self.lastSeenChangeCount = changeCount
+            case .settings(let changeCount):
+                self.lastSeenChangeCount = changeCount
+                self.applySettingsFromApp(UIPasteboard.general)
+            case .captured(let changeCount, let captured):
+                self.lastSeenChangeCount = changeCount
+                self.engine.reloadClipsInBackground(offerQuickPaste: captured)
+            }
+        }
+    }
+
+    nonisolated private static func readPasteboard(lastSeen: Int, ownChange: Int?, canCapture: Bool) -> PasteboardOutcome {
         let pasteboard = UIPasteboard.general
         let changeCount = pasteboard.changeCount
-        guard changeCount != lastSeenChangeCount else { return }
-        lastSeenChangeCount = changeCount
+        guard changeCount != lastSeen else { return .unchanged }
         // Ajustes enviados desde la app cuando no hay App Group: se aplican y no se guardan.
         if pasteboard.contains(pasteboardTypes: [KeyboardSettingsTransfer.pasteboardType]) {
-            applySettingsFromApp(pasteboard)
-            return
+            return .settings(changeCount)
         }
-        guard engine.ownPasteboardChangeCount != changeCount,
-              !engine.isIncognito,
-              SharedClipboardStore.automaticCaptureEnabled else { return }
-
+        guard ownChange != changeCount, canCapture, SharedClipboardStore.automaticCaptureEnabled else {
+            return .seen(changeCount)
+        }
         // Textos, enlaces e imágenes, también cuando se copian varios a la vez. Lo que los
         // gestores de contraseñas marcan como privado no se guarda.
-        let captured = ClipboardCapture.captureItems(from: pasteboard, changeCount: changeCount)
-
-        engine.reloadClips()
-        if captured { engine.offerQuickPaste() }
+        return .captured(changeCount, ClipboardCapture.captureItems(from: pasteboard, changeCount: changeCount))
     }
 
     private func applySettingsFromApp(_ pasteboard: UIPasteboard) {
@@ -320,6 +353,7 @@ final class KeyboardViewController: UIInputViewController {
     private func startFrameMonitor() {
         stallTimer?.invalidate()
         lastStallCheck = CACurrentMediaTime()
+        appearedAt = lastStallCheck
         let timer = Timer(timeInterval: Self.stallInterval, target: self, selector: #selector(stallTick), userInfo: nil, repeats: true)
         RunLoop.main.add(timer, forMode: .common)
         stallTimer = timer
@@ -328,7 +362,12 @@ final class KeyboardViewController: UIInputViewController {
     /// Si el temporizador llega tarde, el hilo principal estuvo ocupado y los toques esperaron.
     @objc private func stallTick() {
         let now = CACurrentMediaTime()
-        engine.touchDiagnostics.recordMainThreadDelay(now - lastStallCheck - Self.stallInterval)
+        let lateness = now - lastStallCheck - Self.stallInterval
+        engine.touchDiagnostics.recordMainThreadDelay(lateness)
+        if lateness > 0.1 {
+            // Junto a los últimos toques, para ver si se congela al abrir o mientras escribe.
+            engine.touchDiagnostics.log(String(format: "BLOQUEO %.0f ms (%.1f s tras abrir)", lateness * 1000, now - appearedAt))
+        }
         lastStallCheck = now
     }
 

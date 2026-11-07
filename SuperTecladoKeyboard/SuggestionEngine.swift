@@ -142,8 +142,17 @@ struct SuggestionSnapshot: Sendable {
 /// diccionario de frecuencias, UITextChecker y el diccionario personal del usuario.
 @MainActor
 final class SuggestionEngine {
-    private let checker = UITextChecker()
-    private var language: String
+    /// El corrector de iOS se crea (y carga su idioma, que tarda) solo si de verdad se usa: al
+    /// autocorregir al pulsar espacio. Nunca mientras se escribe.
+    private lazy var checker = UITextChecker()
+    private var languageCode = "es_ES"
+    private var resolvedLanguage: String?
+    private var language: String {
+        if let resolvedLanguage { return resolvedLanguage }
+        let resolved = Self.checkerLanguage(for: languageCode)
+        resolvedLanguage = resolved
+        return resolved
+    }
     /// Distribución activa, para saber qué teclas están al lado al corregir erratas.
     var layout: LetterLayout = .spanish {
         didSet { if layout != oldValue { invalidateCache() } }
@@ -163,14 +172,14 @@ final class SuggestionEngine {
     private var cacheGeneration = 0
 
     init() {
-        language = Self.checkerLanguage(for: "es_ES")
         reloadPersonalData()
     }
 
     /// Idioma del corrector de iOS (UITextChecker) más parecido al pedido.
     func setLanguage(_ code: String) {
         invalidateCache()
-        language = Self.checkerLanguage(for: code)
+        languageCode = code
+        resolvedLanguage = nil
     }
 
     private static func checkerLanguage(for code: String) -> String {
@@ -203,12 +212,25 @@ final class SuggestionEngine {
         lexiconWords = words
     }
 
+    /// Lo aprendido se lee fuera del hilo principal (miles de palabras y pares): se hace cada vez
+    /// que aparece el teclado y no debe retrasar el primer toque.
     func reloadPersonalData() {
-        invalidateCache()
         guard !pendingSave else { return }
-        learned = PersonalDictionary.learnedWords()
-        bigrams = PersonalDictionary.learnedBigrams()
-        personalShortcuts = PersonalDictionary.shortcuts()
+        Task { [weak self] in
+            let personal = await Task.detached(priority: .utility) {
+                (
+                    learned: PersonalDictionary.learnedWords(),
+                    bigrams: PersonalDictionary.learnedBigrams(),
+                    shortcuts: PersonalDictionary.shortcuts()
+                )
+            }.value
+            // Si mientras tanto ha aprendido algo nuevo, lo de memoria es más reciente.
+            guard let self, !self.pendingSave else { return }
+            self.learned = personal.learned
+            self.bigrams = personal.bigrams
+            self.personalShortcuts = personal.shortcuts
+            self.invalidateCache()
+        }
     }
 
     private func invalidateCache() {
@@ -279,8 +301,10 @@ final class SuggestionEngine {
     }
 
     private func computeNow(for word: String) -> SuggestionResult {
-        let hints = dictionary == nil ? checkerHints(for: word) : nil
-        let result = snapshot.compute(for: word, hints: hints)
+        // Mientras carga el diccionario (medio segundo al abrir el teclado) no se sugiere nada:
+        // el corrector de iOS tardaba en arrancar y congelaba las primeras teclas.
+        guard dictionary != nil else { return .empty }
+        let result = snapshot.compute(for: word)
         store(result, for: word)
         return result
     }
@@ -315,17 +339,6 @@ final class SuggestionEngine {
         return misspelled.location == NSNotFound
     }
 
-    /// Mientras no ha cargado el diccionario se usa el corrector de iOS.
-    private func checkerHints(for word: String) -> SuggestionSnapshot.CheckerHints {
-        let range = NSRange(location: 0, length: (word as NSString).length)
-        var hints = SuggestionSnapshot.CheckerHints()
-        hints.isKnown = isValidSpelling(word)
-        hints.completions = checker.completions(forPartialWordRange: range, in: word, language: language) ?? []
-        if !hints.isKnown {
-            hints.guesses = checker.guesses(forWordRange: range, in: word, language: language) ?? []
-        }
-        return hints
-    }
 
     /// Siguiente palabra: base de frases reales combinada con lo que escribe el usuario.
     /// Sin palabra anterior (inicio de frase) propone las palabras con que suelen empezar.

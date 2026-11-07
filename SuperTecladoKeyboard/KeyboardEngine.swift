@@ -1022,17 +1022,44 @@ final class KeyboardEngine: ObservableObject {
     // MARK: Portapapeles
 
     func reloadClips() {
-        let saved = SharedClipboardStore.load().map(KeyboardClip.init(saved:))
-        let recent = SharedClipboardStore.loadTemporaryInbox().map(KeyboardClip.init(recent:))
-        if saved != savedClips { savedClips = saved }
-        if recent != recentClips { recentClips = recent }
-        let loadedFolders = SharedClipboardStore.loadFolders()
-        if loadedFolders != folders { folders = loadedFolders }
-        let enabled = SharedClipboardStore.automaticCaptureEnabled
-        if enabled != clipboardEnabled { clipboardEnabled = enabled }
-        selectedClipIDs = selectedClipIDs.filter { id in
-            saved.contains { $0.id == id } || recent.contains { $0.id == id }
+        applyClips(
+            saved: SharedClipboardStore.load(),
+            recent: SharedClipboardStore.loadTemporaryInbox(),
+            folders: SharedClipboardStore.loadFolders(),
+            enabled: SharedClipboardStore.automaticCaptureEnabled
+        )
+    }
+
+    /// Igual que `reloadClips`, pero leyendo el historial fuera del hilo principal. Lo usan las
+    /// comprobaciones automáticas del portapapeles, que no deben frenar nunca el teclado.
+    func reloadClipsInBackground(offerQuickPaste offer: Bool = false) {
+        Task { [weak self] in
+            let loaded = await Task.detached(priority: .utility) {
+                (
+                    saved: SharedClipboardStore.load(),
+                    recent: SharedClipboardStore.loadTemporaryInbox(),
+                    folders: SharedClipboardStore.loadFolders(),
+                    enabled: SharedClipboardStore.automaticCaptureEnabled
+                )
+            }.value
+            guard let self else { return }
+            self.applyClips(saved: loaded.saved, recent: loaded.recent, folders: loaded.folders, enabled: loaded.enabled)
+            if offer { self.offerQuickPaste() }
         }
+    }
+
+    private func applyClips(saved: [SharedClipboardClip], recent: [SharedTemporaryClip], folders loadedFolders: [String], enabled: Bool) {
+        let savedClips = saved.map(KeyboardClip.init(saved:))
+        let recentClips = recent.map(KeyboardClip.init(recent:))
+        if savedClips != self.savedClips { self.savedClips = savedClips }
+        if recentClips != self.recentClips { self.recentClips = recentClips }
+        if loadedFolders != folders { folders = loadedFolders }
+        if enabled != clipboardEnabled { clipboardEnabled = enabled }
+        let kept = selectedClipIDs.filter { id in
+            savedClips.contains { $0.id == id } || recentClips.contains { $0.id == id }
+        }
+        // Sin cambios no se avisa a SwiftUI (redibujaría todo el teclado).
+        if kept != selectedClipIDs { selectedClipIDs = kept }
     }
 
     /// Muestra lo último copiado en la barra de sugerencias, como el pegado rápido de Gboard.

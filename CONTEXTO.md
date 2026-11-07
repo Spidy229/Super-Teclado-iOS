@@ -1,6 +1,6 @@
 # Super Teclado: contexto para agentes
 
-Resumen de todo lo hecho hasta la **versión 2.8.2**, para que otro agente (Claude Code, Codex…) pueda seguir el trabajo sin repetir errores. El `README.md` describe las funciones para el usuario; este documento explica **cómo está hecho, por qué y qué falta**.
+Resumen de todo lo hecho hasta la **versión 2.8.3**, para que otro agente (Claude Code, Codex…) pueda seguir el trabajo sin repetir errores. El `README.md` describe las funciones para el usuario; este documento explica **cómo está hecho, por qué y qué falta**.
 
 ---
 
@@ -32,7 +32,7 @@ Resumen de todo lo hecho hasta la **versión 2.8.2**, para que otro agente (Clau
 - **Subir versión** en cada cambio que se entregue, en dos sitios que deben coincidir:
   - `project.yml`: `MARKETING_VERSION` y `CURRENT_PROJECT_VERSION`, **4 veces cada uno** (app, teclado, share y widget).
   - `SuperTecladoApp/Package.swift`: `displayVersion` y `bundleVersion`.
-  - Estado actual: 2.8.2 / 23 en `project.yml`, 2.8.2 / 28 en `Package.swift`.
+  - Estado actual: 2.8.3 / 24 en `project.yml`, 2.8.3 / 29 en `Package.swift`.
 - `scripts/build-unsigned-ipa.sh`:
   - firma ad hoc (`codesign -s -`) cada appex con sus entitlements y después la app;
   - **falla si falta `Assets.car` o `CFBundleIcons`** (comprobación añadida en 2.6.6).
@@ -80,6 +80,7 @@ Resumen de todo lo hecho hasta la **versión 2.8.2**, para que otro agente (Clau
   - vuelve a leer `hasFullAccess`, porque iOS puede darlo tarde;
   - `removeSystemTouchDelays()` pone `delaysTouchesBegan = false` en los reconocedores del sistema. Si no, se retrasaban los toques en los bordes.
 - **Portapapeles:**
+  - desde 2.8.3, todo (`changeCount`, leer lo copiado, miniaturas y guardado) va en `Task.detached` (`readPasteboard`), y el historial se recarga con `reloadClipsInBackground`. Leer una imagen o algo del portapapeles universal congelaba el teclado medio segundo o más;
   - `checkPasteboard()` solo lee si cambia `changeCount`;
   - se consulta cada 1,5 s, **excepto si se ha tocado una tecla en los últimos 1,5 s**;
   - también al aparecer el teclado y al abrir el panel.
@@ -237,6 +238,7 @@ Este archivo es la solución al **retraso al escribir**. Antes cada tecla era un
 | 2.8.0 | Teclas y fondo fuera de SwiftUI (subvistas UIKit de la vista del teclado), medidas de retraso y bloqueos en el diagnóstico, sin UITextChecker al mostrar sugerencias, vibración preparada al aparecer |
 | 2.8.1 | Espacio tras una sugerencia sin duplicar el que ya hay ni ponerlo delante de signos; se puede desactivar |
 | 2.8.2 | 120 Hz en el teclado (`CADisableMinimumFrameDurationOnPhone`), la tecla y su ventana se envían a la pantalla (`CATransaction.flush()`) antes de vibrar y sonar, tecla resaltada también con ventana emergente, informe de velocidad copiable |
+| 2.8.3 | Sin bloqueos del hilo principal: portapapeles e historial en segundo plano, UITextChecker perezoso y nunca para la barra (antes arrancaba en el primer toque y congelaba), lo aprendido se lee en segundo plano; los bloqueos aparecen en los últimos toques |
 
 ## 8. Errores ya resueltos (no repetirlos)
 
