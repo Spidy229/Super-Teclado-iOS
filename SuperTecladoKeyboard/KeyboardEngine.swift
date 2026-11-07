@@ -1402,18 +1402,15 @@ final class KeyboardEngine: ObservableObject {
     func showToast(_ message: String, actionTitle: String? = nil, action: (() -> Void)? = nil) {
         toastTask?.cancel()
         toastAction = action
-        withAnimation(.easeOut(duration: 0.15)) {
-            toast = message
-            toastActionTitle = action == nil ? nil : actionTitle
-        }
+        // El aviso lo dibuja y anima `KeyboardToastView` (UIKit): sin animaciones de SwiftUI.
+        toast = message
+        toastActionTitle = action == nil ? nil : actionTitle
         let duration: Duration = action == nil ? .seconds(2.2) : .seconds(5)
         toastTask = Task { @MainActor [weak self] in
             try? await Task.sleep(for: duration)
             guard let self, !Task.isCancelled else { return }
-            withAnimation(.easeIn(duration: 0.2)) {
-                self.toast = nil
-                self.toastActionTitle = nil
-            }
+            self.toast = nil
+            self.toastActionTitle = nil
             self.toastAction = nil
         }
     }
@@ -1422,10 +1419,8 @@ final class KeyboardEngine: ObservableObject {
         let action = toastAction
         toastTask?.cancel()
         toastAction = nil
-        withAnimation(.easeIn(duration: 0.2)) {
-            toast = nil
-            toastActionTitle = nil
-        }
+        toast = nil
+        toastActionTitle = nil
         action?()
     }
 

@@ -1,6 +1,6 @@
 # Super Teclado: contexto para agentes
 
-Resumen de todo lo hecho hasta la **versión 2.9.2**, para que otro agente (Claude Code, Codex…) pueda seguir el trabajo sin repetir errores. El `README.md` describe las funciones para el usuario; este documento explica **cómo está hecho, por qué y qué falta**.
+Resumen de todo lo hecho hasta la **versión 2.9.3**, para que otro agente (Claude Code, Codex…) pueda seguir el trabajo sin repetir errores. El `README.md` describe las funciones para el usuario; este documento explica **cómo está hecho, por qué y qué falta**.
 
 ---
 
@@ -32,7 +32,7 @@ Resumen de todo lo hecho hasta la **versión 2.9.2**, para que otro agente (Clau
 - **Subir versión** en cada cambio que se entregue, en dos sitios que deben coincidir:
   - `project.yml`: `MARKETING_VERSION` y `CURRENT_PROJECT_VERSION`, **4 veces cada uno** (app, teclado, share y widget).
   - `SuperTecladoApp/Package.swift`: `displayVersion` y `bundleVersion`.
-  - Estado actual: 2.9.2 / 29 en `project.yml`, 2.9.2 / 34 en `Package.swift`.
+  - Estado actual: 2.9.3 / 30 en `project.yml`, 2.9.3 / 35 en `Package.swift`.
 - `scripts/build-unsigned-ipa.sh`:
   - firma ad hoc (`codesign -s -`) cada appex con sus entitlements y después la app;
   - **falla si falta `Assets.car` o `CFBundleIcons`** (comprobación añadida en 2.6.6).
@@ -246,6 +246,7 @@ Este archivo es la solución al **retraso al escribir**. Antes cada tecla era un
 | 2.9.0 | Ningún gesto de SwiftUI en el teclado (fallo de iOS 27): botones, barra, paneles, borrar y flechas, emojis y portapapeles con reconocedores de UIKit; `UserDefaults` compartido y carpeta del App Group creados una vez (la app iba lenta en ajustes) |
 | 2.9.1 | Barra de sugerencias y avisos en UIKit (al escribir ya no se redibuja nada de SwiftUI), línea de velocidad en la barra (iOS, teclado, hilo principal y bloqueos; se quita en ⚙︎) y retraso del hilo principal en el diagnóstico |
 | 2.9.2 | Registrador de congelaciones (`MainThreadWatchdog`): un hilo aparte detecta si el principal no responde en 80 ms, lo detiene un instante, copia su pila y la pone en el informe; reconocedores de gestos sobre las teclas en el informe; el corrector de iOS se prepara en una pausa y no al pulsar espacio; vibración en la línea de velocidad |
+| 2.9.3 | Los avisos ya no lanzan animaciones de SwiftUI (`withAnimation`), solo la de `KeyboardToastView`, que deja tocar mientras se desvanece |
 
 ## 8. Errores ya resueltos (no repetirlos)
 

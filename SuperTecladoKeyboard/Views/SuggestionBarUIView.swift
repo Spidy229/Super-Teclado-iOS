@@ -538,7 +538,7 @@ final class KeyboardToastView: UIView {
             }
         } else if newMessage == nil, wasShowing {
             // Con transparencia 0, iOS ya no le manda toques.
-            UIView.animate(withDuration: 0.2, delay: 0, options: [.beginFromCurrentState, .curveEaseIn]) {
+            UIView.animate(withDuration: 0.2, delay: 0, options: [.beginFromCurrentState, .allowUserInteraction, .curveEaseIn]) {
                 self.alpha = 0
             }
         }
