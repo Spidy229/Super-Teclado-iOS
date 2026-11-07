@@ -2,16 +2,16 @@ name: Build unsigned IPA
 
 on:
   push:
-    branches: [main, "codex/**"]
+    branches: [main, "codex/**", "claude/**"]
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   build:
     runs-on: macos-15
-    timeout-minutes: 30
+    timeout-minutes: 45
 
     steps:
       - name: Checkout
@@ -39,6 +39,26 @@ jobs:
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO
 
+      - name: Run unit tests
+        run: |
+          # Usa el primer simulador de iPhone disponible en el runner.
+          UDID=$(xcrun simctl list devices available -j | python3 -c "
+          import json, sys
+          devices = json.load(sys.stdin)['devices']
+          print(next((d['udid'] for runtime, items in devices.items() if 'iOS' in runtime
+                      for d in items if d['name'].startswith('iPhone')), ''))
+          ")
+          if [ -z "$UDID" ]; then
+            echo "::warning::No hay simulador de iPhone disponible; se omiten las pruebas"
+            exit 0
+          fi
+          xcodebuild test-without-building \
+            -project SuperTeclado.xcodeproj \
+            -scheme SuperTeclado \
+            -destination "id=$UDID" \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO
+
       - name: Build unsigned IPA
         run: bash scripts/build-unsigned-ipa.sh
 
@@ -49,3 +69,15 @@ jobs:
           path: Super-Teclado-unsigned.ipa
           if-no-files-found: error
           retention-days: 30
+
+      - name: Publish IPA as a GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          VERSION=$(grep -m1 'MARKETING_VERSION:' project.yml | sed -E 's/.*"([^"]+)".*/\1/')
+          TAG="v${VERSION}-build${{ github.run_number }}"
+          gh release create "$TAG" Super-Teclado-unsigned.ipa \
+            --target "${{ github.sha }}" \
+            --title "Super Teclado ${VERSION} (compilación ${{ github.run_number }})" \
+            --notes "IPA sin firmar generada desde ${GITHUB_REF_NAME} (${GITHUB_SHA::7}). Fírmala con KravaSign, Feather o similar antes de instalarla." \
+            --latest

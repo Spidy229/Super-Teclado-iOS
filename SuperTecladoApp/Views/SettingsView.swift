@@ -10,25 +10,31 @@ struct SettingsView: View {
     @AppStorage("requireBiometrics") private var requireBiometrics = false
     @AppStorage(
         "skipOneTimeCodes",
-        store: UserDefaults(suiteName: SharedClipboardStore.appGroupID)
+        store: SharedClipboardStore.sharedDefaults
     ) private var skipOneTimeCodes = true
     @AppStorage("localClipboardOnly") private var localClipboardOnly = true
     @AppStorage("maximumItems") private var maximumItems = 250
     @AppStorage("autoDeleteDays") private var autoDeleteDays = 30
     @AppStorage(
         "automaticCaptureEnabled",
-        store: UserDefaults(suiteName: SharedClipboardStore.appGroupID)
+        store: SharedClipboardStore.sharedDefaults
     ) private var automaticCaptureEnabled = true
     @AppStorage(
         "temporaryRetentionHours",
-        store: UserDefaults(suiteName: SharedClipboardStore.appGroupID)
+        store: SharedClipboardStore.sharedDefaults
     ) private var temporaryRetentionHours = ClipboardRetentionPolicy.defaultTemporaryHours
     @AppStorage(
         "maximumTemporaryItems",
-        store: UserDefaults(suiteName: SharedClipboardStore.appGroupID)
+        store: SharedClipboardStore.sharedDefaults
     ) private var maximumTemporaryItems = ClipboardRetentionPolicy.defaultMaximumTemporaryItems
 
+    @AppStorage(
+        SharedClipboardStore.sensitiveModeKey,
+        store: SharedClipboardStore.sharedDefaults
+    ) private var sensitiveMode: SensitiveClipMode = .mask
+
     @State private var showDeleteConfirmation = false
+    @State private var showOnboarding = false
     @State private var showClearTemporaryConfirmation = false
     @State private var folders: [String] = []
     @State private var newFolderName = ""
@@ -55,6 +61,8 @@ struct SettingsView: View {
                         Text("24 horas").tag(24)
                         Text("3 días").tag(72)
                         Text("7 días").tag(168)
+                        Text("30 días").tag(720)
+                        Text("Sin caducidad").tag(-1)
                     }
 
                     Picker("Límite temporal", selection: $maximumTemporaryItems) {
@@ -62,11 +70,23 @@ struct SettingsView: View {
                         Text("25 elementos").tag(25)
                         Text("50 elementos").tag(50)
                         Text("100 elementos").tag(100)
+                        Text("250 elementos").tag(250)
+                        Text("500 elementos").tag(500)
+                    }
+
+                    Picker("Contenido privado", selection: $sensitiveMode) {
+                        ForEach(SensitiveClipMode.allCases) { mode in Text(mode.title).tag(mode) }
+                    }
+
+                    NavigationLink {
+                        ClipboardCaptureGuideView()
+                    } label: {
+                        Label("Guardar con el teclado cerrado", systemImage: "square.and.arrow.down")
                     }
                 } header: {
                     Text("Bandeja temporal")
                 } footer: {
-                    Text("La captura funciona mientras la app está activa y al volver a ella. iOS puede pedir permiso para leer contenido copiado desde otra app.")
+                    Text("Se considera privado lo que parece una tarjeta, un IBAN, una contraseña o un código. Lo que los gestores de contraseñas marcan como oculto nunca se guarda.")
                 }
 
                 Section {
@@ -127,27 +147,64 @@ struct SettingsView: View {
                 }
 
                 Section {
+                    KeyboardStatusView()
+                    NavigationLink {
+                        KeyboardSettingsView()
+                    } label: {
+                        Label("Ajustes del teclado", systemImage: "keyboard")
+                    }
+                    NavigationLink {
+                        KeyboardThemesView()
+                    } label: {
+                        Label("Temas del teclado", systemImage: "paintpalette")
+                    }
+                    Button {
+                        showOnboarding = true
+                    } label: {
+                        Label("Ver la guía de bienvenida", systemImage: "sparkles")
+                    }
                     Button {
                         if let url = URL(string: UIApplication.openSettingsURLString) {
                             UIApplication.shared.open(url)
                         }
                     } label: {
-                        Label("Abrir ajustes para activar el teclado", systemImage: "keyboard")
+                        Label("Abrir ajustes para activar el teclado", systemImage: "gear")
                     }
                 } header: {
                     Text("Teclado")
                 } footer: {
-                    Text("Añade Super Teclado en Teclados y activa Acceso total. Mientras el teclado esté visible, el contenido copiado aparecerá automáticamente en Temporales; toca el pin para conservarlo.")
+                    Text("Añade Super Teclado en Teclados y activa Acceso total. Lo que copies aparecerá en Recientes del portapapeles del teclado; mantén pulsado un elemento para fijarlo.")
+                }
+
+                Section {
+                    NavigationLink {
+                        BackupView()
+                    } label: {
+                        Label("Copia de seguridad", systemImage: "externaldrive.badge.icloud")
+                    }
+                    NavigationLink {
+                        DiagnosticsView()
+                    } label: {
+                        Label("Diagnóstico del teclado", systemImage: "stethoscope")
+                    }
+                } header: {
+                    Text("Mantenimiento")
+                } footer: {
+                    Text("Haz una copia antes de reinstalar la app con otro certificado: al cambiarlo se pueden perder los datos.")
                 }
 
                 Section("Acerca de") {
-                    LabeledContent("Versión", value: "1.0")
+                    LabeledContent("Versión", value: appVersion)
                     Text("Los datos se guardan únicamente en el dispositivo.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                    Text("Diccionarios basados en FrequencyWords de Hermit Dave (OpenSubtitles, CC BY-SA 4.0). Predicción con frases de Tatoeba (CC BY 2.0 FR). Nombres de emojis de Unicode CLDR (© Unicode, Inc., licencia Unicode V3).")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                 }
             }
             .navigationTitle("Ajustes")
+            .sheet(isPresented: $showOnboarding) { OnboardingView() }
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Listo") { dismiss() }
@@ -183,6 +240,10 @@ struct SettingsView: View {
         }
     }
 
+    private var appVersion: String {
+        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "2.6"
+    }
+
     private func addFolder() {
         guard SharedClipboardStore.addFolder(newFolderName) != nil else { return }
         folders = SharedClipboardStore.loadFolders()
@@ -197,23 +258,21 @@ struct SettingsView: View {
             }
             SharedClipboardStore.removeFolder(name)
         }
-        try? modelContext.save()
-        KeyboardHistorySync.publishAppHistory(from: modelContext)
+        try? KeyboardHistorySync.commit(modelContext)
         folders = SharedClipboardStore.loadFolders()
     }
 
     private func deleteUnprotectedItems() {
         for item in items where item.isPermanent && !item.isFavorite && !item.isPinned {
-            modelContext.delete(item)
+            KeyboardHistorySync.delete(item, from: modelContext)
         }
-        try? modelContext.save()
-        KeyboardHistorySync.publishAppHistory(from: modelContext)
+        try? KeyboardHistorySync.commit(modelContext)
     }
 
     private func deleteTemporaryItems() {
         for item in items where item.isTemporary {
-            modelContext.delete(item)
+            KeyboardHistorySync.delete(item, from: modelContext)
         }
-        try? modelContext.save()
+        try? KeyboardHistorySync.commit(modelContext)
     }
 }

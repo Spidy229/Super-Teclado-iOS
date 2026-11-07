@@ -48,14 +48,14 @@ foreach ($marker in 'isTemporary: true', 'promoteToPermanent()', 'captureAutomat
 }
 
 $keyboard = Get-Content -LiteralPath (Join-Path $projectRoot 'SuperTecladoKeyboard/KeyboardViewController.swift') -Raw
-foreach ($marker in 'captureClipboardAsTemporaryIfNeeded()', 'SharedClipboardStore.captureTemporaryText') {
+foreach ($marker in 'checkPasteboard()', 'SharedClipboardStore.captureTemporaryText') {
     if (-not $keyboard.Contains($marker)) {
         throw "Falta la captura temporal desde el teclado: $marker"
     }
 }
 
 $sync = Get-Content -LiteralPath (Join-Path $projectRoot 'SuperTecladoApp/Services/KeyboardHistorySync.swift') -Raw
-foreach ($marker in 'importTemporaryInbox(into: context)', 'SharedClipboardStore.replaceTemporaryInbox(temporary)') {
+foreach ($marker in 'importTemporaryInbox(into: context', 'applyKeyboardDeletions(in: context)', 'SharedClipboardStore.replaceTemporaryInbox(temporary)') {
     if (-not $sync.Contains($marker)) {
         throw "Falta la importación de temporales del teclado: $marker"
     }
