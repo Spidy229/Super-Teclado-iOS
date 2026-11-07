@@ -4,13 +4,13 @@ import SwiftUI
 /// Selector de temas con vista previa, como la sección «Tema» de Gboard.
 struct KeyboardThemesView: View {
     @Environment(\.colorScheme) private var colorScheme
-    @AppStorage(KeyboardPreferenceKey.theme, store: UserDefaults(suiteName: SharedClipboardStore.appGroupID))
+    @AppStorage(KeyboardPreferenceKey.theme, store: SharedClipboardStore.sharedDefaults)
     private var theme: KeyboardThemeOption = .system
-    @AppStorage(KeyboardPreferenceKey.keyBorders, store: UserDefaults(suiteName: SharedClipboardStore.appGroupID))
+    @AppStorage(KeyboardPreferenceKey.keyBorders, store: SharedClipboardStore.sharedDefaults)
     private var keyBorders = true
-    @AppStorage(KeyboardPreferenceKey.backgroundDim, store: UserDefaults(suiteName: SharedClipboardStore.appGroupID))
+    @AppStorage(KeyboardPreferenceKey.backgroundDim, store: SharedClipboardStore.sharedDefaults)
     private var backgroundDim = 0.35
-    @AppStorage(KeyboardPreferenceKey.glassTransparency, store: UserDefaults(suiteName: SharedClipboardStore.appGroupID))
+    @AppStorage(KeyboardPreferenceKey.glassTransparency, store: SharedClipboardStore.sharedDefaults)
     private var glassTransparency = 1.0
 
     @State private var photoItem: PhotosPickerItem?

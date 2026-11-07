@@ -70,7 +70,7 @@ struct KeyboardSettingsPanelView: View {
                     .foregroundStyle(palette.secondaryText)
                     .fixedSize(horizontal: false, vertical: true)
             }
-            Button {
+            InstantButton {
                 engine.copyDiagnosticsReport()
             } label: {
                 Label("Copiar informe de velocidad", systemImage: "doc.on.doc")
@@ -215,7 +215,7 @@ struct KeyboardSettingsPanelView: View {
                     .foregroundStyle(palette.text)
                     .fixedSize(horizontal: false, vertical: true)
             }
-            Button("Poner a cero") {
+            InstantButton("Poner a cero") {
                 engine.touchDiagnostics = TouchDiagnostics()
                 diagnostics = TouchDiagnostics()
             }
@@ -277,7 +277,7 @@ struct KeyboardSettingsPanelView: View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 6) {
                 ForEach(options, id: \.self) { option in
-                    Button { onSelect(option) } label: {
+                    InstantButton { onSelect(option) } label: {
                         Text(option[keyPath: title])
                             .font(.system(size: 13, weight: .medium))
                             .foregroundStyle(option == selected ? palette.accentText : palette.text)

@@ -3,43 +3,43 @@ import SwiftUI
 import UIKit
 
 struct KeyboardSettingsView: View {
-    @AppStorage(KeyboardPreferenceKey.theme, store: UserDefaults(suiteName: SharedClipboardStore.appGroupID)) private var theme: KeyboardThemeOption = .system
-    @AppStorage(KeyboardPreferenceKey.sound, store: UserDefaults(suiteName: SharedClipboardStore.appGroupID)) private var sound = false
-    @AppStorage(KeyboardPreferenceKey.haptics, store: UserDefaults(suiteName: SharedClipboardStore.appGroupID)) private var haptics = true
-    @AppStorage(KeyboardPreferenceKey.autocorrect, store: UserDefaults(suiteName: SharedClipboardStore.appGroupID)) private var autocorrect = true
-    @AppStorage(KeyboardPreferenceKey.autocapitalize, store: UserDefaults(suiteName: SharedClipboardStore.appGroupID)) private var autocapitalize = true
-    @AppStorage(KeyboardPreferenceKey.doubleSpacePeriod, store: UserDefaults(suiteName: SharedClipboardStore.appGroupID)) private var doubleSpacePeriod = true
-    @AppStorage(KeyboardPreferenceKey.suggestions, store: UserDefaults(suiteName: SharedClipboardStore.appGroupID)) private var suggestions = true
-    @AppStorage(KeyboardPreferenceKey.numberRow, store: UserDefaults(suiteName: SharedClipboardStore.appGroupID)) private var numberRow = false
-    @AppStorage(KeyboardPreferenceKey.keyPopups, store: UserDefaults(suiteName: SharedClipboardStore.appGroupID)) private var keyPopups = true
-    @AppStorage(KeyboardPreferenceKey.longPressSymbols, store: UserDefaults(suiteName: SharedClipboardStore.appGroupID)) private var longPressSymbols = true
-    @AppStorage(KeyboardPreferenceKey.quickPaste, store: UserDefaults(suiteName: SharedClipboardStore.appGroupID)) private var quickPaste = true
-    @AppStorage(KeyboardPreferenceKey.oneHandedMode, store: UserDefaults(suiteName: SharedClipboardStore.appGroupID)) private var oneHandedMode: OneHandedMode = .off
-    @AppStorage(SharedClipboardStore.automaticCaptureKey, store: UserDefaults(suiteName: SharedClipboardStore.appGroupID)) private var clipboardEnabled = true
+    @AppStorage(KeyboardPreferenceKey.theme, store: SharedClipboardStore.sharedDefaults) private var theme: KeyboardThemeOption = .system
+    @AppStorage(KeyboardPreferenceKey.sound, store: SharedClipboardStore.sharedDefaults) private var sound = false
+    @AppStorage(KeyboardPreferenceKey.haptics, store: SharedClipboardStore.sharedDefaults) private var haptics = true
+    @AppStorage(KeyboardPreferenceKey.autocorrect, store: SharedClipboardStore.sharedDefaults) private var autocorrect = true
+    @AppStorage(KeyboardPreferenceKey.autocapitalize, store: SharedClipboardStore.sharedDefaults) private var autocapitalize = true
+    @AppStorage(KeyboardPreferenceKey.doubleSpacePeriod, store: SharedClipboardStore.sharedDefaults) private var doubleSpacePeriod = true
+    @AppStorage(KeyboardPreferenceKey.suggestions, store: SharedClipboardStore.sharedDefaults) private var suggestions = true
+    @AppStorage(KeyboardPreferenceKey.numberRow, store: SharedClipboardStore.sharedDefaults) private var numberRow = false
+    @AppStorage(KeyboardPreferenceKey.keyPopups, store: SharedClipboardStore.sharedDefaults) private var keyPopups = true
+    @AppStorage(KeyboardPreferenceKey.longPressSymbols, store: SharedClipboardStore.sharedDefaults) private var longPressSymbols = true
+    @AppStorage(KeyboardPreferenceKey.quickPaste, store: SharedClipboardStore.sharedDefaults) private var quickPaste = true
+    @AppStorage(KeyboardPreferenceKey.oneHandedMode, store: SharedClipboardStore.sharedDefaults) private var oneHandedMode: OneHandedMode = .off
+    @AppStorage(SharedClipboardStore.automaticCaptureKey, store: SharedClipboardStore.sharedDefaults) private var clipboardEnabled = true
 
-    @AppStorage(KeyboardPreferenceKey.glideTyping, store: UserDefaults(suiteName: SharedClipboardStore.appGroupID)) private var glideTyping = true
-    @AppStorage(KeyboardPreferenceKey.glideTrail, store: UserDefaults(suiteName: SharedClipboardStore.appGroupID)) private var glideTrail = true
-    @AppStorage(KeyboardPreferenceKey.nextWordPrediction, store: UserDefaults(suiteName: SharedClipboardStore.appGroupID)) private var nextWordPrediction = true
-    @AppStorage(KeyboardPreferenceKey.emojiSuggestions, store: UserDefaults(suiteName: SharedClipboardStore.appGroupID)) private var emojiSuggestions = true
-    @AppStorage(KeyboardPreferenceKey.height, store: UserDefaults(suiteName: SharedClipboardStore.appGroupID)) private var height: KeyboardHeightOption = .normal
-    @AppStorage(KeyboardPreferenceKey.longPressDelay, store: UserDefaults(suiteName: SharedClipboardStore.appGroupID)) private var longPressDelay = 400
+    @AppStorage(KeyboardPreferenceKey.glideTyping, store: SharedClipboardStore.sharedDefaults) private var glideTyping = true
+    @AppStorage(KeyboardPreferenceKey.glideTrail, store: SharedClipboardStore.sharedDefaults) private var glideTrail = true
+    @AppStorage(KeyboardPreferenceKey.nextWordPrediction, store: SharedClipboardStore.sharedDefaults) private var nextWordPrediction = true
+    @AppStorage(KeyboardPreferenceKey.emojiSuggestions, store: SharedClipboardStore.sharedDefaults) private var emojiSuggestions = true
+    @AppStorage(KeyboardPreferenceKey.height, store: SharedClipboardStore.sharedDefaults) private var height: KeyboardHeightOption = .normal
+    @AppStorage(KeyboardPreferenceKey.longPressDelay, store: SharedClipboardStore.sharedDefaults) private var longPressDelay = 400
 
-    @AppStorage(KeyboardPreferenceKey.primaryLanguage, store: UserDefaults(suiteName: SharedClipboardStore.appGroupID)) private var primaryLanguage: KeyboardLanguage = .spanish
+    @AppStorage(KeyboardPreferenceKey.primaryLanguage, store: SharedClipboardStore.sharedDefaults) private var primaryLanguage: KeyboardLanguage = .spanish
     /// Código del segundo idioma o cadena vacía.
-    @AppStorage(KeyboardPreferenceKey.secondaryLanguage, store: UserDefaults(suiteName: SharedClipboardStore.appGroupID)) private var secondaryLanguageCode = ""
+    @AppStorage(KeyboardPreferenceKey.secondaryLanguage, store: SharedClipboardStore.sharedDefaults) private var secondaryLanguageCode = ""
     /// Distribución elegida o «auto».
-    @AppStorage(KeyboardPreferenceKey.layout, store: UserDefaults(suiteName: SharedClipboardStore.appGroupID)) private var layoutCode = "auto"
-    @AppStorage(KeyboardPreferenceKey.incognito, store: UserDefaults(suiteName: SharedClipboardStore.appGroupID)) private var incognito = false
-    @AppStorage(KeyboardPreferenceKey.smartTouch, store: UserDefaults(suiteName: SharedClipboardStore.appGroupID)) private var smartTouch = true
-    @AppStorage(KeyboardPreferenceKey.spaceAfterSuggestion, store: UserDefaults(suiteName: SharedClipboardStore.appGroupID)) private var spaceAfterSuggestion = true
+    @AppStorage(KeyboardPreferenceKey.layout, store: SharedClipboardStore.sharedDefaults) private var layoutCode = "auto"
+    @AppStorage(KeyboardPreferenceKey.incognito, store: SharedClipboardStore.sharedDefaults) private var incognito = false
+    @AppStorage(KeyboardPreferenceKey.smartTouch, store: SharedClipboardStore.sharedDefaults) private var smartTouch = true
+    @AppStorage(KeyboardPreferenceKey.spaceAfterSuggestion, store: SharedClipboardStore.sharedDefaults) private var spaceAfterSuggestion = true
 
-    @AppStorage(KeyboardPreferenceKey.hapticsStrength, store: UserDefaults(suiteName: SharedClipboardStore.appGroupID)) private var hapticsStrength = 0.6
-    @AppStorage(KeyboardPreferenceKey.hapticsStyle, store: UserDefaults(suiteName: SharedClipboardStore.appGroupID)) private var hapticsStyle: HapticStyleOption = .light
-    @AppStorage(KeyboardPreferenceKey.keyLabelSize, store: UserDefaults(suiteName: SharedClipboardStore.appGroupID)) private var keyLabelSize: KeyLabelSize = .normal
+    @AppStorage(KeyboardPreferenceKey.hapticsStrength, store: SharedClipboardStore.sharedDefaults) private var hapticsStrength = 0.6
+    @AppStorage(KeyboardPreferenceKey.hapticsStyle, store: SharedClipboardStore.sharedDefaults) private var hapticsStyle: HapticStyleOption = .light
+    @AppStorage(KeyboardPreferenceKey.keyLabelSize, store: SharedClipboardStore.sharedDefaults) private var keyLabelSize: KeyLabelSize = .normal
 
-    @AppStorage(KeyboardPreferenceKey.soundStyle, store: UserDefaults(suiteName: SharedClipboardStore.appGroupID)) private var soundStyle: KeySoundStyle = .modern
-    @AppStorage(KeyboardPreferenceKey.favoritesRow, store: UserDefaults(suiteName: SharedClipboardStore.appGroupID)) private var favoritesRow = false
-    @AppStorage(KeyboardPreferenceKey.favorites, store: UserDefaults(suiteName: SharedClipboardStore.appGroupID)) private var favorites = KeyboardPreferences.defaultFavorites
+    @AppStorage(KeyboardPreferenceKey.soundStyle, store: SharedClipboardStore.sharedDefaults) private var soundStyle: KeySoundStyle = .modern
+    @AppStorage(KeyboardPreferenceKey.favoritesRow, store: SharedClipboardStore.sharedDefaults) private var favoritesRow = false
+    @AppStorage(KeyboardPreferenceKey.favorites, store: SharedClipboardStore.sharedDefaults) private var favorites = KeyboardPreferences.defaultFavorites
 
     @State private var testText = ""
     @State private var showClearWordsConfirmation = false

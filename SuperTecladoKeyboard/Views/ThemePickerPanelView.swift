@@ -14,7 +14,7 @@ struct ThemePickerPanelView: View {
             ScrollView {
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 78), spacing: 10)], spacing: 10) {
                     ForEach(options) { option in
-                        Button {
+                        InstantButton {
                             engine.keyFeedback(.character)
                             engine.setTheme(option)
                         } label: {

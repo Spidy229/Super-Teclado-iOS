@@ -37,30 +37,6 @@ struct KeyCapView: View {
     }
 }
 
-/// Botón de la barra que vibra (y suena) al tocarlo, igual que las teclas, y se atenúa mientras
-/// se mantiene pulsado.
-struct KeyFeedbackButtonStyle: ButtonStyle {
-    var kind: KeyFeedbackKind = .character
-
-    func makeBody(configuration: Configuration) -> some View {
-        FeedbackLabel(configuration: configuration, kind: kind)
-    }
-
-    private struct FeedbackLabel: View {
-        @EnvironmentObject private var engine: KeyboardEngine
-        let configuration: ButtonStyleConfiguration
-        let kind: KeyFeedbackKind
-
-        var body: some View {
-            configuration.label
-                .opacity(configuration.isPressed ? 0.55 : 1)
-                .onChange(of: configuration.isPressed) { _, pressed in
-                    if pressed { engine.keyFeedback(kind) }
-                }
-        }
-    }
-}
-
 /// Botón para volver al teclado desde los paneles. Es ancho y está separado del borde de la
 /// pantalla, porque iOS retrasa o descarta los toques pegados al borde por sus propios gestos.
 struct PanelBackButton: View {
@@ -69,7 +45,7 @@ struct PanelBackButton: View {
     let action: () -> Void
 
     var body: some View {
-        Button(action: action) {
+        InstantButton(feedback: .modifier, action: action) {
             HStack(spacing: 4) {
                 Image(systemName: "chevron.left")
                     .font(.system(size: 14, weight: .bold))
@@ -82,7 +58,6 @@ struct PanelBackButton: View {
             .background(palette.chip, in: Capsule())
             .contentShape(Capsule())
         }
-        .buttonStyle(KeyFeedbackButtonStyle(kind: .modifier))
         .padding(.leading, 6)
         .accessibilityLabel("Volver")
     }
@@ -97,14 +72,13 @@ struct StripButton: View {
     let action: () -> Void
 
     var body: some View {
-        Button(action: action) {
+        InstantButton(feedback: .modifier, action: action) {
             Image(systemName: symbol)
                 .font(.system(size: 18, weight: .regular))
                 .foregroundStyle(isActive ? palette.accent : palette.text.opacity(0.85))
                 .frame(width: 44, height: 36)
                 .contentShape(Rectangle())
         }
-        .buttonStyle(KeyFeedbackButtonStyle(kind: .modifier))
         .accessibilityLabel(label ?? symbol)
     }
 }

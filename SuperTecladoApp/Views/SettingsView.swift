@@ -10,27 +10,27 @@ struct SettingsView: View {
     @AppStorage("requireBiometrics") private var requireBiometrics = false
     @AppStorage(
         "skipOneTimeCodes",
-        store: UserDefaults(suiteName: SharedClipboardStore.appGroupID)
+        store: SharedClipboardStore.sharedDefaults
     ) private var skipOneTimeCodes = true
     @AppStorage("localClipboardOnly") private var localClipboardOnly = true
     @AppStorage("maximumItems") private var maximumItems = 250
     @AppStorage("autoDeleteDays") private var autoDeleteDays = 30
     @AppStorage(
         "automaticCaptureEnabled",
-        store: UserDefaults(suiteName: SharedClipboardStore.appGroupID)
+        store: SharedClipboardStore.sharedDefaults
     ) private var automaticCaptureEnabled = true
     @AppStorage(
         "temporaryRetentionHours",
-        store: UserDefaults(suiteName: SharedClipboardStore.appGroupID)
+        store: SharedClipboardStore.sharedDefaults
     ) private var temporaryRetentionHours = ClipboardRetentionPolicy.defaultTemporaryHours
     @AppStorage(
         "maximumTemporaryItems",
-        store: UserDefaults(suiteName: SharedClipboardStore.appGroupID)
+        store: SharedClipboardStore.sharedDefaults
     ) private var maximumTemporaryItems = ClipboardRetentionPolicy.defaultMaximumTemporaryItems
 
     @AppStorage(
         SharedClipboardStore.sensitiveModeKey,
-        store: UserDefaults(suiteName: SharedClipboardStore.appGroupID)
+        store: SharedClipboardStore.sharedDefaults
     ) private var sensitiveMode: SensitiveClipMode = .mask
 
     @State private var showDeleteConfirmation = false

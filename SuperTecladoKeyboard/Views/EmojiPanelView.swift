@@ -7,7 +7,7 @@ struct EmojiHeaderView: View {
     var body: some View {
         HStack(spacing: 4) {
             PanelBackButton { engine.closePanel() }
-            Button { engine.openEmojiSearch() } label: {
+            InstantButton { engine.openEmojiSearch() } label: {
                 HStack(spacing: 6) {
                     Image(systemName: "magnifyingglass")
                     Text("Buscar emojis")
@@ -90,15 +90,21 @@ struct EmojiPanelView: View {
                 }
             }
             .contentShape(Rectangle())
-            .onTapGesture {
-                engine.keyFeedback(.character)
-                engine.insertEmoji(shown)
-            }
-            .onLongPressGesture(minimumDuration: 0.35) {
-                guard EmojiSkinTone.supportsTones(emoji) else { return }
-                engine.keyFeedback(.modifier)
-                toneEmoji = emoji
-            }
+            // Reconocedor de UIKit (en iOS 27 los toques de SwiftUI se retrasan); si el dedo se
+            // desplaza, deja desplazar la lista de emojis.
+            .gesture(
+                InstantTouchGesture(
+                    longPressDuration: EmojiSkinTone.supportsTones(emoji) ? 0.35 : nil,
+                    onTap: {
+                        engine.keyFeedback(.character)
+                        engine.insertEmoji(shown)
+                    },
+                    onLongPress: {
+                        engine.keyFeedback(.modifier)
+                        toneEmoji = emoji
+                    }
+                )
+            )
             .accessibilityLabel(shown)
             .accessibilityAddTraits(.isButton)
     }
@@ -106,10 +112,10 @@ struct EmojiPanelView: View {
     private func tonePicker(for emoji: String) -> some View {
         ZStack(alignment: .top) {
             Color.black.opacity(0.25)
-                .onTapGesture { toneEmoji = nil }
+                .gesture(InstantTouchGesture(onTap: { toneEmoji = nil }))
             HStack(spacing: 2) {
                 ForEach(EmojiSkinTone.variants(of: emoji), id: \.self) { variant in
-                    Button {
+                    InstantButton {
                         engine.setPreferredVariant(variant, for: emoji)
                         engine.keyFeedback(.character)
                         engine.insertEmoji(variant)
@@ -136,7 +142,7 @@ struct EmojiPanelView: View {
 
     private func categoryBar(sections: [EmojiCategory], reader: ScrollViewProxy) -> some View {
         HStack(spacing: 0) {
-            Button { engine.closePanel() } label: {
+            InstantButton { engine.closePanel() } label: {
                 Text("ABC")
                     .font(.system(size: 14, weight: .semibold))
                     .frame(width: 48, height: 36)
@@ -146,7 +152,7 @@ struct EmojiPanelView: View {
             .foregroundStyle(palette.text)
 
             ForEach(sections) { category in
-                Button {
+                InstantButton {
                     selectedCategory = category.id
                     withAnimation(.easeOut(duration: 0.2)) {
                         reader.scrollTo(category.id, anchor: .top)
@@ -212,7 +218,7 @@ struct EmojiSearchBarView: View {
                 ScrollView(.horizontal, showsIndicators: false) {
                     LazyHStack(spacing: 0) {
                         ForEach(Array(engine.emojiSearchResults.enumerated()), id: \.offset) { _, emoji in
-                            Button { engine.insertSearchedEmoji(emoji) } label: {
+                            InstantButton { engine.insertSearchedEmoji(emoji) } label: {
                                 Text(engine.preferredVariant(of: emoji))
                                     .font(.system(size: 26))
                                     .frame(width: 40, height: 40)

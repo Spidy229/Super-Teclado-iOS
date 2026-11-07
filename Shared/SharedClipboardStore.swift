@@ -83,7 +83,9 @@ enum SharedClipboardStore {
     /// Imágenes que se conservan como máximo en Recientes, aparte del límite general.
     static let maximumTemporaryImages = 100
 
-    static var sharedDefaults: UserDefaults? { UserDefaults(suiteName: appGroupID) }
+    /// Una sola instancia para todo el proceso: crearla en cada lectura (y en cada redibujado de
+    /// los ajustes de la app, una por ajuste) costaba tiempo del hilo principal.
+    nonisolated(unsafe) static let sharedDefaults: UserDefaults? = UserDefaults(suiteName: appGroupID)
 
     /// `false` si la firma de la app no incluye el App Group: entonces la app y el teclado no
     /// comparten ajustes ni portapapeles (cada uno guarda los suyos).
@@ -542,8 +544,13 @@ enum SharedClipboardStore {
         dropped.compactMap(\.imageFileName).forEach(removeImage(fileName:))
     }
 
-    private static func containerURL() -> URL? {
+    /// La carpeta del App Group se pregunta a iOS una sola vez (es una consulta al sistema y se
+    /// hacía en cada lectura del historial y en cada redibujado de los ajustes).
+    private static let cachedContainerURL: URL? =
         FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: appGroupID)
+
+    private static func containerURL() -> URL? {
+        cachedContainerURL
     }
 
     private static func historyURL() -> URL? {

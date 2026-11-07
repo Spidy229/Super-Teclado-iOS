@@ -45,7 +45,7 @@ struct SuggestionStripView: View {
                         .fill(palette.separator)
                         .frame(width: 1, height: 20)
                 }
-                Button {
+                InstantButton(feedback: .character) {
                     if let item { engine.selectSuggestion(item) }
                 } label: {
                     Text(item.map { title(for: $0) } ?? "")
@@ -60,8 +60,7 @@ struct SuggestionStripView: View {
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                         .contentShape(Rectangle())
                 }
-                // Vibra al tocar la sugerencia, como una tecla.
-                .buttonStyle(KeyFeedbackButtonStyle())
+                // Vibra al tocar la sugerencia, como una tecla (y responde al instante).
                 .disabled(item == nil)
             }
         }
@@ -73,7 +72,7 @@ struct SuggestionStripView: View {
     }
 
     private func quickPasteChip(_ clip: KeyboardClip) -> some View {
-        Button { engine.useQuickPaste() } label: {
+        InstantButton(feedback: .character) { engine.useQuickPaste() } label: {
             HStack(spacing: 7) {
                 if let fileName = clip.imageFileName {
                     ClipThumbnailView(fileName: fileName)
@@ -96,7 +95,6 @@ struct SuggestionStripView: View {
             .frame(maxWidth: 230, minHeight: 32)
             .background(palette.chip, in: Capsule())
         }
-        .buttonStyle(KeyFeedbackButtonStyle())
         .accessibilityLabel("Pegar lo último copiado")
     }
 

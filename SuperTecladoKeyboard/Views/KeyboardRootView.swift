@@ -73,7 +73,7 @@ struct KeyboardRootView: View {
                 Text(message)
                     .multilineTextAlignment(.center)
                 if let actionTitle = engine.toastActionTitle {
-                    Button(actionTitle) { engine.performToastAction() }
+                    InstantButton(actionTitle) { engine.performToastAction() }
                         .font(.system(size: 13, weight: .bold))
                         .underline()
                         .buttonStyle(.plain)

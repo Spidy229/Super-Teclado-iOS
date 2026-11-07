@@ -39,17 +39,17 @@ struct FunctionKeyView<Label: View>: View {
         }
         .frame(width: size.width, height: size.height)
         .contentShape(Rectangle())
+        // Reconocedor de UIKit: en iOS 27 `DragGesture` puede avisar ~0,75 s tarde.
         .gesture(
-            DragGesture(minimumDistance: 0)
-                .onChanged { _ in
-                    guard !isPressed else { return }
+            InstantTouchGesture(
+                startsImmediately: true,
+                onDown: {
                     isPressed = true
                     engine.keyFeedback(feedback)
-                }
-                .onEnded { _ in
-                    isPressed = false
-                    action()
-                }
+                },
+                onTap: action,
+                onEnd: { isPressed = false }
+            )
         )
         .accessibilityElement()
         .accessibilityLabel(accessibilityText)
@@ -78,31 +78,33 @@ struct DeleteKeyView: View {
         }
         .frame(width: size.width, height: size.height)
         .contentShape(Rectangle())
+        // Reconocedor de UIKit: en iOS 27 `DragGesture` puede avisar ~0,75 s tarde.
         .gesture(
-            DragGesture(minimumDistance: 0)
-                .onChanged { gesture in
-                    if !isPressed {
-                        isPressed = true
+            InstantTouchGesture(
+                startsImmediately: true,
+                onDown: {
+                    isPressed = true
+                    engine.keyFeedback(.delete)
+                    engine.deleteBackward()
+                    startRepeating()
+                },
+                onMove: { translation in
+                    let steps = Int(-translation.width / 24)
+                    guard steps > 0 else { return }
+                    repeatTask?.cancel()
+                    while swipeSteps < steps {
+                        swipeSteps += 1
+                        engine.deleteWordBackward()
                         engine.keyFeedback(.delete)
-                        engine.deleteBackward()
-                        startRepeating()
                     }
-                    let steps = Int(-gesture.translation.width / 24)
-                    if steps > 0 {
-                        repeatTask?.cancel()
-                        while swipeSteps < steps {
-                            swipeSteps += 1
-                            engine.deleteWordBackward()
-                            engine.keyFeedback(.delete)
-                        }
-                    }
-                }
-                .onEnded { _ in
+                },
+                onEnd: {
                     repeatTask?.cancel()
                     repeatTask = nil
                     isPressed = false
                     swipeSteps = 0
                 }
+            )
         )
         .accessibilityElement()
         .accessibilityLabel("Borrar")
@@ -154,9 +156,9 @@ struct RepeatingKeyView: View {
         .frame(width: size.width, height: size.height)
         .contentShape(Rectangle())
         .gesture(
-            DragGesture(minimumDistance: 0)
-                .onChanged { _ in
-                    guard !isPressed else { return }
+            InstantTouchGesture(
+                startsImmediately: true,
+                onDown: {
                     isPressed = true
                     engine.keyFeedback(.modifier)
                     action()
@@ -167,12 +169,13 @@ struct RepeatingKeyView: View {
                             try? await Task.sleep(for: .milliseconds(80))
                         }
                     }
-                }
-                .onEnded { _ in
+                },
+                onEnd: {
                     repeatTask?.cancel()
                     repeatTask = nil
                     isPressed = false
                 }
+            )
         )
         .accessibilityElement()
         .accessibilityLabel(accessibilityText)

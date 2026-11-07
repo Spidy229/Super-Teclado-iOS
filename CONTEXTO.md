@@ -1,6 +1,6 @@
 # Super Teclado: contexto para agentes
 
-Resumen de todo lo hecho hasta la **versión 2.8.5**, para que otro agente (Claude Code, Codex…) pueda seguir el trabajo sin repetir errores. El `README.md` describe las funciones para el usuario; este documento explica **cómo está hecho, por qué y qué falta**.
+Resumen de todo lo hecho hasta la **versión 2.9.0**, para que otro agente (Claude Code, Codex…) pueda seguir el trabajo sin repetir errores. El `README.md` describe las funciones para el usuario; este documento explica **cómo está hecho, por qué y qué falta**.
 
 ---
 
@@ -32,7 +32,7 @@ Resumen de todo lo hecho hasta la **versión 2.8.5**, para que otro agente (Clau
 - **Subir versión** en cada cambio que se entregue, en dos sitios que deben coincidir:
   - `project.yml`: `MARKETING_VERSION` y `CURRENT_PROJECT_VERSION`, **4 veces cada uno** (app, teclado, share y widget).
   - `SuperTecladoApp/Package.swift`: `displayVersion` y `bundleVersion`.
-  - Estado actual: 2.8.5 / 26 en `project.yml`, 2.8.5 / 31 en `Package.swift`.
+  - Estado actual: 2.9.0 / 27 en `project.yml`, 2.9.0 / 32 en `Package.swift`.
 - `scripts/build-unsigned-ipa.sh`:
   - firma ad hoc (`codesign -s -`) cada appex con sus entitlements y después la app;
   - **falla si falta `Assets.car` o `CFBundleIcons`** (comprobación añadida en 2.6.6).
@@ -242,8 +242,17 @@ Este archivo es la solución al **retraso al escribir**. Antes cada tecla era un
 | 2.8.3 | Sin bloqueos del hilo principal: portapapeles e historial en segundo plano, UITextChecker perezoso y nunca para la barra (antes arrancaba en el primer toque y congelaba), lo aprendido se lee en segundo plano; los bloqueos aparecen en los últimos toques |
 | 2.8.4 | Clics y vibración sin cola (se saltan en vez de acumular segundos de retraso al teclear deprisa), toques por dos caminos con deduplicación, coste de la vibración en el informe |
 | 2.8.5 | Un toque nuevo ya no se descarta por error como duplicado (iOS reutiliza objetos de dedo) ni se ignora mientras otro dedo desliza; el informe dice por qué camino llegó cada toque |
+| 2.9.0 | Ningún gesto de SwiftUI en el teclado (fallo de iOS 27): botones, barra, paneles, borrar y flechas, emojis y portapapeles con reconocedores de UIKit; `UserDefaults` compartido y carpeta del App Group creados una vez (la app iba lenta en ajustes) |
 
 ## 8. Errores ya resueltos (no repetirlos)
+
+- **iOS 27 retrasa los gestos de SwiftUI** (2.9.0). `DragGesture`, `Button`, `onTapGesture` y `onLongPressGesture` pueden recibir el primer aviso del dedo hasta ~0,75 s tarde; la tecla no se ilumina ni vibra hasta soltar.
+  - Lo documentan [KeyboardKit](https://keyboardkit.com/blog/2026/09/09/gesture-problems-in-ios-27-public-beta) y [azooKey #765](https://github.com/azooKey/azooKey/pull/765).
+  - **En el teclado no se usan gestos de SwiftUI.** Se usa `InstantTouchGesture` (`UIGestureRecognizerRepresentable` con `InstantTouchRecognizer`) y `InstantButton` en lugar de `Button`, ambos en `Views/InstantTouch.swift`.
+    - Con `startsImmediately` (teclas) el toque es suyo desde el principio.
+    - Sin él se comporta como un toque y cede si el dedo se desplaza más de 12 pt, para no romper el desplazamiento de las listas.
+  - Quedan en SwiftUI solo `Toggle`, `Slider` y el desplazamiento.
+- `SharedClipboardStore.sharedDefaults` y la carpeta del App Group se crean una vez por proceso (2.9.0). Antes se creaba una instancia de `UserDefaults` por cada `@AppStorage` en cada redibujado de la app, y se consultaba `containerURL` en cada lectura.
 
 - **Swift 6 y las respuestas del sistema:** todo cierre que iOS llame desde otra cola debe ser **`@Sendable` explícito**; si no, hereda `@MainActor` y se cierra al entrar. Esto incluye `requestSupplementaryLexicon`, `NSItemProvider.loadItem` y las colas de `DispatchQueue`.
   - Si el valor no es `Sendable`, se pasa con `nonisolated(unsafe) let` y se usa dentro de `Task { @MainActor in … }`.

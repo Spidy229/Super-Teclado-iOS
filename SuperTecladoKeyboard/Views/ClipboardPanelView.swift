@@ -200,7 +200,7 @@ struct ClipboardPanelView: View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 6) {
                 ForEach(filters, id: \.self) { item in
-                    Button { activeFilter = item } label: {
+                    InstantButton { activeFilter = item } label: {
                         HStack(spacing: 4) {
                             if let symbol = item.symbol { Image(systemName: symbol).font(.system(size: 11)) }
                             Text(item.title).font(.system(size: 13, weight: .medium))
@@ -238,20 +238,27 @@ struct ClipboardPanelView: View {
                     isSelected: engine.selectedClipIDs.contains(clip.id),
                     isRevealed: revealedIDs.contains(clip.id)
                 )
-                .onTapGesture {
-                    if engine.isEditingClips {
-                        engine.toggleClipSelection(clip)
-                    } else {
-                        engine.keyFeedback(.character)
-                        engine.useClip(clip)
-                    }
-                }
-                .onLongPressGesture(minimumDuration: 0.4) {
-                    guard !engine.isEditingClips else { return }
-                    engine.keyFeedback(.modifier)
-                    menuMode = .actions
-                    focusedClip = clip
-                }
+                // Toque y pulsación larga con un reconocedor de UIKit (en iOS 27 los de SwiftUI se
+                // retrasan); si el dedo se desplaza, deja desplazar la lista.
+                .gesture(
+                    InstantTouchGesture(
+                        longPressDuration: 0.4,
+                        onTap: {
+                            if engine.isEditingClips {
+                                engine.toggleClipSelection(clip)
+                            } else {
+                                engine.keyFeedback(.character)
+                                engine.useClip(clip)
+                            }
+                        },
+                        onLongPress: {
+                            guard !engine.isEditingClips else { return }
+                            engine.keyFeedback(.modifier)
+                            menuMode = .actions
+                            focusedClip = clip
+                        }
+                    )
+                )
             }
         }
     }
@@ -267,7 +274,7 @@ struct ClipboardPanelView: View {
                 Text("Actívalo para guardar automáticamente lo que copies.")
                     .font(.system(size: 13))
                     .foregroundStyle(palette.secondaryText)
-                Button("Activar portapapeles") { engine.setClipboardEnabled(true) }
+                InstantButton("Activar portapapeles") { engine.setClipboardEnabled(true) }
                     .font(.system(size: 14, weight: .semibold))
                     .foregroundStyle(palette.accentText)
                     .padding(.horizontal, 16)
@@ -342,7 +349,7 @@ struct ClipboardPanelView: View {
         destructive: Bool = false,
         action: @escaping () -> Void
     ) -> some View {
-        Button(action: action) {
+        InstantButton(action: action) {
             VStack(spacing: 2) {
                 Image(systemName: symbol).font(.system(size: 14, weight: .semibold))
                 Text(title).font(.system(size: 10, weight: .semibold)).lineLimit(1)
@@ -360,7 +367,7 @@ struct ClipboardPanelView: View {
     private func actionMenu(for clip: KeyboardClip) -> some View {
         ZStack(alignment: .bottom) {
             Color.black.opacity(0.35)
-                .onTapGesture { closeMenu() }
+                .gesture(InstantTouchGesture(onTap: { closeMenu() }))
             VStack(spacing: 10) {
                 menuPreview(for: clip)
                 switch menuMode {
@@ -380,7 +387,7 @@ struct ClipboardPanelView: View {
     private func menuPreview(for clip: KeyboardClip) -> some View {
         HStack(spacing: 6) {
             if menuMode != .actions {
-                Button { menuMode = .actions } label: {
+                InstantButton { menuMode = .actions } label: {
                     Image(systemName: "chevron.left").font(.system(size: 14, weight: .semibold))
                 }
                 .buttonStyle(.plain)
@@ -445,7 +452,7 @@ struct ClipboardPanelView: View {
     private func pasteAsList(for clip: KeyboardClip) -> some View {
         VStack(spacing: 6) {
             ForEach(ClipboardClassifier.Transform.allCases) { transform in
-                Button {
+                InstantButton {
                     engine.useClip(clip, transform: transform)
                     closeMenu()
                 } label: {
@@ -495,7 +502,7 @@ struct ClipboardPanelView: View {
     }
 
     private func folderRow(_ title: String, symbol: String, isCurrent: Bool, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
+        InstantButton(action: action) {
             HStack {
                 Label(title, systemImage: symbol).font(.system(size: 14, weight: .medium))
                 Spacer()
@@ -520,7 +527,7 @@ struct ClipboardPanelView: View {
         destructive: Bool = false,
         action: @escaping () -> Void
     ) -> some View {
-        Button(action: action) {
+        InstantButton(action: action) {
             VStack(spacing: 5) {
                 Image(systemName: symbol).font(.system(size: 17))
                 Text(title).font(.system(size: 11, weight: .medium)).lineLimit(1).minimumScaleFactor(0.8)
@@ -541,7 +548,7 @@ struct ClipboardPanelView: View {
                     .font(.system(size: 12, weight: .medium))
                     .foregroundStyle(palette.secondaryText)
                 Spacer()
-                Button { fullTextClip = nil } label: {
+                InstantButton { fullTextClip = nil } label: {
                     Image(systemName: "xmark.circle.fill").font(.system(size: 20))
                 }
                 .buttonStyle(.plain)
@@ -573,7 +580,7 @@ struct ClipboardPanelView: View {
     }
 
     private func fullTextButton(_ title: String, symbol: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
+        InstantButton(action: action) {
             Label(title, systemImage: symbol)
                 .font(.system(size: 14, weight: .semibold))
                 .foregroundStyle(palette.accentText)
@@ -745,7 +752,7 @@ struct ClipboardSearchResultsView: View {
                 ScrollView(.horizontal, showsIndicators: false) {
                     LazyHStack(spacing: 6) {
                         ForEach(engine.clipSearchResults) { clip in
-                            Button {
+                            InstantButton {
                                 engine.keyFeedback(.character)
                                 engine.useClip(clip)
                             } label: {

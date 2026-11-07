@@ -14,7 +14,7 @@ struct FavoritesRowView: View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 2) {
                 ForEach(Array(items.enumerated()), id: \.offset) { _, item in
-                    Button {
+                    InstantButton {
                         engine.keyFeedback(.character)
                         engine.insertFavorite(item)
                     } label: {

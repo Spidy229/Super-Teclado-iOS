@@ -20,13 +20,13 @@ struct TypingKeyboardView: View {
 
     private func oneHandedPanel(width: CGFloat, height: CGFloat) -> some View {
         VStack(spacing: 18) {
-            Button { engine.setOneHandedMode(.off) } label: {
+            InstantButton { engine.setOneHandedMode(.off) } label: {
                 Image(systemName: "arrow.up.left.and.arrow.down.right")
                     .frame(width: width, height: 44)
                     .contentShape(Rectangle())
             }
             .accessibilityLabel("Salir del modo una mano")
-            Button {
+            InstantButton {
                 engine.setOneHandedMode(engine.preferences.oneHandedMode == .right ? .left : .right)
             } label: {
                 Image(systemName: engine.preferences.oneHandedMode == .right ? "chevron.right" : "chevron.left")
