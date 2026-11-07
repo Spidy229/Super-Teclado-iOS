@@ -1,6 +1,6 @@
 # Super Teclado: contexto para agentes
 
-Resumen de todo lo hecho hasta la **versión 2.9.1**, para que otro agente (Claude Code, Codex…) pueda seguir el trabajo sin repetir errores. El `README.md` describe las funciones para el usuario; este documento explica **cómo está hecho, por qué y qué falta**.
+Resumen de todo lo hecho hasta la **versión 2.9.2**, para que otro agente (Claude Code, Codex…) pueda seguir el trabajo sin repetir errores. El `README.md` describe las funciones para el usuario; este documento explica **cómo está hecho, por qué y qué falta**.
 
 ---
 
@@ -32,7 +32,7 @@ Resumen de todo lo hecho hasta la **versión 2.9.1**, para que otro agente (Clau
 - **Subir versión** en cada cambio que se entregue, en dos sitios que deben coincidir:
   - `project.yml`: `MARKETING_VERSION` y `CURRENT_PROJECT_VERSION`, **4 veces cada uno** (app, teclado, share y widget).
   - `SuperTecladoApp/Package.swift`: `displayVersion` y `bundleVersion`.
-  - Estado actual: 2.9.1 / 28 en `project.yml`, 2.9.1 / 33 en `Package.swift`.
+  - Estado actual: 2.9.2 / 29 en `project.yml`, 2.9.2 / 34 en `Package.swift`.
 - `scripts/build-unsigned-ipa.sh`:
   - firma ad hoc (`codesign -s -`) cada appex con sus entitlements y después la app;
   - **falla si falta `Assets.car` o `CFBundleIcons`** (comprobación añadida en 2.6.6).
@@ -245,6 +245,7 @@ Este archivo es la solución al **retraso al escribir**. Antes cada tecla era un
 | 2.8.5 | Un toque nuevo ya no se descarta por error como duplicado (iOS reutiliza objetos de dedo) ni se ignora mientras otro dedo desliza; el informe dice por qué camino llegó cada toque |
 | 2.9.0 | Ningún gesto de SwiftUI en el teclado (fallo de iOS 27): botones, barra, paneles, borrar y flechas, emojis y portapapeles con reconocedores de UIKit; `UserDefaults` compartido y carpeta del App Group creados una vez (la app iba lenta en ajustes) |
 | 2.9.1 | Barra de sugerencias y avisos en UIKit (al escribir ya no se redibuja nada de SwiftUI), línea de velocidad en la barra (iOS, teclado, hilo principal y bloqueos; se quita en ⚙︎) y retraso del hilo principal en el diagnóstico |
+| 2.9.2 | Registrador de congelaciones (`MainThreadWatchdog`): un hilo aparte detecta si el principal no responde en 80 ms, lo detiene un instante, copia su pila y la pone en el informe; reconocedores de gestos sobre las teclas en el informe; el corrector de iOS se prepara en una pausa y no al pulsar espacio; vibración en la línea de velocidad |
 
 ## 8. Errores ya resueltos (no repetirlos)
 
@@ -254,6 +255,14 @@ Este archivo es la solución al **retraso al escribir**. Antes cada tecla era un
     - Con `startsImmediately` (teclas) el toque es suyo desde el principio.
     - Sin él se comporta como un toque y cede si el dedo se desplaza más de 12 pt, para no romper el desplazamiento de las listas.
   - Quedan en SwiftUI solo `Toggle`, `Slider` y el desplazamiento.
+- **Análisis de otros teclados (2.9.2).** KeyboardKit 11.1.6 se distribuye como binario con símbolos de depuración (`KeyboardKit-Binaries`). Con `llvm-nm`, `swift-demangle` y `llvm-objdump` se ve su motor de gestos:
+  - `GestureButtonTouchWrapper.TouchRecognizer`: un reconocedor por botón que pasa a `.began` en `touchesBegan`, sigue un solo dedo e ignora los demás (`ignoreTouch:forEvent:`), con `cancelsTouchesInView`, `delaysTouchesBegan` y `delaysTouchesEnded` a `false` y un delegado que permite reconocer a la vez que cualquier otro.
+  - `KeyboardViewDragGestureTracker.TrackerView`: en `didMoveToWindow` mueve su reconocedor a la **ventana**, y su `hitTest` devuelve `nil` para no tapar los botones.
+  - Vibración con `UIImpactFeedbackGenerator.impactOccurred` en el hilo principal, igual que aquí.
+  - azooKey ([#765](https://github.com/azooKey/azooKey/pull/765)) hizo lo mismo: `UIGestureRecognizerRepresentable` con el inicio inmediato (~4 ms).
+  - Conclusión: la capa de toques ya es equivalente. El teclado de Apple no es una extensión (no se puede analizar así) y la IPA de Gboard de la App Store está cifrada (FairPlay).
+  - Hay informes de que en iOS 27 **también el teclado de Apple** va lento y pierde toques, y que mejora al quitar la vibración del teclado (Ajustes › Sonidos y vibraciones › Respuesta del teclado).
+- **Registrador de congelaciones** (`MainThreadWatchdog.swift`, 2.9.2). Usa `thread_suspend`, `thread_get_state` (sabor 6, `ARM_THREAD_STATE64`, leído por desplazamientos: fp 232, lr 240, pc 256) y recorre los marcos de la pila dentro de los límites de la pila del hilo principal. Mientras el hilo está detenido no pide memoria ni candados. Los nombres salen de `dladdr`: la IPA se compila con `xcodebuild build` (sin `archive`), así que el binario conserva los símbolos locales. Los nombres de Swift salen codificados; se decodifican con `swift-demangle`.
 - `SharedClipboardStore.sharedDefaults` y la carpeta del App Group se crean una vez por proceso (2.9.0). Antes se creaba una instancia de `UserDefaults` por cada `@AppStorage` en cada redibujado de la app, y se consultaba `containerURL` en cada lectura.
 
 - **Swift 6 y las respuestas del sistema:** todo cierre que iOS llame desde otra cola debe ser **`@Sendable` explícito**; si no, hereda `@MainActor` y se cierra al entrar. Esto incluye `requestSupplementaryLexicon`, `NSItemProvider.loadItem` y las colas de `DispatchQueue`.

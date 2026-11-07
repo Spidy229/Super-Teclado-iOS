@@ -147,6 +147,8 @@ final class SuggestionEngine {
     private lazy var checker = UITextChecker()
     private var languageCode = "es_ES"
     private var resolvedLanguage: String?
+    /// Si el corrector ya cargó el idioma actual.
+    private var checkerWarm = false
     private var language: String {
         if let resolvedLanguage { return resolvedLanguage }
         let resolved = Self.checkerLanguage(for: languageCode)
@@ -178,8 +180,17 @@ final class SuggestionEngine {
     /// Idioma del corrector de iOS (UITextChecker) más parecido al pedido.
     func setLanguage(_ code: String) {
         invalidateCache()
+        if code != languageCode { checkerWarm = false }
         languageCode = code
         resolvedLanguage = nil
+    }
+
+    /// Hace una consulta de prueba al corrector para que cargue el idioma ahora (en una pausa)
+    /// y no la primera vez que se autocorrige al pulsar espacio.
+    func warmUpChecker() {
+        guard !checkerWarm, dictionary != nil else { return }
+        checkerWarm = true
+        _ = isValidSpelling("hola")
     }
 
     private static func checkerLanguage(for code: String) -> String {

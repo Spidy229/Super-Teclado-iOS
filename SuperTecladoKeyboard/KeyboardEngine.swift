@@ -916,6 +916,17 @@ final class KeyboardEngine: ObservableObject {
         if !diagnostics.recent.isEmpty {
             lines.append("Últimos toques: " + diagnostics.recent.joined(separator: " | "))
         }
+        let freezes = MainThreadWatchdog.shared.freezes
+        if freezes.isEmpty {
+            lines.append("Congelaciones con pila: ninguna")
+        }
+        for freeze in freezes {
+            lines.append(String(format: "Congelado %.0f ms a los %.1f s. Pila:", freeze.milliseconds, freeze.secondsSinceStart))
+            lines.append(contentsOf: freeze.frames.prefix(24).enumerated().map { "  \($0.offset) \($0.element)" })
+        }
+        if let recognizers = controller?.gestureRecognizerReport() {
+            lines.append("Gestos sobre las teclas: " + (recognizers.isEmpty ? "ninguno" : recognizers.joined(separator: " | ")))
+        }
         return lines.joined(separator: "\n")
     }
 
@@ -925,6 +936,13 @@ final class KeyboardEngine: ObservableObject {
         UIPasteboard.general.string = diagnosticsReport()
         ownPasteboardChangeCount = UIPasteboard.general.changeCount
         showToast("Informe copiado: pégalo en tu mensaje")
+    }
+
+    /// Prepara el corrector de iOS en una pausa al escribir: su primera consulta carga el idioma y
+    /// puede congelar el teclado medio segundo si se hace al pulsar espacio.
+    func warmUpSpellChecker() {
+        guard preferences.autocorrect, !safeMode else { return }
+        suggestionEngine.warmUpChecker()
     }
 
     /// Deja el motor de vibración listo antes del primer toque.

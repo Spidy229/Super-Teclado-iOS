@@ -99,6 +99,17 @@ final class KeyboardViewController: UIInputViewController {
         super.viewDidAppear(animated)
         engine.prepareFeedback()
         startFrameMonitor()
+        // Si el teclado se congela, apunta qué función lo tenía ocupado.
+        let engine = self.engine
+        MainThreadWatchdog.shared.start { freeze in
+            Task { @MainActor in
+                engine.touchDiagnostics.log(String(
+                    format: "CONGELADO %.0f ms en %@",
+                    freeze.milliseconds,
+                    MainThreadWatchdog.culprit(of: freeze)
+                ))
+            }
+        }
         // iOS puede dar el valor definitivo de «acceso total» cuando el teclado ya está visible.
         if engine.hasFullAccess != hasFullAccess { engine.hasFullAccess = hasFullAccess }
         if engine.needsInputModeSwitchKey != needsInputModeSwitchKey {
@@ -129,6 +140,7 @@ final class KeyboardViewController: UIInputViewController {
         super.viewWillDisappear(animated)
         stallTimer?.invalidate()
         stallTimer = nil
+        MainThreadWatchdog.shared.stop()
         grid.suspend()
         clipboardTimer?.invalidate()
         clipboardTimer = nil
@@ -250,6 +262,35 @@ final class KeyboardViewController: UIInputViewController {
         // proceso): lo copiado se recoge en cuanto se deja de teclear o al abrir el panel.
         guard ProcessInfo.processInfo.systemUptime - engine.lastKeyTouch > 1.5 else { return }
         checkPasteboard()
+        // En una pausa, no al pulsar espacio: la primera consulta al corrector de iOS es lenta.
+        engine.warmUpSpellChecker()
+    }
+
+    /// Reconocedores de gestos que ven los toques de las teclas (los del sistema incluidos),
+    /// para el informe: si iOS añade alguno que retrasa o cancela toques, aparece aquí.
+    func gestureRecognizerReport() -> [String] {
+        func describe(_ recognizer: UIGestureRecognizer, on owner: String) -> String {
+            var flags: [String] = []
+            if recognizer.delaysTouchesBegan { flags.append("retrasa inicio") }
+            if recognizer.delaysTouchesEnded { flags.append("retrasa fin") }
+            if recognizer.cancelsTouchesInView { flags.append("cancela") }
+            if !recognizer.isEnabled { flags.append("desactivado") }
+            return "\(owner): \(type(of: recognizer))" + (flags.isEmpty ? "" : " (\(flags.joined(separator: ", ")))")
+        }
+        var lines: [String] = []
+        var current: UIView? = grid
+        while let candidate = current {
+            for recognizer in candidate.gestureRecognizers ?? [] {
+                lines.append(describe(recognizer, on: "\(type(of: candidate))"))
+            }
+            current = candidate.superview
+        }
+        if let window = view.window {
+            for recognizer in window.gestureRecognizers ?? [] {
+                lines.append(describe(recognizer, on: "ventana \(type(of: window))"))
+            }
+        }
+        return lines
     }
 
     /// Memoria que le queda al teclado antes de que iOS lo cierre.

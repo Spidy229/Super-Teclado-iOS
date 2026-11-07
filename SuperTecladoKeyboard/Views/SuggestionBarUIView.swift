@@ -213,7 +213,7 @@ final class SuggestionBarUIView: UIView {
             let average = samples.reduce(0, +) / Double(samples.count)
             return String(format: "%.0f/%.0f", average, samples.max() ?? 0)
         }
-        speedLabel.text = "iOS \(pair(diagnostics.delivery)) · teclado \(pair(diagnostics.handling)) · hilo \(pair(diagnostics.lateness)) ms · bloqueos \(diagnostics.stalls)"
+        speedLabel.text = "iOS \(pair(diagnostics.delivery)) · tecl \(pair(diagnostics.handling)) · hilo \(pair(diagnostics.lateness)) · vib \(pair(diagnostics.feedback)) ms · bloq \(diagnostics.stalls)"
         speedLabel.isHidden = false
     }
 
