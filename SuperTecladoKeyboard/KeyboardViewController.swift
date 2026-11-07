@@ -10,6 +10,10 @@ final class KeyboardViewController: UIInputViewController {
     /// de la vista SwiftUI (barra, paneles). Un toque en una tecla no pasa nunca por SwiftUI.
     private let backgroundView = KeyboardBackgroundView()
     private lazy var grid = KeyGridUIView(engine: engine)
+    /// La barra de sugerencias y los avisos también van en UIKit: al escribir no se redibuja
+    /// nada de SwiftUI.
+    private lazy var suggestionBar = SuggestionBarUIView(engine: engine)
+    private let toastView = KeyboardToastView()
     private var engineObserver: AnyCancellable?
     private var gridSyncScheduled = false
     /// Mide si el hilo principal se queda atascado (para el diagnóstico de toques). Es un
@@ -277,8 +281,12 @@ final class KeyboardViewController: UIInputViewController {
         controller.didMove(toParent: self)
         host = controller
 
-        // Las teclas, encima de SwiftUI. Se colocan donde SwiftUI deja el hueco del teclado.
+        // La barra y las teclas, encima de SwiftUI, en el hueco que SwiftUI deja para ellas; los
+        // avisos, encima de todo.
+        view.addSubview(suggestionBar)
         view.addSubview(grid)
+        toastView.onAction = { [weak self] in self?.engine.performToastAction() }
+        view.addSubview(toastView)
         engineObserver = engine.objectWillChange.sink { [weak self] _ in
             self?.scheduleGridSync()
         }
@@ -311,6 +319,7 @@ final class KeyboardViewController: UIInputViewController {
             dim: preferences.backgroundDim
         )
         let panel = engine.panel
+        syncBarAndToast(panel: panel, palette: palette)
         guard panel == .typing || panel == .emojiSearch || panel == .clipboardSearch else {
             if !grid.isHidden {
                 grid.suspend()
@@ -322,6 +331,31 @@ final class KeyboardViewController: UIInputViewController {
         if grid.frame != frame { grid.frame = frame }
         grid.isHidden = false
         grid.apply(KeyGridConfiguration(engine: engine), palette: palette)
+    }
+
+    private func syncBarAndToast(panel: KeyboardPanel, palette: KeyboardPalette) {
+        let insets = view.safeAreaInsets
+        let width = max(0, view.bounds.width - insets.left - insets.right)
+        if panel == .typing {
+            let frame = CGRect(x: insets.left, y: insets.top, width: width, height: engine.metrics.stripHeight)
+            if suggestionBar.frame != frame { suggestionBar.frame = frame }
+            suggestionBar.isHidden = false
+            suggestionBar.apply(palette: palette)
+        } else if !suggestionBar.isHidden {
+            suggestionBar.isHidden = true
+        }
+
+        toastView.show(message: engine.toast, actionTitle: engine.toastActionTitle, palette: palette)
+        if toastView.isShowing {
+            let size = toastView.sizeThatFits(CGSize(width: max(0, width - 32), height: .greatestFiniteMagnitude))
+            let frame = CGRect(x: insets.left + (width - size.width) / 2, y: insets.top + 4, width: size.width, height: size.height)
+            if toastView.bounds.size != frame.size || toastView.center != CGPoint(x: frame.midX, y: frame.midY) {
+                // Con la transformación de la animación de entrada, `frame` no se puede asignar.
+                toastView.bounds = CGRect(origin: .zero, size: frame.size)
+                toastView.center = CGPoint(x: frame.midX, y: frame.midY)
+            }
+            view.bringSubviewToFront(toastView)
+        }
     }
 
     /// El mismo hueco que deja `KeyboardRootView`: barra arriba, fila de favoritos si se ve,

@@ -26,8 +26,8 @@ struct KeyboardRootView: View {
                 .zIndex(1)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        // El fondo lo dibuja `KeyboardBackgroundView` (UIKit) debajo de esta vista.
-        .overlay(alignment: .top) { toast(palette: palette) }
+        // El fondo lo dibuja `KeyboardBackgroundView` (UIKit) debajo de esta vista; la barra de
+        // sugerencias, las teclas y los avisos, `KeyboardViewController` (UIKit) encima.
         .environment(\.keyboardPalette, palette)
         .environment(\.colorScheme, engine.isDark ? .dark : .light)
         .environmentObject(engine)
@@ -37,7 +37,7 @@ struct KeyboardRootView: View {
     @ViewBuilder
     private var topStrip: some View {
         switch engine.panel {
-        case .typing: SuggestionStripView(bar: engine.bar)
+        case .typing: Color.clear
         case .clipboard: ClipboardHeaderView()
         case .emoji: EmojiHeaderView()
         case .emojiSearch: EmojiSearchBarView()
@@ -63,33 +63,6 @@ struct KeyboardRootView: View {
         case .editing: TextEditingPanelView()
         case .themes: ThemePickerPanelView()
         case .settings: KeyboardSettingsPanelView()
-        }
-    }
-
-    @ViewBuilder
-    private func toast(palette: KeyboardPalette) -> some View {
-        if let message = engine.toast {
-            HStack(spacing: 12) {
-                Text(message)
-                    .multilineTextAlignment(.center)
-                if let actionTitle = engine.toastActionTitle {
-                    InstantButton(actionTitle) { engine.performToastAction() }
-                        .font(.system(size: 13, weight: .bold))
-                        .underline()
-                        .buttonStyle(.plain)
-                }
-            }
-            .font(.system(size: 13, weight: .semibold))
-            .foregroundStyle(palette.accentText)
-            .padding(.horizontal, 14)
-            .padding(.vertical, 8)
-            .background(palette.accent, in: Capsule())
-            .shadow(color: .black.opacity(0.25), radius: 6, y: 2)
-            // Sobre la barra superior: las teclas van encima de SwiftUI y lo taparían.
-            .padding(.top, 4)
-            .padding(.horizontal, 16)
-            .transition(.opacity.combined(with: .move(edge: .top)))
-            .allowsHitTesting(engine.toastActionTitle != nil)
         }
     }
 }

@@ -1,6 +1,6 @@
 # Super Teclado: contexto para agentes
 
-Resumen de todo lo hecho hasta la **versión 2.9.0**, para que otro agente (Claude Code, Codex…) pueda seguir el trabajo sin repetir errores. El `README.md` describe las funciones para el usuario; este documento explica **cómo está hecho, por qué y qué falta**.
+Resumen de todo lo hecho hasta la **versión 2.9.1**, para que otro agente (Claude Code, Codex…) pueda seguir el trabajo sin repetir errores. El `README.md` describe las funciones para el usuario; este documento explica **cómo está hecho, por qué y qué falta**.
 
 ---
 
@@ -32,7 +32,7 @@ Resumen de todo lo hecho hasta la **versión 2.9.0**, para que otro agente (Clau
 - **Subir versión** en cada cambio que se entregue, en dos sitios que deben coincidir:
   - `project.yml`: `MARKETING_VERSION` y `CURRENT_PROJECT_VERSION`, **4 veces cada uno** (app, teclado, share y widget).
   - `SuperTecladoApp/Package.swift`: `displayVersion` y `bundleVersion`.
-  - Estado actual: 2.9.0 / 27 en `project.yml`, 2.9.0 / 32 en `Package.swift`.
+  - Estado actual: 2.9.1 / 28 en `project.yml`, 2.9.1 / 33 en `Package.swift`.
 - `scripts/build-unsigned-ipa.sh`:
   - firma ad hoc (`codesign -s -`) cada appex con sus entitlements y después la app;
   - **falla si falta `Assets.car` o `CFBundleIcons`** (comprobación añadida en 2.6.6).
@@ -88,7 +88,7 @@ Resumen de todo lo hecho hasta la **versión 2.9.0**, para que otro agente (Clau
 
 ### Estado y lógica: `KeyboardEngine.swift` (`@MainActor ObservableObject`)
 - Guarda panel, página, mayúsculas, preferencias, métricas, portapapeles, emojis, avisos y glide.
-- **Lo que cambia con cada pulsación va aparte**, en `SuggestionBarState` (`engine.bar`): `suggestions`, `showsToolbar` y `quickPaste`. Solo lo observa `SuggestionStripView`, así que escribir no redibuja el teclado entero.
+- **Lo que cambia con cada pulsación va aparte**, en `SuggestionBarState` (`engine.bar`): `suggestions`, `showsToolbar` y `quickPaste`. Solo lo observa `SuggestionBarUIView` (UIKit desde 2.9.1), así que escribir no redibuja nada de SwiftUI.
   - `engine.suggestions`, `showsToolbar` y `quickPaste` son propiedades calculadas que reenvían a `bar`.
 - `insertCharacter`, `insertSpace`, `commitWord` (autocorrección con deshacer al borrar), `deleteBackward`, `selectSuggestion`, glide (`beginGlide`, `extendGlide`, `endGlide`, `cancelGlide`), cursor y emojis.
 - `keyFeedback(kind)` (desde 2.8.4 sin acumular retraso: vibración como mucho cada 40 ms y clic saltado si el anterior aún suena, porque antes los clics hacían cola y sonaban segundos tarde; el coste de cada vibración se mide en el diagnóstico):
@@ -174,9 +174,10 @@ Este archivo es la solución al **retraso al escribir**. Antes cada tecla era un
 - Mide unos 1,7 ms por palabra con `-O` en Linux, fuera del hilo principal.
 
 ### Otras vistas del teclado
-- `KeyboardRootView`: franja superior según el panel, fila de favoritos, panel, fondo (tema, degradado o foto) y aviso flotante.
-- `SuggestionStripView`: sugerencias, pegado rápido y herramientas (emoji, portapapeles, edición, una mano, temas y ⚙︎ ajustes).
-- `KeyFeedbackButtonStyle` (`KeyboardTheme.swift`) **vibra al tocar** (no al soltar) y atenúa el botón. Lo usan las sugerencias, el pegado rápido, `StripButton` y `PanelBackButton` (2.6.7).
+- `KeyboardRootView`: franja superior de los demás paneles (en el de escribir deja un hueco), fila de favoritos y panel.
+- `SuggestionBarUIView` (UIKit, 2.9.1; antes `SuggestionStripView` en SwiftUI): sugerencias, pegado rápido, herramientas (emoji, portapapeles, edición, una mano, temas y ⚙︎ ajustes), palabra al deslizar y una línea opcional de velocidad (`showSpeed`). La coloca `KeyboardViewController.syncBarAndToast` encima de SwiftUI solo en el panel de escribir.
+- `KeyboardToastView` (UIKit, 2.9.1, en el mismo archivo): el aviso flotante, encima de todo; solo recibe toques si tiene acción («Deshacer»).
+- `InstantButton(feedback:)` (`Views/InstantTouch.swift`) **vibra al tocar** (no al soltar) y atenúa el botón; lo usan `StripButton` y `PanelBackButton` de los demás paneles. En la barra de escribir lo hacen `BarIconButton`, `BarTextButton` y `QuickPasteChip` (UIKit). `KeyFeedbackButtonStyle` ya no existe (2.9.0).
 - Paneles:
   - `ClipboardPanelView`: Recientes y Fijados, carpetas, búsqueda, selección múltiple, deshacer al borrar e imágenes;
   - `EmojiPanelView`: categorías, recientes, búsqueda y tonos de piel;
@@ -243,6 +244,7 @@ Este archivo es la solución al **retraso al escribir**. Antes cada tecla era un
 | 2.8.4 | Clics y vibración sin cola (se saltan en vez de acumular segundos de retraso al teclear deprisa), toques por dos caminos con deduplicación, coste de la vibración en el informe |
 | 2.8.5 | Un toque nuevo ya no se descarta por error como duplicado (iOS reutiliza objetos de dedo) ni se ignora mientras otro dedo desliza; el informe dice por qué camino llegó cada toque |
 | 2.9.0 | Ningún gesto de SwiftUI en el teclado (fallo de iOS 27): botones, barra, paneles, borrar y flechas, emojis y portapapeles con reconocedores de UIKit; `UserDefaults` compartido y carpeta del App Group creados una vez (la app iba lenta en ajustes) |
+| 2.9.1 | Barra de sugerencias y avisos en UIKit (al escribir ya no se redibuja nada de SwiftUI), línea de velocidad en la barra (iOS, teclado, hilo principal y bloqueos; se quita en ⚙︎) y retraso del hilo principal en el diagnóstico |
 
 ## 8. Errores ya resueltos (no repetirlos)
 

@@ -46,6 +46,8 @@ struct TouchDiagnostics {
     /// Veces que el teclado estuvo bloqueado más de 100 ms, y el bloqueo más largo.
     private(set) var stalls = 0
     private(set) var longestStall: Double = 0
+    /// Retraso de cada aviso del temporizador de control (cada 0,1 s), en milisegundos.
+    private(set) var lateness: [Double] = []
 
     mutating func log(_ entry: String) {
         recent.insert(entry, at: 0)
@@ -68,6 +70,7 @@ struct TouchDiagnostics {
     /// bloqueado ese tiempo.
     mutating func recordMainThreadDelay(_ seconds: Double) {
         let milliseconds = seconds * 1000
+        Self.append(max(0, milliseconds), to: &lateness)
         guard milliseconds > 0 else { return }
         if milliseconds > 100 { stalls += 1 }
         longestStall = max(longestStall, milliseconds)
@@ -900,6 +903,7 @@ final class KeyboardEngine: ObservableObject {
             "Retraso de iOS al entregar el toque: \(TouchDiagnostics.summary(diagnostics.delivery))",
             "Tiempo del teclado por toque: \(TouchDiagnostics.summary(diagnostics.handling))",
             String(format: "Bloqueos de más de 100 ms: %d (el mayor %.0f ms)", diagnostics.stalls, diagnostics.longestStall),
+            "Retraso del hilo principal: \(TouchDiagnostics.summary(diagnostics.lateness))",
             "Vibración (lo que tarda iOS en aceptarla): \(TouchDiagnostics.summary(diagnostics.feedback)) · saltadas \(diagnostics.skippedHaptics) · clics saltados \(diagnostics.skippedSounds)",
             String(format: "Memoria libre: %.0f MB", memory),
             "Toques \(diagnostics.touches) (por reconocedor \(diagnostics.viaRecognizer), por la vista \(diagnostics.viaView)) · escritos \(diagnostics.typed) · con otro dedo \(diagnostics.rollovers)",

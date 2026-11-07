@@ -98,6 +98,7 @@ final class ThemeAndHapticsTests: XCTestCase {
         var preferences = KeyboardPreferences.load(from: defaults)
         XCTAssertTrue(preferences.smartTouch)
         XCTAssertTrue(preferences.spaceAfterSuggestion)
+        XCTAssertTrue(preferences.showSpeed)
         XCTAssertEqual(preferences.longPressDelay, 400)
 
         // El antiguo «Normal» (330 ms) pasa al nuevo; un valor elegido se respeta.
@@ -107,8 +108,10 @@ final class ThemeAndHapticsTests: XCTestCase {
         XCTAssertEqual(KeyboardPreferences.load(from: defaults).longPressDelay, 550)
 
         preferences.smartTouch = false
+        preferences.showSpeed = false
         preferences.save(to: defaults)
         XCTAssertFalse(KeyboardPreferences.load(from: defaults).smartTouch)
+        XCTAssertFalse(KeyboardPreferences.load(from: defaults).showSpeed)
     }
 
     func testCustomThemeIsIncludedInThemeList() {

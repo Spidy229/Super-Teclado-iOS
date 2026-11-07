@@ -185,10 +185,14 @@ struct KeyboardSettingsPanelView: View {
 
     private var diagnosticsSection: some View {
         section("Diagnóstico de toques") {
+            toggleRow("Mostrar velocidad en la barra", isOn: engine.preferences.showSpeed) { value in
+                engine.updatePreferences { $0.showSpeed = value }
+            }
             VStack(alignment: .leading, spacing: 4) {
                 timingRow("Retraso de iOS al entregar el toque", TouchDiagnostics.summary(diagnostics.delivery))
                 timingRow("Tiempo del teclado por toque", TouchDiagnostics.summary(diagnostics.handling))
                 timingRow("Vibración (lo que tarda iOS en aceptarla)", TouchDiagnostics.summary(diagnostics.feedback))
+                timingRow("Retraso del hilo principal", TouchDiagnostics.summary(diagnostics.lateness))
                 timingRow(
                     "Bloqueos de más de 100 ms",
                     diagnostics.stalls == 0 ? "0" : String(format: "%d · el mayor %.0f ms", diagnostics.stalls, diagnostics.longestStall)
