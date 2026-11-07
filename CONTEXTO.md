@@ -1,6 +1,6 @@
 # Super Teclado: contexto para agentes
 
-Resumen de todo lo hecho hasta la **versión 2.8.4**, para que otro agente (Claude Code, Codex…) pueda seguir el trabajo sin repetir errores. El `README.md` describe las funciones para el usuario; este documento explica **cómo está hecho, por qué y qué falta**.
+Resumen de todo lo hecho hasta la **versión 2.8.5**, para que otro agente (Claude Code, Codex…) pueda seguir el trabajo sin repetir errores. El `README.md` describe las funciones para el usuario; este documento explica **cómo está hecho, por qué y qué falta**.
 
 ---
 
@@ -32,7 +32,7 @@ Resumen de todo lo hecho hasta la **versión 2.8.4**, para que otro agente (Clau
 - **Subir versión** en cada cambio que se entregue, en dos sitios que deben coincidir:
   - `project.yml`: `MARKETING_VERSION` y `CURRENT_PROJECT_VERSION`, **4 veces cada uno** (app, teclado, share y widget).
   - `SuperTecladoApp/Package.swift`: `displayVersion` y `bundleVersion`.
-  - Estado actual: 2.8.4 / 25 en `project.yml`, 2.8.4 / 30 en `Package.swift`.
+  - Estado actual: 2.8.5 / 26 en `project.yml`, 2.8.5 / 31 en `Package.swift`.
 - `scripts/build-unsigned-ipa.sh`:
   - firma ad hoc (`codesign -s -`) cada appex con sus entitlements y después la app;
   - **falla si falta `Assets.car` o `CFBundleIcons`** (comprobación añadida en 2.6.6).
@@ -110,7 +110,8 @@ Este archivo es la solución al **retraso al escribir**. Antes cada tecla era un
 - **Una sola vista recibe todos los dedos**, a través de `KeyTouchRecognizer` (2.7.1).
   - Es un `UIGestureRecognizer` que nunca reconoce nada (`canBePrevented` y `canPrevent` devuelven `false`, `cancelsTouchesInView = false`).
   - iOS entrega los toques a los reconocedores al instante; a las vistas puede retrasarlos (bordes de la pantalla, otros gestos).
-  - Desde 2.8.4 la vista también atiende los toques: cada dedo llega por los dos caminos, se atiende el primer aviso y el otro se descarta (`isAlreadyHandled`, `finishedTouches` con referencias débiles, `lastMoveTimestamp`). Si un camino falla, no se pierde ningún toque.
+  - Desde 2.8.4 la vista también atiende los toques: cada dedo llega por los dos caminos, se atiende el primer aviso y el otro se descarta (`isDuplicateBegin`, `downTimestamp`, `lastMoveTimestamp`).
+    - En 2.8.5 se quitó la lista de dedos terminados de 2.8.4: iOS puede reutilizar el mismo objeto `UITouch` para un toque nuevo y ese toque se descartaba (sin luz ni vibración). Un aviso es duplicado solo si el dedo ya está en `states` con el mismo `touch.timestamp` de inicio, si ya no está en `.began` o si ya terminó. Si un camino falla, no se pierde ningún toque.
   - `fingersReset()` cierra los dedos que quedaran al terminar la secuencia. La tecla tocada es la más cercana de su fila, así que los huecos cuentan para la tecla de al lado.
   - Al tocar: resalta la tecla y la ventana emergente, vibra/suena y programa la pulsación larga.
   - Al levantar: escribe.
@@ -132,7 +133,7 @@ Este archivo es la solución al **retraso al escribir**. Antes cada tecla era un
   - `KeyGridGeometry` reparte las alturas (la fila de números ocupa 0,78 de una fila normal).
 - **Reglas para no perder toques al teclear deprisa** (2.6.9):
   - el glide solo empieza si el dedo sale de su tecla y recorre más de `max(26, 0,8 × ancho)`, o `1,3 × ancho` si hubo otra letra hace menos de 0,3 s;
-  - si toca un segundo dedo con un trazo todavía corto (< 2,5 teclas), el trazo se convierte en pulsación de la tecla inicial;
+  - si toca un segundo dedo con un trazo todavía corto (< 2,5 teclas), el trazo se convierte en pulsación de la tecla inicial; si el trazo es largo, se termina en ese momento. Desde 2.8.5 un dedo nuevo nunca se ignora;
   - un trazo corto sin palabra reconocida también cuenta como pulsación;
   - el cursor de la barra espaciadora solo se mueve con un deslizamiento claro (> 28 pt, sobre todo horizontal y tras 80 ms); igual con borrar palabras (> 32 pt);
   - sin glide, deslizar solo cambia de letra si el dedo entra bien en otra tecla (20 % hacia dentro);
@@ -240,6 +241,7 @@ Este archivo es la solución al **retraso al escribir**. Antes cada tecla era un
 | 2.8.2 | 120 Hz en el teclado (`CADisableMinimumFrameDurationOnPhone`), la tecla y su ventana se envían a la pantalla (`CATransaction.flush()`) antes de vibrar y sonar, tecla resaltada también con ventana emergente, informe de velocidad copiable |
 | 2.8.3 | Sin bloqueos del hilo principal: portapapeles e historial en segundo plano, UITextChecker perezoso y nunca para la barra (antes arrancaba en el primer toque y congelaba), lo aprendido se lee en segundo plano; los bloqueos aparecen en los últimos toques |
 | 2.8.4 | Clics y vibración sin cola (se saltan en vez de acumular segundos de retraso al teclear deprisa), toques por dos caminos con deduplicación, coste de la vibración en el informe |
+| 2.8.5 | Un toque nuevo ya no se descarta por error como duplicado (iOS reutiliza objetos de dedo) ni se ignora mientras otro dedo desliza; el informe dice por qué camino llegó cada toque |
 
 ## 8. Errores ya resueltos (no repetirlos)
 

@@ -80,6 +80,8 @@ private final class TouchState {
     var lastMoveTimestamp: TimeInterval = 0
     /// El dedo de iOS, para saber si sigue en la pantalla.
     weak var touch: UITouch?
+    /// Momento del toque según iOS: el mismo dedo llega con el mismo valor por los dos caminos.
+    var downTimestamp: TimeInterval = 0
     var phase: Phase = .pressed
     var selectedAlternate = 0
     var alternatesStart: CGFloat = 0
@@ -175,12 +177,6 @@ final class KeyGridUIView: UIView {
     /// Vibración y sonido de los dedos que acaban de tocar: se reproducen después de mandar a la
     /// pantalla la tecla resaltada, para que lo que se ve no espere a nada.
     private var pendingFeedback: [KeyFeedbackKind] = []
-    /// Dedos ya terminados (referencia débil): si su inicio llega tarde por el otro camino, no se
-    /// vuelve a escribir la tecla.
-    private struct FinishedTouch {
-        weak var touch: UITouch?
-    }
-    private var finishedTouches: [FinishedTouch] = []
     /// Capa propia para las ventanas emergentes, encima de todo el teclado. Se crea una vez:
     /// así mostrar una ventana no obliga a recolocar el resto del teclado en cada toque.
     private var popupContainer: UIView?
@@ -276,7 +272,7 @@ final class KeyGridUIView: UIView {
     // vista. Se atiende el primero que llegue y el otro se descarta; así ningún toque se pierde
     // aunque uno de los dos caminos falle o se retrase.
     override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
-        fingersBegan(touches, event: event)
+        fingersBegan(touches, event: event, viaView: true)
     }
 
     override func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent?) {
@@ -291,14 +287,18 @@ final class KeyGridUIView: UIView {
         fingersCancelled(touches, event: event)
     }
 
-    private func isAlreadyHandled(_ touch: UITouch) -> Bool {
-        states[ObjectIdentifier(touch)] != nil || finishedTouches.contains { $0.touch === touch }
-    }
-
-    private func rememberFinished(_ touch: UITouch) {
-        finishedTouches.removeAll { $0.touch == nil }
-        finishedTouches.append(FinishedTouch(touch: touch))
-        if finishedTouches.count > 32 { finishedTouches.removeFirst(finishedTouches.count - 32) }
+    /// ¿Es el segundo aviso de un dedo que ya se está atendiendo? Solo se descarta si es
+    /// seguro: iOS puede reutilizar el mismo objeto de dedo para un toque nuevo, y descartar ese
+    /// toque dejaba la tecla sin iluminar ni vibrar.
+    private func isDuplicateBegin(_ touch: UITouch) -> Bool {
+        // Aviso tardío de un dedo que ya se levantó.
+        if touch.phase == .ended || touch.phase == .cancelled { return true }
+        guard let state = states[ObjectIdentifier(touch)] else { return false }
+        // El mismo dedo por el otro camino: mismo momento de inicio, o ya se está moviendo.
+        if touch.phase != .began || state.downTimestamp == touch.timestamp { return true }
+        // Mismo objeto, toque nuevo: el anterior terminó sin aviso y se cierra.
+        dropTouchesThatEnded(liveIDs: Set(states.keys).subtracting([ObjectIdentifier(touch)]))
+        return false
     }
 
     private func rebuildKeys() {
@@ -512,10 +512,15 @@ final class KeyGridUIView: UIView {
         return best
     }
 
-    fileprivate func fingersBegan(_ incoming: Set<UITouch>, event: UIEvent?) {
+    fileprivate func fingersBegan(_ incoming: Set<UITouch>, event: UIEvent?, viaView: Bool = false) {
         // Solo los dedos que no se han atendido ya por el otro camino.
-        let fresh = incoming.filter { !isAlreadyHandled($0) }
+        let fresh = incoming.filter { !isDuplicateBegin($0) }
         guard !fresh.isEmpty else { return }
+        if viaView {
+            engine.touchDiagnostics.viaView += fresh.count
+        } else {
+            engine.touchDiagnostics.viaRecognizer += fresh.count
+        }
         let started = CACurrentMediaTime()
         // Cuánto tardó iOS en entregar el toque y cuánto se tarda en atenderlo (diagnóstico).
         for touch in fresh { engine.touchDiagnostics.recordDelivery(started - touch.timestamp) }
@@ -626,31 +631,31 @@ final class KeyGridUIView: UIView {
     private func begin(_ touch: UITouch, event: UIEvent?) {
         let id = ObjectIdentifier(touch)
         let point = touch.location(in: self)
-        guard let nearest = keyIndex(at: point) else { return }
+        guard let nearest = keyIndex(at: point) else {
+            engine.touchDiagnostics.log("toque fuera de las teclas")
+            return
+        }
         let now = CACurrentMediaTime()
         let gap = lastTouchDown > 0 ? Int(((now - lastTouchDown) * 1000).rounded()) : 0
         lastTouchDown = now
         engine.touchDiagnostics.touches += 1
 
         if let gliding = states.values.first(where: { $0.phase == .gliding }) {
-            guard gliding.glideLength < glideTarget.keyWidth * 2.5 else {
-                // Un trazo largo de verdad: otro dedo que roce no lo estropea.
-                let key = keys[nearest]
-                let ignored = TouchState(keyID: key.id, spec: key.spec, frame: key.frame, start: point, beganAt: now)
-                ignored.phase = .ignored
-                states[id] = ignored
-                touchOrder.append(id)
-                engine.touchDiagnostics.ignored += 1
-                engine.touchDiagnostics.log("ignorado (deslizando)")
-                return
-            }
-            // Otro dedo al poco de empezar a «deslizar»: se estaba tecleando deprisa y el dedo
-            // anterior solo resbaló. Cuenta como pulsación de su tecla y se sigue normal.
-            engine.cancelGlide()
-            fadeTrail()
+            // Un dedo nuevo nunca se ignora: el trazo del otro dedo termina aquí.
             gliding.phase = .committed
-            engine.touchDiagnostics.glidesAsTaps += 1
-            commit(gliding, note: "deslizar→toque")
+            fadeTrail()
+            if gliding.glideLength < glideTarget.keyWidth * 2.5 {
+                // Al poco de empezar a «deslizar»: se estaba tecleando deprisa y el dedo anterior
+                // solo resbaló. Cuenta como pulsación de su tecla.
+                engine.cancelGlide()
+                engine.touchDiagnostics.glidesAsTaps += 1
+                commit(gliding, note: "deslizar→toque")
+            } else if !engine.endGlide() {
+                engine.touchDiagnostics.glidesAsTaps += 1
+                commit(gliding, note: "deslizar→toque")
+            } else {
+                engine.touchDiagnostics.log("palabra deslizada (otro dedo)")
+            }
             refreshKey(gliding.keyID)
         }
         // Como en Gboard y el teclado de Apple: si toca otro dedo antes de levantar el anterior,
@@ -663,6 +668,7 @@ final class KeyGridUIView: UIView {
         let state = TouchState(keyID: key.id, spec: key.spec, frame: key.frame, start: point, beganAt: now)
         state.gap = gap
         state.touch = touch
+        state.downTimestamp = touch.timestamp
         states[id] = state
         touchOrder.append(id)
         if index != nearest, let from = keys[nearest].letter, let to = key.letter {
@@ -885,7 +891,6 @@ final class KeyGridUIView: UIView {
     private func end(_ touch: UITouch, event: UIEvent?, cancelled: Bool) {
         let id = ObjectIdentifier(touch)
         guard let state = states.removeValue(forKey: id) else { return }
-        rememberFinished(touch)
         touchOrder.removeAll { $0 == id }
         state.timer?.cancel()
         state.timer = nil
