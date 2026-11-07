@@ -35,6 +35,11 @@ struct TouchDiagnostics {
     private(set) var delivery: [Double] = []
     /// Milisegundos que tarda el teclado en atender cada toque.
     private(set) var handling: [Double] = []
+    /// Milisegundos que tarda iOS en aceptar cada vibración.
+    private(set) var feedback: [Double] = []
+    /// Vibraciones y clics que se saltaron para no acumular retraso al teclear deprisa.
+    var skippedHaptics = 0
+    var skippedSounds = 0
     /// Veces que el teclado estuvo bloqueado más de 100 ms, y el bloqueo más largo.
     private(set) var stalls = 0
     private(set) var longestStall: Double = 0
@@ -50,6 +55,10 @@ struct TouchDiagnostics {
 
     mutating func recordHandling(_ seconds: Double) {
         Self.append(seconds * 1000, to: &handling)
+    }
+
+    mutating func recordFeedback(_ seconds: Double) {
+        Self.append(seconds * 1000, to: &feedback)
     }
 
     /// Retraso con que llega el temporizador de control: si pasa de 100 ms, el teclado estuvo
@@ -888,6 +897,7 @@ final class KeyboardEngine: ObservableObject {
             "Retraso de iOS al entregar el toque: \(TouchDiagnostics.summary(diagnostics.delivery))",
             "Tiempo del teclado por toque: \(TouchDiagnostics.summary(diagnostics.handling))",
             String(format: "Bloqueos de más de 100 ms: %d (el mayor %.0f ms)", diagnostics.stalls, diagnostics.longestStall),
+            "Vibración (lo que tarda iOS en aceptarla): \(TouchDiagnostics.summary(diagnostics.feedback)) · saltadas \(diagnostics.skippedHaptics) · clics saltados \(diagnostics.skippedSounds)",
             String(format: "Memoria libre: %.0f MB", memory),
             "Toques \(diagnostics.touches) · escritos \(diagnostics.typed) · con otro dedo \(diagnostics.rollovers)",
             "Cancelados por iOS: escritos \(diagnostics.cancelledTyped), perdidos \(diagnostics.cancelledLost) · sin aviso de fin \(diagnostics.unfinished) · ignorados \(diagnostics.ignored)",
@@ -1308,22 +1318,47 @@ final class KeyboardEngine: ObservableObject {
     /// Cola propia para el sonido: `AudioServicesPlaySystemSound` espera al servidor de audio
     /// y en el hilo principal retrasaba la siguiente pulsación.
     private static let soundQueue = DispatchQueue(label: "super-teclado.key-sound", qos: .userInteractive)
+    /// `true` mientras se está reproduciendo un clic. Si llega otra tecla entonces, su clic se
+    /// salta: antes se ponían en cola y, al teclear deprisa, sonaban segundos después.
+    private static let soundBusy = OSAllocatedUnfairLock(initialState: false)
+    /// La vibración no se pide más de una vez cada 40 ms: más seguido el motor se retrasa.
+    private var lastHaptic: CFTimeInterval = 0
 
     func keyFeedback(_ kind: KeyFeedbackKind) {
         lastKeyTouch = ProcessInfo.processInfo.systemUptime
         // Se usa el valor guardado de «acceso total»: preguntarlo a iOS en cada pulsación es lento.
         if preferences.haptics, hasFullAccess {
-            let strength = preferences.hapticsStrength
-            // Las teclas especiales vibran algo más, como en Gboard.
-            let intensity = kind == .character ? strength : min(1, strength + 0.2)
-            let generator = hapticGenerator()
-            generator.impactOccurred(intensity: CGFloat(intensity))
-            // Mantiene el motor de vibración listo para la siguiente tecla, sin retraso.
-            generator.prepare()
+            let now = CACurrentMediaTime()
+            if now - lastHaptic >= 0.04 {
+                lastHaptic = now
+                let strength = preferences.hapticsStrength
+                // Las teclas especiales vibran algo más, como en Gboard.
+                let intensity = kind == .character ? strength : min(1, strength + 0.2)
+                let generator = hapticGenerator()
+                generator.impactOccurred(intensity: CGFloat(intensity))
+                // Mantiene el motor de vibración listo para la siguiente tecla, sin retraso.
+                generator.prepare()
+                touchDiagnostics.recordFeedback(CACurrentMediaTime() - now)
+            } else {
+                touchDiagnostics.skippedHaptics += 1
+            }
         }
         if preferences.sound {
             let sound = SystemSoundID(preferences.soundStyle.soundID(isDelete: kind == .delete, isModifier: kind == .modifier))
-            Self.soundQueue.async { @Sendable in AudioServicesPlaySystemSound(sound) }
+            let gate = Self.soundBusy
+            let starts = gate.withLock { busy -> Bool in
+                guard !busy else { return false }
+                busy = true
+                return true
+            }
+            if starts {
+                Self.soundQueue.async { @Sendable in
+                    AudioServicesPlaySystemSound(sound)
+                    gate.withLock { $0 = false }
+                }
+            } else {
+                touchDiagnostics.skippedSounds += 1
+            }
         }
     }
 

@@ -188,6 +188,7 @@ struct KeyboardSettingsPanelView: View {
             VStack(alignment: .leading, spacing: 4) {
                 timingRow("Retraso de iOS al entregar el toque", TouchDiagnostics.summary(diagnostics.delivery))
                 timingRow("Tiempo del teclado por toque", TouchDiagnostics.summary(diagnostics.handling))
+                timingRow("Vibración (lo que tarda iOS en aceptarla)", TouchDiagnostics.summary(diagnostics.feedback))
                 timingRow(
                     "Bloqueos de más de 100 ms",
                     diagnostics.stalls == 0 ? "0" : String(format: "%d · el mayor %.0f ms", diagnostics.stalls, diagnostics.longestStall)

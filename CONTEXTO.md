@@ -1,6 +1,6 @@
 # Super Teclado: contexto para agentes
 
-Resumen de todo lo hecho hasta la **versión 2.8.3**, para que otro agente (Claude Code, Codex…) pueda seguir el trabajo sin repetir errores. El `README.md` describe las funciones para el usuario; este documento explica **cómo está hecho, por qué y qué falta**.
+Resumen de todo lo hecho hasta la **versión 2.8.4**, para que otro agente (Claude Code, Codex…) pueda seguir el trabajo sin repetir errores. El `README.md` describe las funciones para el usuario; este documento explica **cómo está hecho, por qué y qué falta**.
 
 ---
 
@@ -32,7 +32,7 @@ Resumen de todo lo hecho hasta la **versión 2.8.3**, para que otro agente (Clau
 - **Subir versión** en cada cambio que se entregue, en dos sitios que deben coincidir:
   - `project.yml`: `MARKETING_VERSION` y `CURRENT_PROJECT_VERSION`, **4 veces cada uno** (app, teclado, share y widget).
   - `SuperTecladoApp/Package.swift`: `displayVersion` y `bundleVersion`.
-  - Estado actual: 2.8.3 / 24 en `project.yml`, 2.8.3 / 29 en `Package.swift`.
+  - Estado actual: 2.8.4 / 25 en `project.yml`, 2.8.4 / 30 en `Package.swift`.
 - `scripts/build-unsigned-ipa.sh`:
   - firma ad hoc (`codesign -s -`) cada appex con sus entitlements y después la app;
   - **falla si falta `Assets.car` o `CFBundleIcons`** (comprobación añadida en 2.6.6).
@@ -91,7 +91,7 @@ Resumen de todo lo hecho hasta la **versión 2.8.3**, para que otro agente (Clau
 - **Lo que cambia con cada pulsación va aparte**, en `SuggestionBarState` (`engine.bar`): `suggestions`, `showsToolbar` y `quickPaste`. Solo lo observa `SuggestionStripView`, así que escribir no redibuja el teclado entero.
   - `engine.suggestions`, `showsToolbar` y `quickPaste` son propiedades calculadas que reenvían a `bar`.
 - `insertCharacter`, `insertSpace`, `commitWord` (autocorrección con deshacer al borrar), `deleteBackward`, `selectSuggestion`, glide (`beginGlide`, `extendGlide`, `endGlide`, `cancelGlide`), cursor y emojis.
-- `keyFeedback(kind)`:
+- `keyFeedback(kind)` (desde 2.8.4 sin acumular retraso: vibración como mucho cada 40 ms y clic saltado si el anterior aún suena, porque antes los clics hacían cola y sonaban segundos tarde; el coste de cada vibración se mide en el diagnóstico):
   - **vibración** con el `hasFullAccess` guardado, `impactOccurred(intensity:)` y luego `prepare()` para la siguiente tecla;
   - **sonido** con `AudioServicesPlaySystemSound` en una cola propia, para no bloquear el hilo principal;
   - apunta `lastKeyTouch`.
@@ -110,7 +110,7 @@ Este archivo es la solución al **retraso al escribir**. Antes cada tecla era un
 - **Una sola vista recibe todos los dedos**, a través de `KeyTouchRecognizer` (2.7.1).
   - Es un `UIGestureRecognizer` que nunca reconoce nada (`canBePrevented` y `canPrevent` devuelven `false`, `cancelsTouchesInView = false`).
   - iOS entrega los toques a los reconocedores al instante; a las vistas puede retrasarlos (bordes de la pantalla, otros gestos).
-  - Los `touches…` de la vista están vacíos a propósito.
+  - Desde 2.8.4 la vista también atiende los toques: cada dedo llega por los dos caminos, se atiende el primer aviso y el otro se descarta (`isAlreadyHandled`, `finishedTouches` con referencias débiles, `lastMoveTimestamp`). Si un camino falla, no se pierde ningún toque.
   - `fingersReset()` cierra los dedos que quedaran al terminar la secuencia. La tecla tocada es la más cercana de su fila, así que los huecos cuentan para la tecla de al lado.
   - Al tocar: resalta la tecla y la ventana emergente, vibra/suena y programa la pulsación larga.
   - Al levantar: escribe.
@@ -239,6 +239,7 @@ Este archivo es la solución al **retraso al escribir**. Antes cada tecla era un
 | 2.8.1 | Espacio tras una sugerencia sin duplicar el que ya hay ni ponerlo delante de signos; se puede desactivar |
 | 2.8.2 | 120 Hz en el teclado (`CADisableMinimumFrameDurationOnPhone`), la tecla y su ventana se envían a la pantalla (`CATransaction.flush()`) antes de vibrar y sonar, tecla resaltada también con ventana emergente, informe de velocidad copiable |
 | 2.8.3 | Sin bloqueos del hilo principal: portapapeles e historial en segundo plano, UITextChecker perezoso y nunca para la barra (antes arrancaba en el primer toque y congelaba), lo aprendido se lee en segundo plano; los bloqueos aparecen en los últimos toques |
+| 2.8.4 | Clics y vibración sin cola (se saltan en vez de acumular segundos de retraso al teclear deprisa), toques por dos caminos con deduplicación, coste de la vibración en el informe |
 
 ## 8. Errores ya resueltos (no repetirlos)
 
