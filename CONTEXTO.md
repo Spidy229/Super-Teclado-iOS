@@ -1,6 +1,6 @@
 # Super Teclado: contexto para agentes
 
-Resumen de todo lo hecho hasta la **versión 2.9.7**, para que otro agente (Claude Code, Codex…) pueda seguir el trabajo sin repetir errores. El `README.md` describe las funciones para el usuario; este documento explica **cómo está hecho, por qué y qué falta**.
+Resumen de todo lo hecho hasta la **versión 2.9.8**, para que otro agente (Claude Code, Codex…) pueda seguir el trabajo sin repetir errores. El `README.md` describe las funciones para el usuario; este documento explica **cómo está hecho, por qué y qué falta**.
 
 ---
 
@@ -32,7 +32,7 @@ Resumen de todo lo hecho hasta la **versión 2.9.7**, para que otro agente (Clau
 - **Subir versión** en cada cambio que se entregue, en dos sitios que deben coincidir:
   - `project.yml`: `MARKETING_VERSION` y `CURRENT_PROJECT_VERSION`, **4 veces cada uno** (app, teclado, share y widget).
   - `SuperTecladoApp/Package.swift`: `displayVersion` y `bundleVersion`.
-  - Estado actual: 2.9.7 / 34 en `project.yml`, 2.9.7 / 39 en `Package.swift`.
+  - Estado actual: 2.9.8 / 35 en `project.yml`, 2.9.8 / 40 en `Package.swift`.
 - `scripts/build-unsigned-ipa.sh`:
   - firma ad hoc (`codesign -s -`) cada appex con sus entitlements y después la app;
   - **falla si falta `Assets.car` o `CFBundleIcons`** (comprobación añadida en 2.6.6).
@@ -253,6 +253,7 @@ Este archivo es la solución al **retraso al escribir**. Antes cada tecla era un
 | 2.9.5 | Ya no se modifican los reconocedores de gestos de iOS; contador de dedos en la ventana (como KeyboardKit) para saber si iOS entrega el toque y si algo tapa las teclas |
 | 2.9.6 | Teclas, barra y avisos se colocan siempre sin animación (`UIView.withoutAnimation`: `performWithoutAnimation` + `CATransaction.setDisableActions`). Algunas apps (la de Google) muestran el teclado dentro de una animación y las teclas nuevas «volaban» desde una esquina y se mezclaban con las anteriores |
 | 2.9.7 | Toques solo por el reconocedor de la cuadrícula (se acaban las pulsaciones dobles de 2.9.5–2.9.6); el registrador de congelaciones consulta menos a menudo y con menos prioridad |
+| 2.9.8 | Informe real del usuario (iPhone 17 Pro Max, iOS 27.0.1): teclado sin congelaciones, entrega de 23 ms y 1 ms por toque. El bloqueo que nota está en la app: Ajustes cargaba todos los elementos (`@Query`) para contarlos al dibujar la sección «Datos locales»; ahora `fetchCount`. La lista principal filtra y ordena una vez por dibujado. El registrador de congelaciones también en la app |
 
 ## 8. Errores ya resueltos (no repetirlos)
 
@@ -269,7 +270,7 @@ Este archivo es la solución al **retraso al escribir**. Antes cada tecla era un
   - azooKey ([#765](https://github.com/azooKey/azooKey/pull/765)) hizo lo mismo: `UIGestureRecognizerRepresentable` con el inicio inmediato (~4 ms).
   - Conclusión: la capa de toques ya es equivalente. El teclado de Apple no es una extensión (no se puede analizar así) y la IPA de Gboard de la App Store está cifrada (FairPlay).
   - Hay informes de que en iOS 27 **también el teclado de Apple** va lento y pierde toques, y que mejora al quitar la vibración del teclado (Ajustes › Sonidos y vibraciones › Respuesta del teclado).
-- **Registrador de congelaciones** (`MainThreadWatchdog.swift`, 2.9.2). Usa `thread_suspend`, `thread_get_state` (sabor 6, `ARM_THREAD_STATE64`, leído por desplazamientos: fp 232, lr 240, pc 256) y recorre los marcos de la pila dentro de los límites de la pila del hilo principal. Mientras el hilo está detenido no pide memoria ni candados. Los nombres salen de `dladdr`: la IPA se compila con `xcodebuild build` (sin `archive`), así que el binario conserva los símbolos locales. Los nombres de Swift salen codificados; se decodifican con `swift-demangle`.
+- **Registrador de congelaciones** (`Shared/MainThreadWatchdog.swift`, 2.9.2; en `Shared` desde 2.9.8 y también lo arranca la app en `SuperTecladoApp.init`, con sus congelaciones en Ajustes › Diagnóstico). Usa `thread_suspend`, `thread_get_state` (sabor 6, `ARM_THREAD_STATE64`, leído por desplazamientos: fp 232, lr 240, pc 256) y recorre los marcos de la pila dentro de los límites de la pila del hilo principal. Mientras el hilo está detenido no pide memoria ni candados. Los nombres salen de `dladdr`: la IPA se compila con `xcodebuild build` (sin `archive`), así que el binario conserva los símbolos locales. Los nombres de Swift salen codificados; se decodifican con `swift-demangle`.
 - `SharedClipboardStore.sharedDefaults` y la carpeta del App Group se crean una vez por proceso (2.9.0). Antes se creaba una instancia de `UserDefaults` por cada `@AppStorage` en cada redibujado de la app, y se consultaba `containerURL` en cada lectura.
 
 - **Nunca animar la colocación de las teclas** (2.9.6). `layoutSubviews` de la cuadrícula, de cada tecla y de la barra, `rebuildKeys` y `syncGrid` van dentro de `UIView.withoutAnimation`. Si no, cuando la app anima la aparición del teclado (p. ej. la de Google), las teclas creadas en ese momento aparecen desde la esquina y se ven dos teclados mezclados.

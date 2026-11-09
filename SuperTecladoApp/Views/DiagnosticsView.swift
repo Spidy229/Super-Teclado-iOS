@@ -51,8 +51,30 @@ struct DiagnosticsView: View {
             }
 
             Section {
+                let freezes = MainThreadWatchdog.shared.freezes
+                if freezes.isEmpty {
+                    Text("Ninguna desde que se abrió la app")
+                        .foregroundStyle(.secondary)
+                }
+                ForEach(Array(freezes.enumerated()), id: \.offset) { _, freeze in
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(String(format: "%.0f ms a los %.0f s", freeze.milliseconds, freeze.secondsSinceStart))
+                            .font(.subheadline.weight(.semibold))
+                        Text(MainThreadWatchdog.culprit(of: freeze))
+                            .font(.caption.monospaced())
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            } header: {
+                Text("Congelaciones de la app")
+            } footer: {
+                Text("Si la app deja de responder más de una décima de segundo, aquí sale qué función la tenía ocupada. Van también en el informe.")
+            }
+
+            Section {
                 Button {
                     UIPasteboard.general.string = diagnostics.report(appVersion: appVersion, lastActive: lastActive)
+                        + "\n" + MainThreadWatchdog.shared.report
                     copied = true
                 } label: {
                     Label(copied ? "Informe copiado" : "Copiar informe", systemImage: copied ? "checkmark" : "doc.on.doc")

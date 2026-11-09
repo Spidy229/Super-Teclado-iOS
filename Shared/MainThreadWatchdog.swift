@@ -209,7 +209,9 @@ final class MainThreadWatchdog: @unchecked Sendable {
             defer { free(output) }
             return String(cString: output)
         }
-        return (readable ?? name).replacingOccurrences(of: "SuperTecladoKeyboard.", with: "")
+        return (readable ?? name)
+            .replacingOccurrences(of: "SuperTecladoKeyboard.", with: "")
+            .replacingOccurrences(of: "SuperTeclado.", with: "")
     }
 
     /// Nombre de la función de un marco («Biblioteca  función + n» → «función»).
@@ -225,20 +227,35 @@ final class MainThreadWatchdog: @unchecked Sendable {
     static func culprit(of freeze: Freeze) -> String {
         let boring = ["libsystem_kernel", "libsystem_pthread", "libsystem_platform", "libdyld"]
         let system = freeze.frames.first { frame in !boring.contains { frame.hasPrefix($0) } }
-        let own = freeze.frames.first { $0.hasPrefix("SuperTecladoKeyboard") && !$0.contains("MainThreadWatchdog") }
+        // Funciones del propio programa (el teclado o la app, según quién lo use).
+        let executable = Bundle.main.executableURL?.lastPathComponent ?? "SuperTeclado"
+        let own = freeze.frames.first { $0.hasPrefix(executable + "  ") && !$0.contains("MainThreadWatchdog") }
         let summary: String
         switch (own, system) {
-        case (let own?, let system?) where !system.hasPrefix("SuperTecladoKeyboard"):
+        case (let own?, let system?) where !system.hasPrefix(executable + "  "):
             summary = "\(function(in: own)) → \(function(in: system))"
         case (let own?, _):
             summary = function(in: own)
         case (nil, let system?) where system.contains("CFRunLoop") || system.contains("mach_msg"):
-            summary = "teclado en reposo: lo detuvo iOS"
+            summary = "en reposo: lo detuvo iOS"
         case (nil, let system?):
             summary = system
         default:
             summary = freeze.frames.first ?? "?"
         }
         return summary.count > 110 ? String(summary.prefix(110)) + "…" : summary
+    }
+}
+
+extension MainThreadWatchdog {
+    /// Las congelaciones con su pila, para copiarlas en un informe.
+    var report: String {
+        let freezes = self.freezes
+        guard !freezes.isEmpty else { return "Congelaciones con pila: ninguna" }
+        return freezes.map { freeze in
+            ([String(format: "Congelado %.0f ms a los %.1f s: %@. Pila:", freeze.milliseconds, freeze.secondsSinceStart, Self.culprit(of: freeze))]
+                + freeze.frames.prefix(24).enumerated().map { "  \($0.offset) \($0.element)" })
+                .joined(separator: "\n")
+        }.joined(separator: "\n")
     }
 }

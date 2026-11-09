@@ -5,7 +5,10 @@ import UIKit
 struct SettingsView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
-    @Query private var items: [ClipboardItem]
+    /// Cuántos hay de cada tipo. Antes se cargaban todos los elementos (con sus imágenes) para
+    /// contarlos al dibujar la sección, y eso frenaba el desplazamiento.
+    @State private var temporaryCount = 0
+    @State private var permanentCount = 0
 
     @AppStorage("requireBiometrics") private var requireBiometrics = false
     @AppStorage(
@@ -136,8 +139,8 @@ struct SettingsView: View {
                 }
 
                 Section("Datos locales") {
-                    LabeledContent("Temporales", value: "\(items.filter(\.isTemporary).count)")
-                    LabeledContent("Guardados", value: "\(items.filter(\.isPermanent).count)")
+                    LabeledContent("Temporales", value: "\(temporaryCount)")
+                    LabeledContent("Guardados", value: "\(permanentCount)")
                     Button("Vaciar bandeja temporal", role: .destructive) {
                         showClearTemporaryConfirmation = true
                     }
@@ -236,6 +239,7 @@ struct SettingsView: View {
             }
             .onAppear {
                 folders = SharedClipboardStore.loadFolders()
+                reloadCounts()
             }
         }
     }
@@ -250,8 +254,19 @@ struct SettingsView: View {
         newFolderName = ""
     }
 
+    private func reloadCounts() {
+        temporaryCount = (try? modelContext.fetchCount(FetchDescriptor<ClipboardItem>(predicate: #Predicate { $0.isTemporary }))) ?? 0
+        permanentCount = (try? modelContext.fetchCount(FetchDescriptor<ClipboardItem>(predicate: #Predicate { !$0.isTemporary }))) ?? 0
+    }
+
+    /// Los elementos se buscan solo al borrar, no al dibujar la pantalla.
+    private var items: [ClipboardItem] {
+        (try? modelContext.fetch(FetchDescriptor<ClipboardItem>())) ?? []
+    }
+
     private func deleteFolders(at offsets: IndexSet) {
         let names = offsets.map { folders[$0] }
+        let items = self.items
         for name in names {
             for item in items where item.folderName == name {
                 item.folderName = nil
@@ -267,6 +282,7 @@ struct SettingsView: View {
             KeyboardHistorySync.delete(item, from: modelContext)
         }
         try? KeyboardHistorySync.commit(modelContext)
+        reloadCounts()
     }
 
     private func deleteTemporaryItems() {
@@ -274,5 +290,6 @@ struct SettingsView: View {
             KeyboardHistorySync.delete(item, from: modelContext)
         }
         try? KeyboardHistorySync.commit(modelContext)
+        reloadCounts()
     }
 }

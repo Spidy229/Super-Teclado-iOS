@@ -77,7 +77,9 @@ struct ContentView: View {
     var body: some View {
         NavigationStack {
             Group {
-                if filteredItems.isEmpty { emptyState } else { itemList }
+                // Se filtra y ordena una sola vez por dibujado (antes, dos veces).
+                let visibleItems = filteredItems
+                if visibleItems.isEmpty { emptyState } else { itemList(visibleItems) }
             }
             .navigationTitle("Super Teclado")
             .searchable(text: $searchText, prompt: "Buscar textos, OCR o etiquetas")
@@ -163,9 +165,9 @@ struct ContentView: View {
         return "Los elementos que decidas conservar aparecerán aquí y en el teclado."
     }
 
-    private var itemList: some View {
+    private func itemList(_ visibleItems: [ClipboardItem]) -> some View {
         List {
-            ForEach(filteredItems) { item in
+            ForEach(visibleItems) { item in
                 ClipboardRow(item: item)
                     .onTapGesture { selectedItem = item }
                     .accessibilityAddTraits(.isButton)
