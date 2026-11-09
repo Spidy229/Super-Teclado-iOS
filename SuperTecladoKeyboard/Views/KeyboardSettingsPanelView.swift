@@ -193,12 +193,6 @@ struct KeyboardSettingsPanelView: View {
                 timingRow("Tiempo del teclado por toque", TouchDiagnostics.summary(diagnostics.handling))
                 timingRow("Vibración (lo que tarda iOS en aceptarla)", TouchDiagnostics.summary(diagnostics.feedback))
                 timingRow("Retraso del hilo principal", TouchDiagnostics.summary(diagnostics.lateness))
-                if let freeze = MainThreadWatchdog.shared.freezes.first {
-                    timingRow(
-                        String(format: "Última congelación (%.0f ms)", freeze.milliseconds),
-                        MainThreadWatchdog.culprit(of: freeze)
-                    )
-                }
                 timingRow(
                     "Bloqueos de más de 100 ms",
                     diagnostics.stalls == 0 ? "0" : String(format: "%d · el mayor %.0f ms", diagnostics.stalls, diagnostics.longestStall)

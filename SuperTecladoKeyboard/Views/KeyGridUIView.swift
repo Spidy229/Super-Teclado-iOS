@@ -135,29 +135,6 @@ private final class KeyTouchRecognizer: UIGestureRecognizer {
     }
 }
 
-/// Cuenta los dedos que iOS entrega a la ventana del teclado (para el diagnóstico).
-private final class WindowTouchObserver: UIGestureRecognizer {
-    weak var grid: KeyGridUIView?
-
-    override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent) {
-        grid?.windowSawTouches(touches)
-    }
-
-    override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent) {
-        if event.allTouches?.allSatisfy({ $0.phase == .ended || $0.phase == .cancelled }) ?? true {
-            state = .failed
-        }
-    }
-
-    override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent) {
-        state = .failed
-    }
-
-    override func canBePrevented(by preventingGestureRecognizer: UIGestureRecognizer) -> Bool { false }
-
-    override func canPrevent(_ preventedGestureRecognizer: UIGestureRecognizer) -> Bool { false }
-}
-
 final class KeyGridUIView: UIView {
     private struct GridKey {
         let id: String
@@ -178,14 +155,6 @@ final class KeyGridUIView: UIView {
     }
 
     private let engine: KeyboardEngine
-    private lazy var windowObserver: WindowTouchObserver = {
-        let observer = WindowTouchObserver(target: nil, action: nil)
-        observer.grid = self
-        observer.cancelsTouchesInView = false
-        observer.delaysTouchesBegan = false
-        observer.delaysTouchesEnded = false
-        return observer
-    }()
     private var configuration = KeyGridConfiguration()
     private var palette: KeyboardPalette?
     private var colors = KeyGridColors(KeyboardPalette.make(theme: .dark, systemIsDark: true))
@@ -276,43 +245,32 @@ final class KeyGridUIView: UIView {
 
     override func didMoveToWindow() {
         super.didMoveToWindow()
-        windowObserver.view?.removeGestureRecognizer(windowObserver)
-        if let window {
-            // Como KeyboardKit: un reconocedor en la ventana ve todos los dedos que iOS entrega
-            // al teclado, lleguen o no a las teclas. Solo cuenta; no cambia nada.
-            window.addGestureRecognizer(windowObserver)
-        } else {
+        if window == nil {
             cancelAllTouches()
+        } else {
+            removeTouchDelays()
         }
-        // Ya no se tocan los gestos del propio iOS (antes se les quitaba el retraso): los demás
-        // teclados no lo hacen, y las teclas reciben los dedos por su reconocedor sin esperar.
     }
 
-    /// Dedo que iOS entregó al teclado: si cae sobre las teclas pero lo recibe otra vista, algo
-    /// las tapa; si ni siquiera llega aquí, iOS no lo entregó.
-    fileprivate func windowSawTouches(_ touches: Set<UITouch>) {
-        engine.touchDiagnostics.windowTouches += touches.count
-        guard !isHidden else { return }
-        for touch in touches {
-            let point = touch.location(in: self)
-            guard let receiver = touch.view, !receiver.isDescendant(of: self) else { continue }
-            if bounds.contains(point) {
-                engine.touchDiagnostics.coveredTouches += 1
-                engine.touchDiagnostics.log("TAPADO por \(type(of: receiver))")
-            } else {
-                // Un dedo que no cayó en las teclas (la barra, un hueco…): así se ve si una
-                // «tecla perdida» en realidad tocó fuera.
-                let place = point.y < 0
-                    ? String(format: "%.0f pt por encima", -point.y)
-                    : point.y > bounds.height ? String(format: "%.0f pt por debajo", point.y - bounds.height) : "al lado"
-                engine.touchDiagnostics.log("fuera de las teclas (\(type(of: receiver)), \(place))")
+    /// Ningún gesto del sistema ni de SwiftUI debe retrasar los toques de las teclas.
+    private func removeTouchDelays() {
+        var current: UIView? = superview
+        while let view = current {
+            view.gestureRecognizers?.forEach {
+                $0.delaysTouchesBegan = false
+                $0.delaysTouchesEnded = false
             }
+            current = view.superview
+        }
+        window?.gestureRecognizers?.forEach {
+            $0.delaysTouchesBegan = false
+            $0.delaysTouchesEnded = false
         }
     }
 
     // Los dedos se atienden solo por `KeyTouchRecognizer`, como en KeyboardKit. Antes también
     // por la propia vista y se descartaba el aviso repetido, pero iOS puede entregar el de la
-    // vista con retraso, cuando la tecla ya se ha escrito, y se escribía dos veces (2.9.5).
+    // vista con retraso, cuando la tecla ya se ha escrito, y se escribía dos veces.
     override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {}
     override func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent?) {}
     override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent?) {}

@@ -1,6 +1,6 @@
 # Super Teclado: contexto para agentes
 
-Resumen de todo lo hecho hasta la **versión 2.9.9**, para que otro agente (Claude Code, Codex…) pueda seguir el trabajo sin repetir errores. El `README.md` describe las funciones para el usuario; este documento explica **cómo está hecho, por qué y qué falta**.
+Resumen de todo lo hecho hasta la **versión 3.0.0**, para que otro agente (Claude Code, Codex…) pueda seguir el trabajo sin repetir errores. El `README.md` describe las funciones para el usuario; este documento explica **cómo está hecho, por qué y qué falta**.
 
 ---
 
@@ -32,7 +32,7 @@ Resumen de todo lo hecho hasta la **versión 2.9.9**, para que otro agente (Clau
 - **Subir versión** en cada cambio que se entregue, en dos sitios que deben coincidir:
   - `project.yml`: `MARKETING_VERSION` y `CURRENT_PROJECT_VERSION`, **4 veces cada uno** (app, teclado, share y widget).
   - `SuperTecladoApp/Package.swift`: `displayVersion` y `bundleVersion`.
-  - Estado actual: 2.9.9 / 36 en `project.yml`, 2.9.9 / 41 en `Package.swift`.
+  - Estado actual: 3.0.0 / 37 en `project.yml`, 3.0.0 / 42 en `Package.swift`.
 - `scripts/build-unsigned-ipa.sh`:
   - firma ad hoc (`codesign -s -`) cada appex con sus entitlements y después la app;
   - **falla si falta `Assets.car` o `CFBundleIcons`** (comprobación añadida en 2.6.6).
@@ -78,8 +78,8 @@ Resumen de todo lo hecho hasta la **versión 2.9.9**, para que otro agente (Clau
   - pide el léxico de iOS (`requestSupplementaryLexicon`).
 - `viewDidAppear`:
   - vuelve a leer `hasFullAccess`, porque iOS puede darlo tarde;
-  - Hasta 2.9.4, `removeSystemTouchDelays()` ponía `delaysTouchesBegan = false` en los reconocedores del propio iOS (ventana y vistas superiores). Desde 2.9.5 **no se tocan**: ningún otro teclado lo hace y las teclas reciben los dedos por su reconocedor sin esperar.
-  - `WindowTouchObserver` (2.9.5, en `KeyGridUIView.swift`) va en la ventana, como el `TrackerView` de KeyboardKit, y solo cuenta: los dedos que iOS entrega al teclado (`windowTouches`) y los que caen sobre las teclas pero recibe otra vista (`coveredTouches`, «TAPADO por …»). La línea de velocidad empieza por `dedos ventana/teclas`.
+  - `removeSystemTouchDelays()` pone `delaysTouchesBegan = false` en los reconocedores del propio iOS (ventana y vistas superiores). Se quitó en 2.9.5 y **volvió en 3.0.0**: con él iban bien los botones de la barra y los paneles. Las teclas ya no dependen de él (solo usan su reconocedor).
+  - `WindowTouchObserver` (2.9.5–2.9.9) contaba los dedos en la ventana. **Quitado en 3.0.0.**
 - **Portapapeles:**
   - desde 2.8.3, todo (`changeCount`, leer lo copiado, miniaturas y guardado) va en `Task.detached` (`readPasteboard`), y el historial se recarga con `reloadClipsInBackground`. Leer una imagen o algo del portapapeles universal congelaba el teclado medio segundo o más;
   - `checkPasteboard()` solo lee si cambia `changeCount`;
@@ -176,7 +176,7 @@ Este archivo es la solución al **retraso al escribir**. Antes cada tecla era un
 
 ### Otras vistas del teclado
 - `KeyboardRootView`: franja superior de los demás paneles (en el de escribir deja un hueco), fila de favoritos y panel.
-- Desde 2.9.4 `KeyboardViewController.attachSwiftUI` quita la vista del `UIHostingController` en el panel de escribir cuando no hay fila de favoritos ni modo una mano, y la vuelve a poner al abrir otro panel. La vista va con `autoresizingMask` (no restricciones) para poder quitarla y ponerla.
+- `attachSwiftUI` (2.9.4–2.9.9) quitaba la vista de SwiftUI al escribir. **Quitado en 3.0.0**: la vista de SwiftUI vuelve a estar siempre, con restricciones a los cuatro bordes.
 - `SuggestionBarUIView` (UIKit, 2.9.1; antes `SuggestionStripView` en SwiftUI): sugerencias, pegado rápido, herramientas (emoji, portapapeles, edición, una mano, temas y ⚙︎ ajustes), palabra al deslizar y una línea opcional de velocidad (`showSpeed`). La coloca `KeyboardViewController.syncBarAndToast` encima de SwiftUI solo en el panel de escribir.
 - `KeyboardToastView` (UIKit, 2.9.1, en el mismo archivo): el aviso flotante, encima de todo; solo recibe toques si tiene acción («Deshacer»).
 - `InstantButton(feedback:)` (`Views/InstantTouch.swift`) **vibra al tocar** (no al soltar) y atenúa el botón; lo usan `StripButton` y `PanelBackButton` de los demás paneles. En la barra de escribir lo hacen `BarIconButton`, `BarTextButton` y `QuickPasteChip` (UIKit). `KeyFeedbackButtonStyle` ya no existe (2.9.0).
@@ -255,6 +255,7 @@ Este archivo es la solución al **retraso al escribir**. Antes cada tecla era un
 | 2.9.7 | Toques solo por el reconocedor de la cuadrícula (se acaban las pulsaciones dobles de 2.9.5–2.9.6); el registrador de congelaciones consulta menos a menudo y con menos prioridad |
 | 2.9.8 | Informe real del usuario (iPhone 17 Pro Max, iOS 27.0.1): teclado sin congelaciones, entrega de 23 ms y 1 ms por toque. El bloqueo que nota está en la app: Ajustes cargaba todos los elementos (`@Query`) para contarlos al dibujar la sección «Datos locales»; ahora `fetchCount`. La lista principal filtra y ordena una vez por dibujado. El registrador de congelaciones también en la app |
 | 2.9.9 | Solo diagnóstico: los últimos 40 toques (una frase entera, para compararla con lo que se quería escribir) y los dedos que caen fuera de las teclas («fuera de las teclas (vista, dónde)») |
+| 3.0.0 | **Vuelta a la base de 2.9.3** (la última que el usuario dijo que iba bien), conservando solo: colocación sin animación (2.9.6), toques solo por el reconocedor (2.9.7) y los recuentos de Ajustes de la app (2.9.8). Se quitan el registrador de congelaciones (teclado y app), el contador de dedos en la ventana y quitar SwiftUI de la pantalla al escribir; vuelve `removeSystemTouchDelays`. El usuario notaba el teclado cada vez peor con esas piezas y su informe no mostraba ninguna congelación |
 
 ## 8. Errores ya resueltos (no repetirlos)
 
@@ -271,7 +272,7 @@ Este archivo es la solución al **retraso al escribir**. Antes cada tecla era un
   - azooKey ([#765](https://github.com/azooKey/azooKey/pull/765)) hizo lo mismo: `UIGestureRecognizerRepresentable` con el inicio inmediato (~4 ms).
   - Conclusión: la capa de toques ya es equivalente. El teclado de Apple no es una extensión (no se puede analizar así) y la IPA de Gboard de la App Store está cifrada (FairPlay).
   - Hay informes de que en iOS 27 **también el teclado de Apple** va lento y pierde toques, y que mejora al quitar la vibración del teclado (Ajustes › Sonidos y vibraciones › Respuesta del teclado).
-- **Registrador de congelaciones** (`Shared/MainThreadWatchdog.swift`, 2.9.2; en `Shared` desde 2.9.8 y también lo arranca la app en `SuperTecladoApp.init`, con sus congelaciones en Ajustes › Diagnóstico). Usa `thread_suspend`, `thread_get_state` (sabor 6, `ARM_THREAD_STATE64`, leído por desplazamientos: fp 232, lr 240, pc 256) y recorre los marcos de la pila dentro de los límites de la pila del hilo principal. Mientras el hilo está detenido no pide memoria ni candados. Los nombres salen de `dladdr`: la IPA se compila con `xcodebuild build` (sin `archive`), así que el binario conserva los símbolos locales. Los nombres de Swift salen codificados; se decodifican con `swift-demangle`.
+- **Registrador de congelaciones** (`MainThreadWatchdog`, 2.9.2–2.9.9). **Quitado en 3.0.0** (teclado y app). Detenía el hilo principal con `thread_suspend` para copiar su pila; el informe del usuario no mostró ninguna congelación. Si hiciera falta de nuevo, está en el historial de git (commit e040257).
 - `SharedClipboardStore.sharedDefaults` y la carpeta del App Group se crean una vez por proceso (2.9.0). Antes se creaba una instancia de `UserDefaults` por cada `@AppStorage` en cada redibujado de la app, y se consultaba `containerURL` en cada lectura.
 
 - **Nunca animar la colocación de las teclas** (2.9.6). `layoutSubviews` de la cuadrícula, de cada tecla y de la barra, `rebuildKeys` y `syncGrid` van dentro de `UIView.withoutAnimation`. Si no, cuando la app anima la aparición del teclado (p. ej. la de Google), las teclas creadas en ese momento aparecen desde la esquina y se ven dos teclados mezclados.
@@ -314,3 +315,8 @@ Este archivo es la solución al **retraso al escribir**. Antes cada tecla era un
    5. dar al usuario el enlace directo a la IPA del nuevo release.
 3. Si se puede, probar la lógica de `Shared/` fuera de iOS; añadir pruebas en `SuperTecladoTests` (por ejemplo, `ThemeAndHapticsTests` cubre preferencias, cristal y traspaso de ajustes).
 4. Responder al usuario en español, claro y sin tecnicismos.
+
+
+## 9. Lección de 2.9.4–2.9.9
+
+Se añadieron piezas de diagnóstico y cambios sin pruebas de que hicieran falta (registrador con `thread_suspend`, reconocedor en la ventana, quitar la vista de SwiftUI al escribir, dejar de quitar los retrasos a los gestos de iOS). Trajeron pulsaciones dobles y teclas mal colocadas en la app de Google, y el usuario notó el teclado peor. En 3.0.0 se volvió a la base de 2.9.3. Antes de cambiar el manejo de toques, pedir un informe («Copiar informe de velocidad») tomado justo después del fallo y cambiar solo lo que demuestre.

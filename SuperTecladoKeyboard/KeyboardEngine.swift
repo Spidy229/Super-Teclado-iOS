@@ -32,10 +32,6 @@ struct TouchDiagnostics {
     var alternates = 0
     /// Toques entre dos letras resueltos con el diccionario.
     var smartChoices = 0
-    /// Dedos que iOS entregó a la ventana del teclado, y los que cayeron sobre las teclas pero
-    /// los recibió otra vista.
-    var windowTouches = 0
-    var coveredTouches = 0
     /// Últimos toques, del más reciente al más antiguo.
     var recent: [String] = []
     /// Milisegundos desde que el dedo toca hasta que el teclado recibe el toque.
@@ -55,8 +51,7 @@ struct TouchDiagnostics {
 
     mutating func log(_ entry: String) {
         recent.insert(entry, at: 0)
-        // Suficientes para una frase entera: se compara con lo que se quería escribir.
-        if recent.count > 40 { recent.removeLast(recent.count - 40) }
+        if recent.count > 12 { recent.removeLast(recent.count - 12) }
     }
 
     mutating func recordDelivery(_ seconds: Double) {
@@ -911,7 +906,6 @@ final class KeyboardEngine: ObservableObject {
             "Retraso del hilo principal: \(TouchDiagnostics.summary(diagnostics.lateness))",
             "Vibración (lo que tarda iOS en aceptarla): \(TouchDiagnostics.summary(diagnostics.feedback)) · saltadas \(diagnostics.skippedHaptics) · clics saltados \(diagnostics.skippedSounds)",
             String(format: "Memoria libre: %.0f MB", memory),
-            "Dedos que iOS entregó al teclado: \(diagnostics.windowTouches) · sobre las teclas pero tapados: \(diagnostics.coveredTouches)",
             "Toques \(diagnostics.touches) (por reconocedor \(diagnostics.viaRecognizer), por la vista \(diagnostics.viaView)) · escritos \(diagnostics.typed) · con otro dedo \(diagnostics.rollovers)",
             "Cancelados por iOS: escritos \(diagnostics.cancelledTyped), perdidos \(diagnostics.cancelledLost) · sin aviso de fin \(diagnostics.unfinished) · ignorados \(diagnostics.ignored)",
             "Deslizamientos \(diagnostics.glides) (eran toques \(diagnostics.glidesAsTaps)) · cursor \(diagnostics.cursorSwipes) · pulsación larga \(diagnostics.alternates) · precisión \(diagnostics.smartChoices)",
@@ -922,7 +916,6 @@ final class KeyboardEngine: ObservableObject {
         if !diagnostics.recent.isEmpty {
             lines.append("Últimos toques: " + diagnostics.recent.joined(separator: " | "))
         }
-        lines.append(MainThreadWatchdog.shared.report)
         if let recognizers = controller?.gestureRecognizerReport() {
             lines.append("Gestos sobre las teclas: " + (recognizers.isEmpty ? "ninguno" : recognizers.joined(separator: " | ")))
         }

@@ -16,11 +16,6 @@ struct SuperTecladoApp: App {
         }
     }()
 
-    init() {
-        // Si la app se congela, apunta qué la tenía ocupada (Ajustes › Diagnóstico).
-        MainThreadWatchdog.shared.start { _ in }
-    }
-
     var body: some Scene {
         WindowGroup {
             RootView()

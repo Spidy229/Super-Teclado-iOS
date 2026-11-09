@@ -99,26 +99,29 @@ final class KeyboardViewController: UIInputViewController {
         super.viewDidAppear(animated)
         engine.prepareFeedback()
         startFrameMonitor()
-        // Si el teclado se congela, apunta qué función lo tenía ocupado.
-        let engine = self.engine
-        let bar = suggestionBar
-        MainThreadWatchdog.shared.start { freeze in
-            Task { @MainActor in
-                engine.touchDiagnostics.log(String(
-                    format: "CONGELADO %.0f ms en %@",
-                    freeze.milliseconds,
-                    MainThreadWatchdog.culprit(of: freeze)
-                ))
-                // Se ve en la barra unos segundos, para poder hacer una captura.
-                bar.refresh()
-                try? await Task.sleep(for: .seconds(SuggestionBarUIView.freezeNoticeSeconds))
-                bar.refresh()
-            }
-        }
         // iOS puede dar el valor definitivo de «acceso total» cuando el teclado ya está visible.
         if engine.hasFullAccess != hasFullAccess { engine.hasFullAccess = hasFullAccess }
         if engine.needsInputModeSwitchKey != needsInputModeSwitchKey {
             engine.needsInputModeSwitchKey = needsInputModeSwitchKey
+        }
+        removeSystemTouchDelays()
+    }
+
+    /// Los gestos del sistema (bordes de la pantalla, barra de inicio) retrasan los toques del
+    /// teclado hasta descartar que sean suyos. Eso hacía que las teclas de los bordes y el botón
+    /// de volver respondieran tarde o no respondieran.
+    private func removeSystemTouchDelays() {
+        var current: UIView? = view
+        while let candidate = current {
+            candidate.gestureRecognizers?.forEach {
+                $0.delaysTouchesBegan = false
+                $0.delaysTouchesEnded = false
+            }
+            current = candidate.superview
+        }
+        view.window?.gestureRecognizers?.forEach {
+            $0.delaysTouchesBegan = false
+            $0.delaysTouchesEnded = false
         }
     }
 
@@ -126,7 +129,6 @@ final class KeyboardViewController: UIInputViewController {
         super.viewWillDisappear(animated)
         stallTimer?.invalidate()
         stallTimer = nil
-        MainThreadWatchdog.shared.stop()
         grid.suspend()
         clipboardTimer?.invalidate()
         clipboardTimer = nil
@@ -297,10 +299,14 @@ final class KeyboardViewController: UIInputViewController {
         controller.view.backgroundColor = .clear
         controller.sizingOptions = []
         addChild(controller)
-        // Con tamaño automático y no con restricciones: así se puede quitar y volver a poner.
-        controller.view.frame = view.bounds
-        controller.view.autoresizingMask = [.flexibleWidth, .flexibleHeight]
         view.addSubview(controller.view)
+        controller.view.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            controller.view.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            controller.view.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            controller.view.topAnchor.constraint(equalTo: view.topAnchor),
+            controller.view.bottomAnchor.constraint(equalTo: view.bottomAnchor)
+        ])
         controller.didMove(toParent: self)
         host = controller
 
@@ -346,7 +352,6 @@ final class KeyboardViewController: UIInputViewController {
             dim: preferences.backgroundDim
         )
         let panel = engine.panel
-        attachSwiftUI(needsSwiftUI(for: panel))
         syncBarAndToast(panel: panel, palette: palette)
         guard panel == .typing || panel == .emojiSearch || panel == .clipboardSearch else {
             if !grid.isHidden {
@@ -359,25 +364,6 @@ final class KeyboardViewController: UIInputViewController {
         if grid.frame != frame { grid.frame = frame }
         grid.isHidden = false
         grid.apply(KeyGridConfiguration(engine: engine), palette: palette)
-    }
-
-    /// Al escribir, la vista de SwiftUI no muestra nada (barra, teclas, fondo y avisos son UIKit)
-    /// salvo la fila de favoritos o los botones del modo una mano. En ese caso se quita de la
-    /// pantalla, como en Gboard y el teclado de Apple, que no usan SwiftUI: así ningún cambio
-    /// (mayúsculas, deslizar, página de símbolos) la vuelve a calcular mientras se escribe.
-    private func needsSwiftUI(for panel: KeyboardPanel) -> Bool {
-        guard panel == .typing else { return true }
-        return engine.metrics.favoritesRowHeight > 0 || engine.preferences.oneHandedMode != .off
-    }
-
-    private func attachSwiftUI(_ attached: Bool) {
-        guard let hostView = host?.view else { return }
-        if attached, hostView.superview == nil {
-            hostView.frame = view.bounds
-            view.insertSubview(hostView, aboveSubview: backgroundView)
-        } else if !attached, hostView.superview != nil {
-            hostView.removeFromSuperview()
-        }
     }
 
     private func syncBarAndToast(panel: KeyboardPanel, palette: KeyboardPalette) {

@@ -13,9 +13,6 @@ final class SuggestionBarUIView: UIView {
         case suggestions
     }
 
-    /// Segundos que se muestra en la barra la causa de una congelación.
-    static let freezeNoticeSeconds: Double = 12
-
     private let engine: KeyboardEngine
     private var palette: KeyboardPalette?
     private var colors = KeyGridColors(KeyboardPalette.make(theme: .dark, systemIsDark: true))
@@ -102,9 +99,6 @@ final class SuggestionBarUIView: UIView {
         addSubview(glideLabel)
 
         speedLabel.font = .monospacedDigitSystemFont(ofSize: 9, weight: .regular)
-        speedLabel.adjustsFontSizeToFitWidth = true
-        speedLabel.minimumScaleFactor = 0.7
-        speedLabel.lineBreakMode = .byTruncatingMiddle
         speedLabel.textAlignment = .right
         speedLabel.isUserInteractionEnabled = false
         speedLabel.isAccessibilityElement = false
@@ -209,13 +203,6 @@ final class SuggestionBarUIView: UIView {
 
     /// Línea pequeña con la velocidad (opcional, en ⚙︎): para hacer una captura justo al fallar.
     private func updateSpeedLine() {
-        // Tras una congelación, durante unos segundos se dice qué la causó.
-        if let freeze = MainThreadWatchdog.shared.freezes.first,
-           ProcessInfo.processInfo.systemUptime - freeze.uptime < Self.freezeNoticeSeconds {
-            speedLabel.text = String(format: "⚠︎ congelado %.0f ms: %@", freeze.milliseconds, MainThreadWatchdog.culprit(of: freeze))
-            speedLabel.isHidden = false
-            return
-        }
         guard engine.preferences.showSpeed else {
             speedLabel.isHidden = true
             return
@@ -226,8 +213,7 @@ final class SuggestionBarUIView: UIView {
             let average = samples.reduce(0, +) / Double(samples.count)
             return String(format: "%.0f/%.0f", average, samples.max() ?? 0)
         }
-        let reached = diagnostics.viaRecognizer + diagnostics.viaView
-        speedLabel.text = "dedos \(diagnostics.windowTouches)/\(reached) · iOS \(pair(diagnostics.delivery)) · tecl \(pair(diagnostics.handling)) · hilo \(pair(diagnostics.lateness)) · vib \(pair(diagnostics.feedback)) ms · bloq \(diagnostics.stalls)"
+        speedLabel.text = "iOS \(pair(diagnostics.delivery)) · tecl \(pair(diagnostics.handling)) · hilo \(pair(diagnostics.lateness)) · vib \(pair(diagnostics.feedback)) ms · bloq \(diagnostics.stalls)"
         speedLabel.isHidden = false
     }
 
