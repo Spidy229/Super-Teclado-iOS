@@ -1,6 +1,6 @@
 # Super Teclado: contexto para agentes
 
-Resumen de todo lo hecho hasta la **versión 2.9.4**, para que otro agente (Claude Code, Codex…) pueda seguir el trabajo sin repetir errores. El `README.md` describe las funciones para el usuario; este documento explica **cómo está hecho, por qué y qué falta**.
+Resumen de todo lo hecho hasta la **versión 2.9.5**, para que otro agente (Claude Code, Codex…) pueda seguir el trabajo sin repetir errores. El `README.md` describe las funciones para el usuario; este documento explica **cómo está hecho, por qué y qué falta**.
 
 ---
 
@@ -32,7 +32,7 @@ Resumen de todo lo hecho hasta la **versión 2.9.4**, para que otro agente (Clau
 - **Subir versión** en cada cambio que se entregue, en dos sitios que deben coincidir:
   - `project.yml`: `MARKETING_VERSION` y `CURRENT_PROJECT_VERSION`, **4 veces cada uno** (app, teclado, share y widget).
   - `SuperTecladoApp/Package.swift`: `displayVersion` y `bundleVersion`.
-  - Estado actual: 2.9.4 / 31 en `project.yml`, 2.9.4 / 36 en `Package.swift`.
+  - Estado actual: 2.9.5 / 32 en `project.yml`, 2.9.5 / 37 en `Package.swift`.
 - `scripts/build-unsigned-ipa.sh`:
   - firma ad hoc (`codesign -s -`) cada appex con sus entitlements y después la app;
   - **falla si falta `Assets.car` o `CFBundleIcons`** (comprobación añadida en 2.6.6).
@@ -78,7 +78,8 @@ Resumen de todo lo hecho hasta la **versión 2.9.4**, para que otro agente (Clau
   - pide el léxico de iOS (`requestSupplementaryLexicon`).
 - `viewDidAppear`:
   - vuelve a leer `hasFullAccess`, porque iOS puede darlo tarde;
-  - `removeSystemTouchDelays()` pone `delaysTouchesBegan = false` en los reconocedores del sistema. Si no, se retrasaban los toques en los bordes.
+  - Hasta 2.9.4, `removeSystemTouchDelays()` ponía `delaysTouchesBegan = false` en los reconocedores del propio iOS (ventana y vistas superiores). Desde 2.9.5 **no se tocan**: ningún otro teclado lo hace y las teclas reciben los dedos por su reconocedor sin esperar.
+  - `WindowTouchObserver` (2.9.5, en `KeyGridUIView.swift`) va en la ventana, como el `TrackerView` de KeyboardKit, y solo cuenta: los dedos que iOS entrega al teclado (`windowTouches`) y los que caen sobre las teclas pero recibe otra vista (`coveredTouches`, «TAPADO por …»). La línea de velocidad empieza por `dedos ventana/teclas`.
 - **Portapapeles:**
   - desde 2.8.3, todo (`changeCount`, leer lo copiado, miniaturas y guardado) va en `Task.detached` (`readPasteboard`), y el historial se recarga con `reloadClipsInBackground`. Leer una imagen o algo del portapapeles universal congelaba el teclado medio segundo o más;
   - `checkPasteboard()` solo lee si cambia `changeCount`;
@@ -249,6 +250,7 @@ Este archivo es la solución al **retraso al escribir**. Antes cada tecla era un
 | 2.9.2 | Registrador de congelaciones (`MainThreadWatchdog`): un hilo aparte detecta si el principal no responde en 80 ms, lo detiene un instante, copia su pila y la pone en el informe; reconocedores de gestos sobre las teclas en el informe; el corrector de iOS se prepara en una pausa y no al pulsar espacio; vibración en la línea de velocidad |
 | 2.9.3 | Los avisos ya no lanzan animaciones de SwiftUI (`withAnimation`), solo la de `KeyboardToastView`, que deja tocar mientras se desvanece |
 | 2.9.4 | Al escribir se quita de la pantalla la vista de SwiftUI (`attachSwiftUI`) si no muestra nada (sin fila de favoritos ni modo una mano): escribir es 100 % UIKit, como en Gboard y el teclado de Apple. Tras una congelación, la barra muestra 12 s su causa (función del teclado → función de iOS, con nombres de Swift legibles mediante `swift_demangle`) |
+| 2.9.5 | Ya no se modifican los reconocedores de gestos de iOS; contador de dedos en la ventana (como KeyboardKit) para saber si iOS entrega el toque y si algo tapa las teclas |
 
 ## 8. Errores ya resueltos (no repetirlos)
 

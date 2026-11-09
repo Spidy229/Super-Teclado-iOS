@@ -31,8 +31,8 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.spidy229.superteclado
         PRODUCT_NAME: SuperTeclado
-        MARKETING_VERSION: "2.9.4"
-        CURRENT_PROJECT_VERSION: "31"
+        MARKETING_VERSION: "2.9.5"
+        CURRENT_PROJECT_VERSION: "32"
         GENERATE_INFOPLIST_FILE: YES
         INFOPLIST_KEY_CFBundleDisplayName: Super Teclado
         INFOPLIST_KEY_NSFaceIDUsageDescription: Usamos Face ID para proteger tu historial privado del portapapeles.
@@ -66,8 +66,8 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.spidy229.superteclado.keyboard
         PRODUCT_NAME: SuperTecladoKeyboard
-        MARKETING_VERSION: "2.9.4"
-        CURRENT_PROJECT_VERSION: "31"
+        MARKETING_VERSION: "2.9.5"
+        CURRENT_PROJECT_VERSION: "32"
         GENERATE_INFOPLIST_FILE: NO
         INFOPLIST_FILE: SuperTecladoKeyboard/Info.plist
         SKIP_INSTALL: YES
@@ -91,8 +91,8 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.spidy229.superteclado.share
         PRODUCT_NAME: SuperTecladoShare
-        MARKETING_VERSION: "2.9.4"
-        CURRENT_PROJECT_VERSION: "31"
+        MARKETING_VERSION: "2.9.5"
+        CURRENT_PROJECT_VERSION: "32"
         GENERATE_INFOPLIST_FILE: NO
         INFOPLIST_FILE: SuperTecladoShare/Info.plist
         SKIP_INSTALL: YES
@@ -117,8 +117,8 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.spidy229.superteclado.widget
         PRODUCT_NAME: SuperTecladoWidget
-        MARKETING_VERSION: "2.9.4"
-        CURRENT_PROJECT_VERSION: "31"
+        MARKETING_VERSION: "2.9.5"
+        CURRENT_PROJECT_VERSION: "32"
         GENERATE_INFOPLIST_FILE: NO
         INFOPLIST_FILE: SuperTecladoWidget/Info.plist
         SKIP_INSTALL: YES

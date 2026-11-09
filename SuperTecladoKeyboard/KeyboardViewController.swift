@@ -120,25 +120,6 @@ final class KeyboardViewController: UIInputViewController {
         if engine.needsInputModeSwitchKey != needsInputModeSwitchKey {
             engine.needsInputModeSwitchKey = needsInputModeSwitchKey
         }
-        removeSystemTouchDelays()
-    }
-
-    /// Los gestos del sistema (bordes de la pantalla, barra de inicio) retrasan los toques del
-    /// teclado hasta descartar que sean suyos. Eso hacía que las teclas de los bordes y el botón
-    /// de volver respondieran tarde o no respondieran.
-    private func removeSystemTouchDelays() {
-        var current: UIView? = view
-        while let candidate = current {
-            candidate.gestureRecognizers?.forEach {
-                $0.delaysTouchesBegan = false
-                $0.delaysTouchesEnded = false
-            }
-            current = candidate.superview
-        }
-        view.window?.gestureRecognizers?.forEach {
-            $0.delaysTouchesBegan = false
-            $0.delaysTouchesEnded = false
-        }
     }
 
     override func viewWillDisappear(_ animated: Bool) {
