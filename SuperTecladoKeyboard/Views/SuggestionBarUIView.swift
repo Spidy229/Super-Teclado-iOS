@@ -235,6 +235,11 @@ final class SuggestionBarUIView: UIView {
 
     override func layoutSubviews() {
         super.layoutSubviews()
+        // Sin animar nunca, aunque iOS o la app recoloquen el teclado dentro de una animación.
+        UIView.withoutAnimation { layoutContents() }
+    }
+
+    private func layoutContents() {
         let height = bounds.height
         var x: CGFloat = 4
         if !toggleButton.isHidden {
@@ -305,6 +310,11 @@ final class BarIconButton: UIControl {
 
     override func layoutSubviews() {
         super.layoutSubviews()
+        // Sin animar nunca, aunque iOS o la app recoloquen el teclado dentro de una animación.
+        UIView.withoutAnimation { layoutContents() }
+    }
+
+    private func layoutContents() {
         imageView.frame = bounds
     }
 
@@ -360,6 +370,11 @@ final class BarTextButton: UIControl {
 
     override func layoutSubviews() {
         super.layoutSubviews()
+        // Sin animar nunca, aunque iOS o la app recoloquen el teclado dentro de una animación.
+        UIView.withoutAnimation { layoutContents() }
+    }
+
+    private func layoutContents() {
         label.frame = bounds.insetBy(dx: 4, dy: 0)
     }
 
@@ -452,6 +467,11 @@ final class QuickPasteChip: UIControl {
 
     override func layoutSubviews() {
         super.layoutSubviews()
+        // Sin animar nunca, aunque iOS o la app recoloquen el teclado dentro de una animación.
+        UIView.withoutAnimation { layoutContents() }
+    }
+
+    private func layoutContents() {
         layer.cornerRadius = bounds.height / 2
         let iconSize: CGFloat = showsThumbnail ? 26 : 18
         iconView.frame = CGRect(x: 12, y: (bounds.height - iconSize) / 2, width: iconSize, height: iconSize)
@@ -578,6 +598,11 @@ final class KeyboardToastView: UIView {
 
     override func layoutSubviews() {
         super.layoutSubviews()
+        // Sin animar nunca, aunque iOS o la app recoloquen el teclado dentro de una animación.
+        UIView.withoutAnimation { layoutContents() }
+    }
+
+    private func layoutContents() {
         layer.cornerRadius = min(bounds.width, bounds.height) / 2
         layer.shadowPath = UIBezierPath(roundedRect: bounds, cornerRadius: layer.cornerRadius).cgPath
         let content = bounds.inset(by: Self.padding)

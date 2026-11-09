@@ -1,6 +1,6 @@
 # Super Teclado: contexto para agentes
 
-Resumen de todo lo hecho hasta la **versión 2.9.5**, para que otro agente (Claude Code, Codex…) pueda seguir el trabajo sin repetir errores. El `README.md` describe las funciones para el usuario; este documento explica **cómo está hecho, por qué y qué falta**.
+Resumen de todo lo hecho hasta la **versión 2.9.6**, para que otro agente (Claude Code, Codex…) pueda seguir el trabajo sin repetir errores. El `README.md` describe las funciones para el usuario; este documento explica **cómo está hecho, por qué y qué falta**.
 
 ---
 
@@ -32,7 +32,7 @@ Resumen de todo lo hecho hasta la **versión 2.9.5**, para que otro agente (Clau
 - **Subir versión** en cada cambio que se entregue, en dos sitios que deben coincidir:
   - `project.yml`: `MARKETING_VERSION` y `CURRENT_PROJECT_VERSION`, **4 veces cada uno** (app, teclado, share y widget).
   - `SuperTecladoApp/Package.swift`: `displayVersion` y `bundleVersion`.
-  - Estado actual: 2.9.5 / 32 en `project.yml`, 2.9.5 / 37 en `Package.swift`.
+  - Estado actual: 2.9.6 / 33 en `project.yml`, 2.9.6 / 38 en `Package.swift`.
 - `scripts/build-unsigned-ipa.sh`:
   - firma ad hoc (`codesign -s -`) cada appex con sus entitlements y después la app;
   - **falla si falta `Assets.car` o `CFBundleIcons`** (comprobación añadida en 2.6.6).
@@ -251,6 +251,7 @@ Este archivo es la solución al **retraso al escribir**. Antes cada tecla era un
 | 2.9.3 | Los avisos ya no lanzan animaciones de SwiftUI (`withAnimation`), solo la de `KeyboardToastView`, que deja tocar mientras se desvanece |
 | 2.9.4 | Al escribir se quita de la pantalla la vista de SwiftUI (`attachSwiftUI`) si no muestra nada (sin fila de favoritos ni modo una mano): escribir es 100 % UIKit, como en Gboard y el teclado de Apple. Tras una congelación, la barra muestra 12 s su causa (función del teclado → función de iOS, con nombres de Swift legibles mediante `swift_demangle`) |
 | 2.9.5 | Ya no se modifican los reconocedores de gestos de iOS; contador de dedos en la ventana (como KeyboardKit) para saber si iOS entrega el toque y si algo tapa las teclas |
+| 2.9.6 | Teclas, barra y avisos se colocan siempre sin animación (`UIView.withoutAnimation`: `performWithoutAnimation` + `CATransaction.setDisableActions`). Algunas apps (la de Google) muestran el teclado dentro de una animación y las teclas nuevas «volaban» desde una esquina y se mezclaban con las anteriores |
 
 ## 8. Errores ya resueltos (no repetirlos)
 
@@ -270,6 +271,7 @@ Este archivo es la solución al **retraso al escribir**. Antes cada tecla era un
 - **Registrador de congelaciones** (`MainThreadWatchdog.swift`, 2.9.2). Usa `thread_suspend`, `thread_get_state` (sabor 6, `ARM_THREAD_STATE64`, leído por desplazamientos: fp 232, lr 240, pc 256) y recorre los marcos de la pila dentro de los límites de la pila del hilo principal. Mientras el hilo está detenido no pide memoria ni candados. Los nombres salen de `dladdr`: la IPA se compila con `xcodebuild build` (sin `archive`), así que el binario conserva los símbolos locales. Los nombres de Swift salen codificados; se decodifican con `swift-demangle`.
 - `SharedClipboardStore.sharedDefaults` y la carpeta del App Group se crean una vez por proceso (2.9.0). Antes se creaba una instancia de `UserDefaults` por cada `@AppStorage` en cada redibujado de la app, y se consultaba `containerURL` en cada lectura.
 
+- **Nunca animar la colocación de las teclas** (2.9.6). `layoutSubviews` de la cuadrícula, de cada tecla y de la barra, `rebuildKeys` y `syncGrid` van dentro de `UIView.withoutAnimation`. Si no, cuando la app anima la aparición del teclado (p. ej. la de Google), las teclas creadas en ese momento aparecen desde la esquina y se ven dos teclados mezclados.
 - **Swift 6 y las respuestas del sistema:** todo cierre que iOS llame desde otra cola debe ser **`@Sendable` explícito**; si no, hereda `@MainActor` y se cierra al entrar. Esto incluye `requestSupplementaryLexicon`, `NSItemProvider.loadItem` y las colas de `DispatchQueue`.
   - Si el valor no es `Sendable`, se pasa con `nonisolated(unsafe) let` y se usa dentro de `Task { @MainActor in … }`.
 - El cierre de la etiqueta de `PhotosPicker` es `Sendable`: calcular el texto **antes** del `Form`.

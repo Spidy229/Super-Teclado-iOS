@@ -351,11 +351,17 @@ final class KeyGridUIView: UIView {
         keyViews = updated
         laidOutSize = .zero
         setNeedsLayout()
-        layoutIfNeeded()
+        // Las teclas nuevas aparecen ya en su sitio (sin «volar» desde una esquina).
+        UIView.withoutAnimation { layoutIfNeeded() }
     }
 
     override func layoutSubviews() {
         super.layoutSubviews()
+        // Sin animar nunca, aunque iOS o la app recoloquen el teclado dentro de una animación.
+        UIView.withoutAnimation { layoutContents() }
+    }
+
+    private func layoutContents() {
         if trailLayer.frame != bounds { trailLayer.frame = bounds }
         guard bounds.size != laidOutSize, bounds.width > 0, bounds.height > 0 else { return }
         laidOutSize = bounds.size
@@ -1232,6 +1238,11 @@ final class KeyCapUIView: UIView {
 
     override func layoutSubviews() {
         super.layoutSubviews()
+        // Sin animar nunca, aunque iOS o la app recoloquen el teclado dentro de una animación.
+        UIView.withoutAnimation { layoutContents() }
+    }
+
+    private func layoutContents() {
         let cap = bounds.insetBy(dx: 3, dy: 4)
         capView.frame = cap
         shadowView.frame = cap.offsetBy(dx: 0, dy: 1)
@@ -1392,6 +1403,20 @@ final class KeyPopupUIView: UIView {
         selection.frame = visible[index].frame
         for (offset, label) in visible.enumerated() {
             label.textColor = offset == index ? colors.accentText : colors.text
+        }
+    }
+}
+
+extension UIView {
+    /// Cambios de tamaño y posición sin animación ni transiciones implícitas de Core Animation.
+    /// Las apps pueden mostrar el teclado dentro de una animación; si las teclas se colocan
+    /// dentro de ella, las nuevas «vuelan» desde una esquina y se mezclan con las anteriores.
+    static func withoutAnimation(_ changes: () -> Void) {
+        UIView.performWithoutAnimation {
+            CATransaction.begin()
+            CATransaction.setDisableActions(true)
+            changes()
+            CATransaction.commit()
         }
     }
 }

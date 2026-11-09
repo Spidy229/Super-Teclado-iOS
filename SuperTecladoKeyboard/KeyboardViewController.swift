@@ -329,6 +329,10 @@ final class KeyboardViewController: UIInputViewController {
     }
 
     private func syncGrid() {
+        UIView.withoutAnimation { syncGridContents() }
+    }
+
+    private func syncGridContents() {
         let preferences = engine.preferences
         let palette = KeyboardPalette.make(
             theme: preferences.theme,
