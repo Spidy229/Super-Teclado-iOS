@@ -1,6 +1,6 @@
 # Super Teclado: contexto para agentes
 
-Resumen de todo lo hecho hasta la **versión 2.9.3**, para que otro agente (Claude Code, Codex…) pueda seguir el trabajo sin repetir errores. El `README.md` describe las funciones para el usuario; este documento explica **cómo está hecho, por qué y qué falta**.
+Resumen de todo lo hecho hasta la **versión 2.9.4**, para que otro agente (Claude Code, Codex…) pueda seguir el trabajo sin repetir errores. El `README.md` describe las funciones para el usuario; este documento explica **cómo está hecho, por qué y qué falta**.
 
 ---
 
@@ -32,7 +32,7 @@ Resumen de todo lo hecho hasta la **versión 2.9.3**, para que otro agente (Clau
 - **Subir versión** en cada cambio que se entregue, en dos sitios que deben coincidir:
   - `project.yml`: `MARKETING_VERSION` y `CURRENT_PROJECT_VERSION`, **4 veces cada uno** (app, teclado, share y widget).
   - `SuperTecladoApp/Package.swift`: `displayVersion` y `bundleVersion`.
-  - Estado actual: 2.9.3 / 30 en `project.yml`, 2.9.3 / 35 en `Package.swift`.
+  - Estado actual: 2.9.4 / 31 en `project.yml`, 2.9.4 / 36 en `Package.swift`.
 - `scripts/build-unsigned-ipa.sh`:
   - firma ad hoc (`codesign -s -`) cada appex con sus entitlements y después la app;
   - **falla si falta `Assets.car` o `CFBundleIcons`** (comprobación añadida en 2.6.6).
@@ -175,6 +175,7 @@ Este archivo es la solución al **retraso al escribir**. Antes cada tecla era un
 
 ### Otras vistas del teclado
 - `KeyboardRootView`: franja superior de los demás paneles (en el de escribir deja un hueco), fila de favoritos y panel.
+- Desde 2.9.4 `KeyboardViewController.attachSwiftUI` quita la vista del `UIHostingController` en el panel de escribir cuando no hay fila de favoritos ni modo una mano, y la vuelve a poner al abrir otro panel. La vista va con `autoresizingMask` (no restricciones) para poder quitarla y ponerla.
 - `SuggestionBarUIView` (UIKit, 2.9.1; antes `SuggestionStripView` en SwiftUI): sugerencias, pegado rápido, herramientas (emoji, portapapeles, edición, una mano, temas y ⚙︎ ajustes), palabra al deslizar y una línea opcional de velocidad (`showSpeed`). La coloca `KeyboardViewController.syncBarAndToast` encima de SwiftUI solo en el panel de escribir.
 - `KeyboardToastView` (UIKit, 2.9.1, en el mismo archivo): el aviso flotante, encima de todo; solo recibe toques si tiene acción («Deshacer»).
 - `InstantButton(feedback:)` (`Views/InstantTouch.swift`) **vibra al tocar** (no al soltar) y atenúa el botón; lo usan `StripButton` y `PanelBackButton` de los demás paneles. En la barra de escribir lo hacen `BarIconButton`, `BarTextButton` y `QuickPasteChip` (UIKit). `KeyFeedbackButtonStyle` ya no existe (2.9.0).
@@ -247,6 +248,7 @@ Este archivo es la solución al **retraso al escribir**. Antes cada tecla era un
 | 2.9.1 | Barra de sugerencias y avisos en UIKit (al escribir ya no se redibuja nada de SwiftUI), línea de velocidad en la barra (iOS, teclado, hilo principal y bloqueos; se quita en ⚙︎) y retraso del hilo principal en el diagnóstico |
 | 2.9.2 | Registrador de congelaciones (`MainThreadWatchdog`): un hilo aparte detecta si el principal no responde en 80 ms, lo detiene un instante, copia su pila y la pone en el informe; reconocedores de gestos sobre las teclas en el informe; el corrector de iOS se prepara en una pausa y no al pulsar espacio; vibración en la línea de velocidad |
 | 2.9.3 | Los avisos ya no lanzan animaciones de SwiftUI (`withAnimation`), solo la de `KeyboardToastView`, que deja tocar mientras se desvanece |
+| 2.9.4 | Al escribir se quita de la pantalla la vista de SwiftUI (`attachSwiftUI`) si no muestra nada (sin fila de favoritos ni modo una mano): escribir es 100 % UIKit, como en Gboard y el teclado de Apple. Tras una congelación, la barra muestra 12 s su causa (función del teclado → función de iOS, con nombres de Swift legibles mediante `swift_demangle`) |
 
 ## 8. Errores ya resueltos (no repetirlos)
 

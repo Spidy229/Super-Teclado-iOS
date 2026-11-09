@@ -16,6 +16,8 @@ final class MainThreadWatchdog: @unchecked Sendable {
         let secondsSinceStart: Double
         /// Funciones de la pila, de la más interna (la que se ejecutaba) a la más externa.
         let frames: [String]
+        /// Momento en que terminó (segundos desde que arrancó el iPhone).
+        let uptime: TimeInterval
     }
 
     private struct State {
@@ -110,7 +112,8 @@ final class MainThreadWatchdog: @unchecked Sendable {
         let freeze = Freeze(
             milliseconds: milliseconds,
             secondsSinceStart: Double(sent &- startedAt) / 1_000_000_000,
-            frames: addresses.map(Self.describe)
+            frames: addresses.map(Self.describe),
+            uptime: ProcessInfo.processInfo.systemUptime
         )
         state.withLock { state in
             state.freezes.insert(freeze, at: 0)
@@ -182,18 +185,60 @@ final class MainThreadWatchdog: @unchecked Sendable {
         let image = info.dli_fname.map { String(cString: $0) }.map { ($0 as NSString).lastPathComponent } ?? "?"
         if let name = info.dli_sname, let start = info.dli_saddr {
             let offset = address &- UInt(bitPattern: start)
-            return "\(image)  \(String(cString: name)) + \(offset)"
+            return "\(image)  \(demangle(String(cString: name))) + \(offset)"
         }
         let base = info.dli_fbase.map { UInt(bitPattern: $0) } ?? 0
         return String(format: "%@  0x%lx", image, address &- base)
     }
 
-    /// La función más reveladora de la pila: la primera que no es de la espera del sistema.
+    private typealias DemangleFunction = @convention(c) (
+        UnsafePointer<CChar>?, Int, UnsafeMutablePointer<CChar>?, UnsafeMutablePointer<Int>?, UInt32
+    ) -> UnsafeMutablePointer<CChar>?
+
+    /// `swift_demangle` del propio sistema, para leer los nombres de las funciones de Swift.
+    nonisolated(unsafe) private static let demangleFunction: DemangleFunction? = {
+        guard let symbol = dlsym(UnsafeMutableRawPointer(bitPattern: -2), "swift_demangle") else { return nil }
+        return unsafeBitCast(symbol, to: DemangleFunction.self)
+    }()
+
+    private static func demangle(_ name: String) -> String {
+        let mangled = name.hasPrefix("_$s") ? String(name.dropFirst()) : name
+        guard mangled.hasPrefix("$s"), let demangleFunction else { return name }
+        let readable = mangled.withCString { pointer -> String? in
+            guard let output = demangleFunction(pointer, strlen(pointer), nil, nil, 0) else { return nil }
+            defer { free(output) }
+            return String(cString: output)
+        }
+        return (readable ?? name).replacingOccurrences(of: "SuperTecladoKeyboard.", with: "")
+    }
+
+    /// Nombre de la función de un marco («Biblioteca  función + n» → «función»).
+    private static func function(in frame: String) -> String {
+        guard let separator = frame.range(of: "  ") else { return frame }
+        var name = String(frame[separator.upperBound...])
+        if let plus = name.range(of: " + ", options: .backwards) { name = String(name[..<plus.lowerBound]) }
+        return name
+    }
+
+    /// Resumen de una congelación: la función del teclado que la provocó y en qué función de iOS
+    /// estaba esperando. Si el teclado no estaba haciendo nada, la detuvo iOS.
     static func culprit(of freeze: Freeze) -> String {
         let boring = ["libsystem_kernel", "libsystem_pthread", "libsystem_platform", "libdyld"]
-        let frame = freeze.frames.first { frame in !boring.contains { frame.hasPrefix($0) } }
-            ?? freeze.frames.first
-            ?? "?"
-        return frame.count > 90 ? String(frame.prefix(90)) + "…" : frame
+        let system = freeze.frames.first { frame in !boring.contains { frame.hasPrefix($0) } }
+        let own = freeze.frames.first { $0.hasPrefix("SuperTecladoKeyboard") && !$0.contains("MainThreadWatchdog") }
+        let summary: String
+        switch (own, system) {
+        case (let own?, let system?) where !system.hasPrefix("SuperTecladoKeyboard"):
+            summary = "\(function(in: own)) → \(function(in: system))"
+        case (let own?, _):
+            summary = function(in: own)
+        case (nil, let system?) where system.contains("CFRunLoop") || system.contains("mach_msg"):
+            summary = "teclado en reposo: lo detuvo iOS"
+        case (nil, let system?):
+            summary = system
+        default:
+            summary = freeze.frames.first ?? "?"
+        }
+        return summary.count > 110 ? String(summary.prefix(110)) + "…" : summary
     }
 }
