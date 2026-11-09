@@ -55,7 +55,8 @@ struct TouchDiagnostics {
 
     mutating func log(_ entry: String) {
         recent.insert(entry, at: 0)
-        if recent.count > 12 { recent.removeLast(recent.count - 12) }
+        // Suficientes para una frase entera: se compara con lo que se quería escribir.
+        if recent.count > 40 { recent.removeLast(recent.count - 40) }
     }
 
     mutating func recordDelivery(_ seconds: Double) {

@@ -1,6 +1,6 @@
 # Super Teclado: contexto para agentes
 
-Resumen de todo lo hecho hasta la **versión 2.9.8**, para que otro agente (Claude Code, Codex…) pueda seguir el trabajo sin repetir errores. El `README.md` describe las funciones para el usuario; este documento explica **cómo está hecho, por qué y qué falta**.
+Resumen de todo lo hecho hasta la **versión 2.9.9**, para que otro agente (Claude Code, Codex…) pueda seguir el trabajo sin repetir errores. El `README.md` describe las funciones para el usuario; este documento explica **cómo está hecho, por qué y qué falta**.
 
 ---
 
@@ -32,7 +32,7 @@ Resumen de todo lo hecho hasta la **versión 2.9.8**, para que otro agente (Clau
 - **Subir versión** en cada cambio que se entregue, en dos sitios que deben coincidir:
   - `project.yml`: `MARKETING_VERSION` y `CURRENT_PROJECT_VERSION`, **4 veces cada uno** (app, teclado, share y widget).
   - `SuperTecladoApp/Package.swift`: `displayVersion` y `bundleVersion`.
-  - Estado actual: 2.9.8 / 35 en `project.yml`, 2.9.8 / 40 en `Package.swift`.
+  - Estado actual: 2.9.9 / 36 en `project.yml`, 2.9.9 / 41 en `Package.swift`.
 - `scripts/build-unsigned-ipa.sh`:
   - firma ad hoc (`codesign -s -`) cada appex con sus entitlements y después la app;
   - **falla si falta `Assets.car` o `CFBundleIcons`** (comprobación añadida en 2.6.6).
@@ -254,6 +254,7 @@ Este archivo es la solución al **retraso al escribir**. Antes cada tecla era un
 | 2.9.6 | Teclas, barra y avisos se colocan siempre sin animación (`UIView.withoutAnimation`: `performWithoutAnimation` + `CATransaction.setDisableActions`). Algunas apps (la de Google) muestran el teclado dentro de una animación y las teclas nuevas «volaban» desde una esquina y se mezclaban con las anteriores |
 | 2.9.7 | Toques solo por el reconocedor de la cuadrícula (se acaban las pulsaciones dobles de 2.9.5–2.9.6); el registrador de congelaciones consulta menos a menudo y con menos prioridad |
 | 2.9.8 | Informe real del usuario (iPhone 17 Pro Max, iOS 27.0.1): teclado sin congelaciones, entrega de 23 ms y 1 ms por toque. El bloqueo que nota está en la app: Ajustes cargaba todos los elementos (`@Query`) para contarlos al dibujar la sección «Datos locales»; ahora `fetchCount`. La lista principal filtra y ordena una vez por dibujado. El registrador de congelaciones también en la app |
+| 2.9.9 | Solo diagnóstico: los últimos 40 toques (una frase entera, para compararla con lo que se quería escribir) y los dedos que caen fuera de las teclas («fuera de las teclas (vista, dónde)») |
 
 ## 8. Errores ya resueltos (no repetirlos)
 

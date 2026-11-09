@@ -295,9 +295,18 @@ final class KeyGridUIView: UIView {
         guard !isHidden else { return }
         for touch in touches {
             let point = touch.location(in: self)
-            guard bounds.contains(point), let receiver = touch.view, !receiver.isDescendant(of: self) else { continue }
-            engine.touchDiagnostics.coveredTouches += 1
-            engine.touchDiagnostics.log("TAPADO por \(type(of: receiver))")
+            guard let receiver = touch.view, !receiver.isDescendant(of: self) else { continue }
+            if bounds.contains(point) {
+                engine.touchDiagnostics.coveredTouches += 1
+                engine.touchDiagnostics.log("TAPADO por \(type(of: receiver))")
+            } else {
+                // Un dedo que no cayó en las teclas (la barra, un hueco…): así se ve si una
+                // «tecla perdida» en realidad tocó fuera.
+                let place = point.y < 0
+                    ? String(format: "%.0f pt por encima", -point.y)
+                    : point.y > bounds.height ? String(format: "%.0f pt por debajo", point.y - bounds.height) : "al lado"
+                engine.touchDiagnostics.log("fuera de las teclas (\(type(of: receiver)), \(place))")
+            }
         }
     }
 
