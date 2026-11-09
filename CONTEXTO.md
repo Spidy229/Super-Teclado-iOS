@@ -1,6 +1,6 @@
 # Super Teclado: contexto para agentes
 
-Resumen de todo lo hecho hasta la **versión 2.9.6**, para que otro agente (Claude Code, Codex…) pueda seguir el trabajo sin repetir errores. El `README.md` describe las funciones para el usuario; este documento explica **cómo está hecho, por qué y qué falta**.
+Resumen de todo lo hecho hasta la **versión 2.9.7**, para que otro agente (Claude Code, Codex…) pueda seguir el trabajo sin repetir errores. El `README.md` describe las funciones para el usuario; este documento explica **cómo está hecho, por qué y qué falta**.
 
 ---
 
@@ -32,7 +32,7 @@ Resumen de todo lo hecho hasta la **versión 2.9.6**, para que otro agente (Clau
 - **Subir versión** en cada cambio que se entregue, en dos sitios que deben coincidir:
   - `project.yml`: `MARKETING_VERSION` y `CURRENT_PROJECT_VERSION`, **4 veces cada uno** (app, teclado, share y widget).
   - `SuperTecladoApp/Package.swift`: `displayVersion` y `bundleVersion`.
-  - Estado actual: 2.9.6 / 33 en `project.yml`, 2.9.6 / 38 en `Package.swift`.
+  - Estado actual: 2.9.7 / 34 en `project.yml`, 2.9.7 / 39 en `Package.swift`.
 - `scripts/build-unsigned-ipa.sh`:
   - firma ad hoc (`codesign -s -`) cada appex con sus entitlements y después la app;
   - **falla si falta `Assets.car` o `CFBundleIcons`** (comprobación añadida en 2.6.6).
@@ -111,7 +111,7 @@ Este archivo es la solución al **retraso al escribir**. Antes cada tecla era un
 - **Una sola vista recibe todos los dedos**, a través de `KeyTouchRecognizer` (2.7.1).
   - Es un `UIGestureRecognizer` que nunca reconoce nada (`canBePrevented` y `canPrevent` devuelven `false`, `cancelsTouchesInView = false`).
   - iOS entrega los toques a los reconocedores al instante; a las vistas puede retrasarlos (bordes de la pantalla, otros gestos).
-  - Desde 2.8.4 la vista también atiende los toques: cada dedo llega por los dos caminos, se atiende el primer aviso y el otro se descarta (`isDuplicateBegin`, `downTimestamp`, `lastMoveTimestamp`).
+  - De 2.8.4 a 2.9.6 la vista también atendía los toques (dos caminos y se descartaba el repetido con `isDuplicateBegin`). **Desde 2.9.7 solo el reconocedor**, como KeyboardKit: sin los retrasos quitados a los gestos de iOS (2.9.5), el aviso de la vista llegaba tarde, cuando el dedo ya se había atendido y olvidado, y la tecla se escribía dos veces. No volver a los dos caminos.
     - En 2.8.5 se quitó la lista de dedos terminados de 2.8.4: iOS puede reutilizar el mismo objeto `UITouch` para un toque nuevo y ese toque se descartaba (sin luz ni vibración). Un aviso es duplicado solo si el dedo ya está en `states` con el mismo `touch.timestamp` de inicio, si ya no está en `.began` o si ya terminó. Si un camino falla, no se pierde ningún toque.
   - `fingersReset()` cierra los dedos que quedaran al terminar la secuencia. La tecla tocada es la más cercana de su fila, así que los huecos cuentan para la tecla de al lado.
   - Al tocar: resalta la tecla y la ventana emergente, vibra/suena y programa la pulsación larga.
@@ -252,6 +252,7 @@ Este archivo es la solución al **retraso al escribir**. Antes cada tecla era un
 | 2.9.4 | Al escribir se quita de la pantalla la vista de SwiftUI (`attachSwiftUI`) si no muestra nada (sin fila de favoritos ni modo una mano): escribir es 100 % UIKit, como en Gboard y el teclado de Apple. Tras una congelación, la barra muestra 12 s su causa (función del teclado → función de iOS, con nombres de Swift legibles mediante `swift_demangle`) |
 | 2.9.5 | Ya no se modifican los reconocedores de gestos de iOS; contador de dedos en la ventana (como KeyboardKit) para saber si iOS entrega el toque y si algo tapa las teclas |
 | 2.9.6 | Teclas, barra y avisos se colocan siempre sin animación (`UIView.withoutAnimation`: `performWithoutAnimation` + `CATransaction.setDisableActions`). Algunas apps (la de Google) muestran el teclado dentro de una animación y las teclas nuevas «volaban» desde una esquina y se mezclaban con las anteriores |
+| 2.9.7 | Toques solo por el reconocedor de la cuadrícula (se acaban las pulsaciones dobles de 2.9.5–2.9.6); el registrador de congelaciones consulta menos a menudo y con menos prioridad |
 
 ## 8. Errores ya resueltos (no repetirlos)
 

@@ -301,24 +301,13 @@ final class KeyGridUIView: UIView {
         }
     }
 
-    // Cada dedo llega por dos caminos: `KeyTouchRecognizer` (que iOS atiende antes) y la propia
-    // vista. Se atiende el primero que llegue y el otro se descarta; así ningún toque se pierde
-    // aunque uno de los dos caminos falle o se retrase.
-    override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
-        fingersBegan(touches, event: event, viaView: true)
-    }
-
-    override func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent?) {
-        fingersMoved(touches, event: event)
-    }
-
-    override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent?) {
-        fingersEnded(touches, event: event)
-    }
-
-    override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent?) {
-        fingersCancelled(touches, event: event)
-    }
+    // Los dedos se atienden solo por `KeyTouchRecognizer`, como en KeyboardKit. Antes también
+    // por la propia vista y se descartaba el aviso repetido, pero iOS puede entregar el de la
+    // vista con retraso, cuando la tecla ya se ha escrito, y se escribía dos veces (2.9.5).
+    override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {}
+    override func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent?) {}
+    override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent?) {}
+    override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent?) {}
 
     /// ¿Es el segundo aviso de un dedo que ya se está atendiendo? Solo se descarta si es
     /// seguro: iOS puede reutilizar el mismo objeto de dedo para un toque nuevo, y descartar ese
@@ -656,7 +645,7 @@ final class KeyGridUIView: UIView {
     }
 
     /// Al terminar la secuencia de dedos no debería quedar ninguno; si queda alguno que ya no
-    /// está en la pantalla, se cierra. Los que siguen tocando los atiende la vista.
+    /// está en la pantalla, se cierra.
     fileprivate func fingersReset() {
         guard !states.isEmpty else { return }
         let live = Set(states.compactMap { entry -> ObjectIdentifier? in

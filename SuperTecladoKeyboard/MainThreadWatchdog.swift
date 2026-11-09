@@ -4,7 +4,7 @@ import os
 
 /// Registrador de bloqueos: dice qué función tenía ocupado el teclado cuando se congela.
 ///
-/// Un hilo aparte manda un aviso al hilo principal cada 50 ms. Si el principal tarda más de
+/// Un hilo aparte manda un aviso al hilo principal cada 100 ms. Si el principal tarda más de
 /// 80 ms en atenderlo, lo detiene un instante, copia su pila de llamadas (las funciones que se
 /// estaban ejecutando) y lo reanuda. Al terminar el bloqueo se guarda la pila con lo que duró y
 /// sale en el informe de velocidad. Es lo que haría un depurador, pero en el propio iPhone.
@@ -65,7 +65,7 @@ final class MainThreadWatchdog: @unchecked Sendable {
         startedAt = DispatchTime.now().uptimeNanoseconds
         let watcher = Thread { [self] in run(generation: generation) }
         watcher.name = "SuperTeclado.watchdog"
-        watcher.qualityOfService = .userInteractive
+        watcher.qualityOfService = .utility
         watcher.start()
     }
 
@@ -90,7 +90,7 @@ final class MainThreadWatchdog: @unchecked Sendable {
             DispatchQueue.main.async { state.withLock { $0.answered = token } }
             var captured: [UInt]?
             while true {
-                usleep(10_000)
+                usleep(20_000)
                 let answered = state.withLock { $0.answered }
                 let elapsed = Double(DispatchTime.now().uptimeNanoseconds &- sent) / 1_000_000
                 if answered == token {
@@ -104,7 +104,7 @@ final class MainThreadWatchdog: @unchecked Sendable {
                 }
                 guard isRunning(generation) else { return }
             }
-            usleep(40_000)
+            usleep(80_000)
         }
     }
 
