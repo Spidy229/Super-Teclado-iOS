@@ -17,10 +17,18 @@ private struct DeviceOwnerAuthenticator: AppAuthenticating {
     }
 
     func authenticate() async throws -> Bool {
-        try await context.evaluatePolicy(
-            .deviceOwnerAuthentication,
-            localizedReason: "Desbloquea tu historial privado"
-        )
+        try await withCheckedThrowingContinuation { continuation in
+            context.evaluatePolicy(
+                .deviceOwnerAuthentication,
+                localizedReason: "Desbloquea tu historial privado"
+            ) { success, error in
+                if let error {
+                    continuation.resume(throwing: error)
+                } else {
+                    continuation.resume(returning: success)
+                }
+            }
+        }
     }
 }
 
