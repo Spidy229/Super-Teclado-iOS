@@ -18,9 +18,7 @@ enum ClipboardReadResult {
 
 @MainActor
 enum ClipboardService {
-    static func readCurrent() -> ClipboardReadResult {
-        let pasteboard = UIPasteboard.general
-
+    static func readCurrent(from pasteboard: UIPasteboard = .general) -> ClipboardReadResult {
         if let image = pasteboard.image,
            let data = normalizedJPEG(from: image) {
             return .content(
@@ -34,14 +32,14 @@ enum ClipboardService {
         }
 
         if let originalText = pasteboard.string {
-            let text = originalText.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !text.isEmpty else { return .empty }
-            let data = Data(text.utf8)
+            let meaningfulText = originalText.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !meaningfulText.isEmpty else { return .empty }
+            let data = Data(originalText.utf8)
             return .content(
                 ClipboardDraft(
-                    text: text,
+                    text: originalText,
                     imageData: nil,
-                    kind: detectKind(for: text),
+                    kind: detectKind(for: meaningfulText),
                     contentHash: hash(data)
                 )
             )
@@ -84,18 +82,24 @@ enum ClipboardService {
         SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
     }
 
-    private static func normalizedJPEG(from image: UIImage) -> Data? {
+    static func normalizedJPEG(from image: UIImage) -> Data? {
         let maximumDimension: CGFloat = 2_048
-        let longestSide = max(image.size.width, image.size.height)
+        let pixelSize = CGSize(
+            width: image.size.width * image.scale,
+            height: image.size.height * image.scale
+        )
+        let longestSide = max(pixelSize.width, pixelSize.height)
         guard longestSide > 0 else { return nil }
 
         let scale = min(1, maximumDimension / longestSide)
         let targetSize = CGSize(
-            width: max(1, image.size.width * scale),
-            height: max(1, image.size.height * scale)
+            width: max(1, (pixelSize.width * scale).rounded(.down)),
+            height: max(1, (pixelSize.height * scale).rounded(.down))
         )
 
-        let renderer = UIGraphicsImageRenderer(size: targetSize)
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        let renderer = UIGraphicsImageRenderer(size: targetSize, format: format)
         let normalizedImage = renderer.image { _ in
             image.draw(in: CGRect(origin: .zero, size: targetSize))
         }

@@ -30,6 +30,7 @@ struct SettingsView: View {
 
     @State private var showDeleteConfirmation = false
     @State private var showClearTemporaryConfirmation = false
+    @State private var showDeleteError = false
     @State private var folders: [String] = []
     @State private var newFolderName = ""
 
@@ -141,7 +142,10 @@ struct SettingsView: View {
                 }
 
                 Section("Acerca de") {
-                    LabeledContent("Versión", value: "1.0")
+                    LabeledContent(
+                        "Versión",
+                        value: Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "—"
+                    )
                     Text("Los datos se guardan únicamente en el dispositivo.")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
@@ -180,6 +184,11 @@ struct SettingsView: View {
             .onAppear {
                 folders = SharedClipboardStore.loadFolders()
             }
+            .alert("No se pudo completar el borrado", isPresented: $showDeleteError) {
+                Button("Aceptar", role: .cancel) {}
+            } message: {
+                Text("Vuelve a intentarlo antes de cerrar la app para borrar también la copia compartida con el teclado.")
+            }
         }
     }
 
@@ -214,6 +223,13 @@ struct SettingsView: View {
         for item in items where item.isTemporary {
             modelContext.delete(item)
         }
-        try? modelContext.save()
+        do {
+            try modelContext.save()
+            if !KeyboardHistorySync.publishAppHistory(from: modelContext) {
+                showDeleteError = true
+            }
+        } catch {
+            showDeleteError = true
+        }
     }
 }

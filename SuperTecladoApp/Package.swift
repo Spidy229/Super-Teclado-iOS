@@ -12,8 +12,8 @@ let package = Package(
         .iOSApplication(
             name: "Super Teclado",
             targets: ["AppModule"],
-            displayVersion: "1.0",
-            bundleVersion: "7",
+            displayVersion: "1.1",
+            bundleVersion: "3",
             appIcon: .asset("AppIcon"),
             accentColor: .presetColor(.cyan),
             supportedDeviceFamilies: [

@@ -55,7 +55,7 @@ foreach ($marker in 'captureClipboardAsTemporaryIfNeeded()', 'SharedClipboardSto
 }
 
 $sync = Get-Content -LiteralPath (Join-Path $projectRoot 'SuperTecladoApp/Services/KeyboardHistorySync.swift') -Raw
-foreach ($marker in 'importTemporaryInbox(into: context)', 'SharedClipboardStore.replaceTemporaryInbox(temporary)') {
+foreach ($marker in 'importTemporaryInbox(into: context, storage: storage)', 'SharedClipboardStore.replaceTemporaryInbox(') {
     if (-not $sync.Contains($marker)) {
         throw "Falta la importación de temporales del teclado: $marker"
     }

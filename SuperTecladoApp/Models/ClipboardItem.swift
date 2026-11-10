@@ -46,6 +46,7 @@ final class ClipboardItem {
     var contentHash: String
     var isTemporary: Bool = false
     var expiresAt: Date?
+    var pasteboardChangeCount: Int?
 
     init(
         id: UUID = UUID(),
@@ -62,7 +63,8 @@ final class ClipboardItem {
         colorTagRawValue: String? = nil,
         contentHash: String,
         isTemporary: Bool = false,
-        expiresAt: Date? = nil
+        expiresAt: Date? = nil,
+        pasteboardChangeCount: Int? = nil
     ) {
         self.id = id
         self.createdAt = createdAt
@@ -79,6 +81,7 @@ final class ClipboardItem {
         self.contentHash = contentHash
         self.isTemporary = isTemporary
         self.expiresAt = expiresAt
+        self.pasteboardChangeCount = pasteboardChangeCount
     }
 
     var kind: ClipboardKind {

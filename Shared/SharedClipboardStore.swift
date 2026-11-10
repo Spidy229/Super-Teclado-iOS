@@ -1,3 +1,4 @@
+import Darwin
 import Foundation
 import SwiftUI
 
@@ -76,104 +77,158 @@ enum SharedClipboardStore {
     private static let savedFallbackKey = "super-teclado-saved-fallback"
     private static let temporaryFallbackKey = "super-teclado-temporary-fallback"
 
+    // Explicit storage locations let regression tests use private directories and suites.
+    // The app and extension must never merge their separate defaults over shared deletions.
+    struct Storage {
+        let directoryURL: URL?
+        let fallbackDefaults: UserDefaults
+        let settingsDefaults: UserDefaults?
+
+        static var live: Storage {
+            Storage(
+                directoryURL: FileManager.default.containerURL(
+                    forSecurityApplicationGroupIdentifier: appGroupID
+                ),
+                fallbackDefaults: .standard,
+                settingsDefaults: UserDefaults(suiteName: appGroupID)
+            )
+        }
+    }
+
+    private struct PasteboardEvent: Codable {
+        let changeCount: Int
+        let bootSession: String?
+    }
+
+    private struct TemporaryInboxState: Codable {
+        var clips: [SharedTemporaryClip]
+        var lastPasteboardEvent: PasteboardEvent?
+    }
+
     static var automaticCaptureEnabled: Bool {
-        let defaults = UserDefaults(suiteName: appGroupID)
-        guard defaults?.object(forKey: "automaticCaptureEnabled") != nil else { return true }
-        return defaults?.bool(forKey: "automaticCaptureEnabled") ?? true
+        boolSetting("automaticCaptureEnabled", storage: .live)
     }
 
     static var skipOneTimeCodes: Bool {
-        let defaults = UserDefaults(suiteName: appGroupID)
-        guard defaults?.object(forKey: "skipOneTimeCodes") != nil else { return true }
-        return defaults?.bool(forKey: "skipOneTimeCodes") ?? true
+        boolSetting("skipOneTimeCodes", storage: .live)
     }
 
     static var temporaryRetentionHours: Int {
-        let value = UserDefaults(suiteName: appGroupID)?.integer(forKey: "temporaryRetentionHours") ?? 0
-        return value > 0 ? value : 24
+        positiveSetting("temporaryRetentionHours", defaultValue: 24, storage: .live)
     }
 
     static var maximumTemporaryItems: Int {
-        let value = UserDefaults(suiteName: appGroupID)?.integer(forKey: "maximumTemporaryItems") ?? 0
-        return value > 0 ? value : 50
+        positiveSetting("maximumTemporaryItems", defaultValue: 50, storage: .live)
     }
 
-    static func load() -> [SharedClipboardClip] {
-        let fileClips: [SharedClipboardClip] = decodeFile(at: historyURL()) ?? []
-        let fallbackClips: [SharedClipboardClip] = decodeDefaults(forKey: savedFallbackKey) ?? []
-        return sort(mergeSaved(fileClips + fallbackClips))
+    static func canRead(storage: Storage = .live) -> Bool {
+        readSaved(storage: storage) != nil && readTemporaryState(storage: storage) != nil
     }
 
-    static func save(_ clips: [SharedClipboardClip]) {
-        let sorted = sort(clips)
-        encodeFile(sorted, at: historyURL())
-        encodeDefaults(sorted, forKey: savedFallbackKey)
+    static func load(storage: Storage = .live) -> [SharedClipboardClip] {
+        sort(readSaved(storage: storage) ?? [])
+    }
+
+    @discardableResult
+    static func save(_ clips: [SharedClipboardClip], storage: Storage = .live) -> Bool {
+        write(sort(clips), fileName: fileName, fallbackKey: savedFallbackKey, storage: storage)
+    }
+
+    // The event survives promotion, deletion and expiry. Its boot identity prevents an
+    // old counter from suppressing a different copy after the device restarts.
+    static func shouldCapture(pasteboardChangeCount: Int, storage: Storage = .live) -> Bool {
+        guard let state = readTemporaryState(storage: storage) else { return false }
+        return !isSameEvent(state.lastPasteboardEvent, changeCount: pasteboardChangeCount)
+    }
+
+    // The main app records an accepted copy after persisting its SwiftData history.
+    // Explicit events avoid mistaking use/reordering of an older clip for a new copy.
+    @discardableResult
+    static func rememberPasteboardEvent(changeCount: Int, storage: Storage = .live) -> Bool {
+        guard var state = readTemporaryState(storage: storage) else { return false }
+        state.lastPasteboardEvent = PasteboardEvent(changeCount: changeCount, bootSession: bootSessionID())
+        return writeTemporaryState(state, storage: storage)
     }
 
     @discardableResult
     static func captureTemporaryText(
         _ text: String,
         pasteboardChangeCount: Int,
-        maximumItems: Int? = nil
+        maximumItems: Int? = nil,
+        storage: Storage = .live
     ) -> Bool {
-        let value = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !value.isEmpty else { return false }
-
-        var clips = loadTemporaryInbox()
-        if clips.contains(where: { $0.pasteboardChangeCount == pasteboardChangeCount }) {
+        guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              var state = readTemporaryState(storage: storage),
+              !isSameEvent(state.lastPasteboardEvent, changeCount: pasteboardChangeCount) else {
             return false
         }
 
-        clips.append(
+        let now = Date.now
+        state.clips = liveTemporaryClips(state.clips, at: now)
+        state.clips.insert(
             SharedTemporaryClip(
                 id: UUID(),
-                text: value,
-                capturedAt: .now,
-                kindRawValue: detectKind(value),
+                text: text,
+                capturedAt: now,
+                kindRawValue: detectKind(text),
                 expiresAt: Calendar.current.date(
                     byAdding: .hour,
-                    value: temporaryRetentionHours,
-                    to: .now
+                    value: positiveSetting("temporaryRetentionHours", defaultValue: 24, storage: storage),
+                    to: now
                 ),
                 pasteboardChangeCount: pasteboardChangeCount
-            )
+            ),
+            at: 0
         )
-
-        clips.sort { $0.capturedAt > $1.capturedAt }
-        saveTemporaryInbox(Array(clips.prefix(maximumItems ?? maximumTemporaryItems)))
-        return true
+        let limit = maximumItems ?? positiveSetting(
+            "maximumTemporaryItems", defaultValue: 50, storage: storage
+        )
+        state.clips = Array(state.clips.prefix(max(1, limit)))
+        state.lastPasteboardEvent = PasteboardEvent(
+            changeCount: pasteboardChangeCount,
+            bootSession: bootSessionID()
+        )
+        return writeTemporaryState(state, storage: storage)
     }
 
-    static func loadTemporaryInbox() -> [SharedTemporaryClip] {
-        let fileClips: [SharedTemporaryClip] = decodeFile(at: temporaryInboxURL()) ?? []
-        let fallbackClips: [SharedTemporaryClip] = decodeDefaults(forKey: temporaryFallbackKey) ?? []
-        return mergeTemporary(fileClips + fallbackClips)
-            .filter { $0.expiresAt.map { $0 > .now } ?? true }
-            .sorted { $0.capturedAt > $1.capturedAt }
-    }
-
-    static func clearTemporaryInbox() {
-        saveTemporaryInbox([])
-    }
-
-    static func replaceTemporaryInbox(_ clips: [SharedTemporaryClip]) {
-        saveTemporaryInbox(clips.sorted { $0.capturedAt > $1.capturedAt })
-    }
-
-    static func markTemporaryUsed(id: UUID) {
-        var clips = loadTemporaryInbox()
-        guard let index = clips.firstIndex(where: { $0.id == id }) else { return }
-        clips[index].capturedAt = .now
-        saveTemporaryInbox(clips)
+    static func loadTemporaryInbox(storage: Storage = .live) -> [SharedTemporaryClip] {
+        liveTemporaryClips(readTemporaryState(storage: storage)?.clips ?? [], at: .now)
     }
 
     @discardableResult
-    static func promoteTemporary(id: UUID) -> Bool {
-        var temporary = loadTemporaryInbox()
-        guard let index = temporary.firstIndex(where: { $0.id == id }) else { return false }
-        let clip = temporary.remove(at: index)
+    static func clearTemporaryInbox(storage: Storage = .live) -> Bool {
+        replaceTemporaryInbox([], storage: storage)
+    }
 
-        var saved = load()
+    @discardableResult
+    static func replaceTemporaryInbox(
+        _ clips: [SharedTemporaryClip],
+        lastPasteboardChangeCount: Int? = nil,
+        storage: Storage = .live
+    ) -> Bool {
+        guard var state = readTemporaryState(storage: storage) else { return false }
+        state.clips = clips.sorted { $0.capturedAt > $1.capturedAt }
+        if let lastPasteboardChangeCount {
+            state.lastPasteboardEvent = PasteboardEvent(
+                changeCount: lastPasteboardChangeCount, bootSession: bootSessionID()
+            )
+        }
+        return writeTemporaryState(state, storage: storage)
+    }
+
+    static func markTemporaryUsed(id: UUID, storage: Storage = .live) {
+        guard var state = readTemporaryState(storage: storage),
+              let index = state.clips.firstIndex(where: { $0.id == id }) else { return }
+        state.clips[index].capturedAt = .now
+        _ = writeTemporaryState(state, storage: storage)
+    }
+
+    @discardableResult
+    static func promoteTemporary(id: UUID, storage: Storage = .live) -> Bool {
+        guard var state = readTemporaryState(storage: storage),
+              let clip = liveTemporaryClips(state.clips, at: .now).first(where: { $0.id == id }),
+              var saved = readSaved(storage: storage) else { return false }
+
         if let existingIndex = saved.firstIndex(where: { $0.text == clip.text }) {
             saved[existingIndex].updatedAt = .now
         } else {
@@ -189,76 +244,80 @@ enum SharedClipboardStore {
                 )
             )
         }
-        saveTemporaryInbox(temporary)
-        save(saved)
-        return true
+        // Preserve the temporary copy if saving the permanent one fails.
+        guard save(saved, storage: storage) else { return false }
+        state.clips.removeAll { $0.id == id }
+        return writeTemporaryState(state, storage: storage)
     }
 
-    static func addCopiedText(_ text: String, maximumItems: Int = 250) {
-        let value = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !value.isEmpty else { return }
+    static func addCopiedText(
+        _ text: String, maximumItems: Int = 250, storage: Storage = .live
+    ) {
+        guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              var clips = readSaved(storage: storage) else { return }
 
-        var clips = load()
-        if let index = clips.firstIndex(where: { $0.text == value }) {
+        if let index = clips.firstIndex(where: { $0.text == text }) {
             clips[index].updatedAt = .now
         } else {
             clips.append(
                 SharedClipboardClip(
                     id: UUID(),
-                    text: value,
+                    text: text,
                     createdAt: .now,
                     updatedAt: .now,
-                    kindRawValue: detectKind(value),
+                    kindRawValue: detectKind(text),
                     isFavorite: false,
                     isPinned: false
                 )
             )
         }
-        save(Array(sort(clips).prefix(maximumItems)))
+        save(Array(sort(clips).prefix(max(1, maximumItems))), storage: storage)
     }
 
-    static func toggleFavorite(id: UUID) {
-        var clips = load()
-        guard let index = clips.firstIndex(where: { $0.id == id }) else { return }
+    static func toggleFavorite(id: UUID, storage: Storage = .live) {
+        guard var clips = readSaved(storage: storage),
+              let index = clips.firstIndex(where: { $0.id == id }) else { return }
         clips[index].isFavorite.toggle()
         clips[index].updatedAt = .now
-        save(clips)
+        save(clips, storage: storage)
     }
 
-    static func markUsed(id: UUID) {
-        var clips = load()
-        guard let index = clips.firstIndex(where: { $0.id == id }) else { return }
+    static func markUsed(id: UUID, storage: Storage = .live) {
+        guard var clips = readSaved(storage: storage),
+              let index = clips.firstIndex(where: { $0.id == id }) else { return }
         clips[index].updatedAt = .now
-        save(clips)
+        save(clips, storage: storage)
     }
 
-    static func loadFolders() -> [String] {
-        let stored = UserDefaults(suiteName: appGroupID)?.stringArray(forKey: foldersKey) ?? []
+    static func loadFolders(storage: Storage = .live) -> [String] {
+        let stored = storage.settingsDefaults?.stringArray(forKey: foldersKey) ?? []
         return stored.sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }
     }
 
     @discardableResult
-    static func addFolder(_ proposedName: String) -> String? {
+    static func addFolder(_ proposedName: String, storage: Storage = .live) -> String? {
         let name = proposedName.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !name.isEmpty else { return nil }
-        var folders = loadFolders()
+        var folders = loadFolders(storage: storage)
         if let existing = folders.first(where: { $0.caseInsensitiveCompare(name) == .orderedSame }) {
             return existing
         }
         folders.append(name)
-        UserDefaults(suiteName: appGroupID)?.set(folders, forKey: foldersKey)
+        storage.settingsDefaults?.set(folders, forKey: foldersKey)
         return name
     }
 
-    static func removeFolder(_ name: String) {
-        let folders = loadFolders().filter { $0.caseInsensitiveCompare(name) != .orderedSame }
-        UserDefaults(suiteName: appGroupID)?.set(folders, forKey: foldersKey)
+    static func removeFolder(_ name: String, storage: Storage = .live) {
+        let folders = loadFolders(storage: storage).filter {
+            $0.caseInsensitiveCompare(name) != .orderedSame
+        }
+        storage.settingsDefaults?.set(folders, forKey: foldersKey)
 
-        var clips = load()
+        guard var clips = readSaved(storage: storage) else { return }
         for index in clips.indices where clips[index].folderName == name {
             clips[index].folderName = nil
         }
-        save(clips)
+        save(clips, storage: storage)
     }
 
     static func sort(_ clips: [SharedClipboardClip]) -> [SharedClipboardClip] {
@@ -269,51 +328,104 @@ enum SharedClipboardStore {
         }
     }
 
-    private static func historyURL() -> URL? {
-        FileManager.default
-            .containerURL(forSecurityApplicationGroupIdentifier: appGroupID)?
-            .appendingPathComponent(fileName, isDirectory: false)
+    private static func boolSetting(_ key: String, storage: Storage) -> Bool {
+        guard storage.settingsDefaults?.object(forKey: key) != nil else { return true }
+        return storage.settingsDefaults?.bool(forKey: key) ?? true
     }
 
-    private static func temporaryInboxURL() -> URL? {
-        FileManager.default
-            .containerURL(forSecurityApplicationGroupIdentifier: appGroupID)?
-            .appendingPathComponent(temporaryInboxFileName, isDirectory: false)
+    private static func positiveSetting(_ key: String, defaultValue: Int, storage: Storage) -> Int {
+        let value = storage.settingsDefaults?.integer(forKey: key) ?? 0
+        return value > 0 ? value : defaultValue
     }
 
-    private static func saveTemporaryInbox(_ clips: [SharedTemporaryClip]) {
-        encodeFile(clips, at: temporaryInboxURL())
-        encodeDefaults(clips, forKey: temporaryFallbackKey)
+    private static func readSaved(storage: Storage) -> [SharedClipboardClip]? {
+        guard let data = readData(fileName: fileName, fallbackKey: savedFallbackKey, storage: storage) else {
+            return nil
+        }
+        if data.isEmpty { return [] }
+        return try? JSONDecoder().decode([SharedClipboardClip].self, from: data)
     }
 
-    private static func mergeSaved(_ clips: [SharedClipboardClip]) -> [SharedClipboardClip] {
-        Dictionary(grouping: clips, by: \.id)
-            .compactMap { $0.value.max(by: { $0.updatedAt < $1.updatedAt }) }
+    private static func readTemporaryState(storage: Storage) -> TemporaryInboxState? {
+        guard let data = readData(
+            fileName: temporaryInboxFileName, fallbackKey: temporaryFallbackKey, storage: storage
+        ) else { return nil }
+        if data.isEmpty { return TemporaryInboxState(clips: [], lastPasteboardEvent: nil) }
+        let decoder = JSONDecoder()
+        if let state = try? decoder.decode(TemporaryInboxState.self, from: data) { return state }
+        // Older releases stored an array without a durable event marker.
+        guard let clips = try? decoder.decode([SharedTemporaryClip].self, from: data) else { return nil }
+        let latest = clips.filter { $0.pasteboardChangeCount != nil }
+            .max { $0.capturedAt < $1.capturedAt }
+        return TemporaryInboxState(
+            clips: clips,
+            lastPasteboardEvent: latest?.pasteboardChangeCount.map {
+                PasteboardEvent(changeCount: $0, bootSession: bootSessionID())
+            }
+        )
     }
 
-    private static func mergeTemporary(_ clips: [SharedTemporaryClip]) -> [SharedTemporaryClip] {
-        Dictionary(grouping: clips, by: \.id)
-            .compactMap { $0.value.max(by: { $0.capturedAt < $1.capturedAt }) }
+    private static func liveTemporaryClips(
+        _ clips: [SharedTemporaryClip], at now: Date
+    ) -> [SharedTemporaryClip] {
+        clips.filter { $0.expiresAt.map { $0 > now } ?? true }
+            .sorted { $0.capturedAt > $1.capturedAt }
     }
 
-    private static func decodeFile<Value: Decodable>(at url: URL?) -> Value? {
-        guard let url, let data = try? Data(contentsOf: url) else { return nil }
-        return try? JSONDecoder().decode(Value.self, from: data)
+    private static func writeTemporaryState(_ state: TemporaryInboxState, storage: Storage) -> Bool {
+        write(state, fileName: temporaryInboxFileName, fallbackKey: temporaryFallbackKey, storage: storage)
     }
 
-    private static func encodeFile<Value: Encodable>(_ value: Value, at url: URL?) {
-        guard let url, let data = try? JSONEncoder().encode(value) else { return }
-        try? data.write(to: url, options: .atomic)
+    // A reachable group container is authoritative, including an empty/missing file.
+    // Unreadable/corrupt files never trigger recovery from another process's stale defaults.
+    // nil signals an I/O failure so read-modify-write operations leave that file intact.
+    private static func readData(fileName: String, fallbackKey: String, storage: Storage) -> Data? {
+        if let directoryURL = storage.directoryURL {
+            let url = directoryURL.appendingPathComponent(fileName, isDirectory: false)
+            do {
+                let data = try Data(contentsOf: url)
+                storage.fallbackDefaults.removeObject(forKey: fallbackKey)
+                return data
+            } catch let error as CocoaError where error.code == .fileReadNoSuchFile {
+                storage.fallbackDefaults.removeObject(forKey: fallbackKey)
+                return Data()
+            } catch {
+                return nil
+            }
+        }
+        return storage.fallbackDefaults.data(forKey: fallbackKey) ?? Data()
     }
 
-    private static func decodeDefaults<Value: Decodable>(forKey key: String) -> Value? {
-        guard let data = UserDefaults.standard.data(forKey: key) else { return nil }
-        return try? JSONDecoder().decode(Value.self, from: data)
+    @discardableResult
+    private static func write<Value: Encodable>(
+        _ value: Value, fileName: String, fallbackKey: String, storage: Storage
+    ) -> Bool {
+        guard let data = try? JSONEncoder().encode(value) else { return false }
+        if let directoryURL = storage.directoryURL {
+            do {
+                try data.write(
+                    to: directoryURL.appendingPathComponent(fileName, isDirectory: false),
+                    options: .atomic
+                )
+                storage.fallbackDefaults.removeObject(forKey: fallbackKey)
+                return true
+            } catch {
+                return false
+            }
+        }
+        storage.fallbackDefaults.set(data, forKey: fallbackKey)
+        return true
     }
 
-    private static func encodeDefaults<Value: Encodable>(_ value: Value, forKey key: String) {
-        guard let data = try? JSONEncoder().encode(value) else { return }
-        UserDefaults.standard.set(data, forKey: key)
+    private static func isSameEvent(_ event: PasteboardEvent?, changeCount: Int) -> Bool {
+        event?.changeCount == changeCount && event?.bootSession == bootSessionID()
+    }
+
+    private static func bootSessionID() -> String? {
+        var bootTime = timeval(tv_sec: 0, tv_usec: 0)
+        var size = MemoryLayout<timeval>.size
+        guard sysctlbyname("kern.boottime", &bootTime, &size, nil, 0) == 0 else { return nil }
+        return "\(bootTime.tv_sec).\(bootTime.tv_usec)"
     }
 
     private static func detectKind(_ text: String) -> String {

@@ -62,54 +62,67 @@ final class ClipboardRetentionPolicyTests: XCTestCase {
         XCTAssertNil(item.expiresAt)
     }
 
-    func testTemporaryClipboardKeepsSeveralCopyEvents() {
-        SharedClipboardStore.clearTemporaryInbox()
-        defer { SharedClipboardStore.clearTemporaryInbox() }
+    func testTemporaryClipboardKeepsSeveralCopyEvents() throws {
+        let (storage, suite) = try makeStorage()
+        defer { storage.fallbackDefaults.removePersistentDomain(forName: suite) }
 
         XCTAssertTrue(
             SharedClipboardStore.captureTemporaryText(
                 "primera copia",
                 pasteboardChangeCount: 91_001,
-                maximumItems: 10
+                maximumItems: 10,
+                storage: storage
             )
         )
         XCTAssertTrue(
             SharedClipboardStore.captureTemporaryText(
                 "segunda copia",
                 pasteboardChangeCount: 91_002,
-                maximumItems: 10
+                maximumItems: 10,
+                storage: storage
             )
         )
         XCTAssertTrue(
             SharedClipboardStore.captureTemporaryText(
                 "primera copia",
                 pasteboardChangeCount: 91_003,
-                maximumItems: 10
+                maximumItems: 10,
+                storage: storage
             )
         )
 
-        let clips = SharedClipboardStore.loadTemporaryInbox()
+        let clips = SharedClipboardStore.loadTemporaryInbox(storage: storage)
         XCTAssertEqual(clips.count, 3)
         XCTAssertEqual(clips.filter { $0.text == "primera copia" }.count, 2)
     }
 
-    func testSamePasteboardEventIsCapturedOnlyOnce() {
-        SharedClipboardStore.clearTemporaryInbox()
-        defer { SharedClipboardStore.clearTemporaryInbox() }
+    func testSamePasteboardEventIsCapturedOnlyOnce() throws {
+        let (storage, suite) = try makeStorage()
+        defer { storage.fallbackDefaults.removePersistentDomain(forName: suite) }
 
         XCTAssertTrue(
             SharedClipboardStore.captureTemporaryText(
                 "evento único",
-                pasteboardChangeCount: 92_001
+                pasteboardChangeCount: 92_001,
+                storage: storage
             )
         )
         XCTAssertFalse(
             SharedClipboardStore.captureTemporaryText(
                 "evento único",
-                pasteboardChangeCount: 92_001
+                pasteboardChangeCount: 92_001,
+                storage: storage
             )
         )
-        XCTAssertEqual(SharedClipboardStore.loadTemporaryInbox().count, 1)
+        XCTAssertEqual(SharedClipboardStore.loadTemporaryInbox(storage: storage).count, 1)
+    }
+    private func makeStorage() throws -> (SharedClipboardStore.Storage, String) {
+        let suite = "ClipboardRetentionPolicyTests.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        return (
+            .init(directoryURL: nil, fallbackDefaults: defaults, settingsDefaults: defaults),
+            suite
+        )
     }
 }
 

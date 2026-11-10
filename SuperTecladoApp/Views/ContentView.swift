@@ -300,7 +300,10 @@ struct ContentView: View {
 
     private func captureClipboard(origin: CaptureOrigin) {
         let changeCount = UIPasteboard.general.changeCount
-        if origin == .automatic && changeCount == lastHandledPasteboardChangeCount { return }
+        if origin == .automatic && (
+            changeCount == lastHandledPasteboardChangeCount ||
+            !SharedClipboardStore.shouldCapture(pasteboardChangeCount: changeCount)
+        ) { return }
         lastHandledPasteboardChangeCount = changeCount
 
         switch ClipboardService.readCurrent() {
@@ -318,13 +321,14 @@ struct ContentView: View {
 
             if let existing = existingItem(withContentHash: draft.contentHash) {
                 existing.updatedAt = .now
+                existing.pasteboardChangeCount = changeCount
                 if existing.isTemporary {
                     existing.expiresAt = ClipboardRetentionPolicy.expirationDate(hours: temporaryRetentionHours)
                     if origin == .manual { showToast("Temporal actualizado") }
                 } else if origin == .manual {
                     showToast("Ya está guardado permanentemente")
                 }
-                save()
+                save(recordingPasteboardChangeCount: changeCount)
                 return
             }
 
@@ -334,10 +338,11 @@ struct ContentView: View {
                 kind: draft.kind,
                 contentHash: draft.contentHash,
                 isTemporary: true,
-                expiresAt: ClipboardRetentionPolicy.expirationDate(hours: temporaryRetentionHours)
+                expiresAt: ClipboardRetentionPolicy.expirationDate(hours: temporaryRetentionHours),
+                pasteboardChangeCount: changeCount
             )
             modelContext.insert(item)
-            save()
+            save(recordingPasteboardChangeCount: changeCount)
             trimHistoryIfNeeded()
             librarySection = .temporary
             showToast(origin == .automatic ? "Añadido a Temporales" : "Importado temporalmente")
@@ -422,10 +427,14 @@ struct ContentView: View {
         if temporaryOverflow > 0 || permanentOverflow > 0 { save() }
     }
 
-    private func save() {
+    private func save(recordingPasteboardChangeCount: Int? = nil) {
         do {
             try modelContext.save()
-            KeyboardHistorySync.publishAppHistory(from: modelContext)
+            if !KeyboardHistorySync.publishAppHistory(
+                from: modelContext, lastPasteboardChangeCount: recordingPasteboardChangeCount
+            ) {
+                showToast("No se pudo actualizar la copia compartida con el teclado")
+            }
         } catch {
             showToast("No se pudieron guardar los cambios")
         }

@@ -12,6 +12,7 @@ final class KeyboardViewController: UIInputViewController {
     private let model = KeyboardViewModel()
     private var host: UIHostingController<SuperTecladoView>?
     private var clipboardTimer: Timer?
+    private var lastInspectedPasteboardChangeCount: Int?
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -24,6 +25,7 @@ final class KeyboardViewController: UIInputViewController {
 
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
+        lastInspectedPasteboardChangeCount = nil
         captureClipboardAsTemporaryIfNeeded()
         reload()
         startClipboardMonitoring()
@@ -44,15 +46,30 @@ final class KeyboardViewController: UIInputViewController {
     @discardableResult
     private func captureClipboardAsTemporaryIfNeeded(automatic: Bool = true) -> Bool {
         guard (!automatic || SharedClipboardStore.automaticCaptureEnabled),
-              hasFullAccess,
-              let text = UIPasteboard.general.string,
-              !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              hasFullAccess else {
+            return false
+        }
+
+        let pasteboard = UIPasteboard.general
+        let changeCount = pasteboard.changeCount
+        guard (!automatic || lastInspectedPasteboardChangeCount != changeCount),
+              SharedClipboardStore.shouldCapture(pasteboardChangeCount: changeCount) else {
+            return false
+        }
+        lastInspectedPasteboardChangeCount = changeCount
+        guard let text = pasteboard.string else { return false }
+        return captureTextAsTemporaryIfAllowed(text, pasteboardChangeCount: changeCount)
+    }
+
+    @discardableResult
+    private func captureTextAsTemporaryIfAllowed(_ text: String, pasteboardChangeCount: Int) -> Bool {
+        guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
               (!SharedClipboardStore.skipOneTimeCodes || !isLikelyOneTimeCode(text)) else {
             return false
         }
         return SharedClipboardStore.captureTemporaryText(
             text,
-            pasteboardChangeCount: UIPasteboard.general.changeCount
+            pasteboardChangeCount: pasteboardChangeCount
         )
     }
 
@@ -68,7 +85,12 @@ final class KeyboardViewController: UIInputViewController {
     }
 
     @objc private func pollClipboard() {
-        if captureClipboardAsTemporaryIfNeeded() { reload() }
+        let captured = captureClipboardAsTemporaryIfNeeded()
+        let now = Date.now
+        let hasExpiredTemporary = model.temporaryClips.contains {
+            $0.expiresAt.map { $0 <= now } ?? false
+        }
+        if captured || hasExpiredTemporary || model.hasFullAccess != hasFullAccess { reload() }
     }
 
     private func isLikelyOneTimeCode(_ text: String) -> Bool {
@@ -96,14 +118,24 @@ final class KeyboardViewController: UIInputViewController {
         SuperTecladoView(
             model: model,
             insertSaved: { [weak self] clip in
-                self?.textDocumentProxy.insertText(clip.text)
-                SharedClipboardStore.markUsed(id: clip.id)
-                self?.reload()
+                guard let self else { return }
+                guard let current = SharedClipboardStore.load().first(where: { $0.id == clip.id }) else {
+                    self.reload()
+                    return
+                }
+                self.textDocumentProxy.insertText(current.text)
+                SharedClipboardStore.markUsed(id: current.id)
+                self.reload()
             },
             insertTemporary: { [weak self] clip in
-                self?.textDocumentProxy.insertText(clip.text)
-                SharedClipboardStore.markTemporaryUsed(id: clip.id)
-                self?.reload()
+                guard let self else { return }
+                guard let current = SharedClipboardStore.loadTemporaryInbox().first(where: { $0.id == clip.id }) else {
+                    self.reload()
+                    return
+                }
+                self.textDocumentProxy.insertText(current.text)
+                SharedClipboardStore.markTemporaryUsed(id: current.id)
+                self.reload()
             },
             saveTemporary: { [weak self] clip in
                 guard self?.hasFullAccess == true else { return }
@@ -120,11 +152,13 @@ final class KeyboardViewController: UIInputViewController {
                 self?.reload()
             },
             paste: { [weak self] in
-                guard let self,
-                      self.hasFullAccess,
-                      let text = UIPasteboard.general.string,
+                guard let self, self.hasFullAccess else { return }
+                let pasteboard = UIPasteboard.general
+                let changeCount = pasteboard.changeCount
+                guard let text = pasteboard.string,
                       !text.isEmpty else { return }
-                self.captureClipboardAsTemporaryIfNeeded(automatic: false)
+                self.lastInspectedPasteboardChangeCount = changeCount
+                self.captureTextAsTemporaryIfAllowed(text, pasteboardChangeCount: changeCount)
                 self.textDocumentProxy.insertText(text)
                 self.reload()
             },
@@ -267,8 +301,8 @@ private struct SuperTecladoView: View {
                         page = page == .numbers ? .symbols : .numbers
                     }
                     ForEach(page == .numbers
-                        ? ["*", "\"", "'", ":", ";", "!", "?"]
-                        : ["%", "©", "®", "™", "[", "]", "<"], id: \.self) { character in
+                        ? [".", ",", "'", ":", ";", "!", "?"]
+                        : ["*", "\"", "%", "©", "®", "™", "<"], id: \.self) { character in
                         characterKey(character)
                     }
                     specialKey("delete.left", width: 48, action: delete)
@@ -315,8 +349,7 @@ private struct SuperTecladoView: View {
 
     private func characterKey(_ character: String) -> some View {
         Button {
-            insertText(isShifted ? character.uppercased() : character)
-            if isShifted { isShifted = false }
+            insertCharacter(character)
         } label: {
             Text(isShifted ? character.uppercased() : character)
                 .font(.system(size: 22))
@@ -324,6 +357,36 @@ private struct SuperTecladoView: View {
                 .background(keyBackground, in: RoundedRectangle(cornerRadius: 7))
         }
         .buttonStyle(KeyboardPressStyle())
+        .contextMenu {
+            ForEach(alternatives(for: character), id: \.self) { alternative in
+                Button(isShifted ? alternative.uppercased() : alternative) {
+                    insertCharacter(alternative)
+                }
+            }
+        }
+        .accessibilityHint(alternatives(for: character).isEmpty ? "" : "Mantén pulsado para ver más caracteres")
+    }
+
+    private func insertCharacter(_ character: String) {
+        insertText(isShifted ? character.uppercased() : character)
+        if isShifted { isShifted = false }
+    }
+
+    private func alternatives(for character: String) -> [String] {
+        switch character {
+        case "a": ["á"]
+        case "e": ["é"]
+        case "i": ["í"]
+        case "o": ["ó"]
+        case "u": ["ú", "ü"]
+        case "!": ["¡"]
+        case "?": ["¿"]
+        case "(": ["["]
+        case ")": ["]"]
+        case "<": [">"]
+        case "+": ["="]
+        default: []
+        }
     }
 
     private func specialKey(
