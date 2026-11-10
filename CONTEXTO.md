@@ -1,6 +1,8 @@
 # Super Teclado: contexto para agentes
 
-Resumen de todo lo hecho hasta la **versión 3.0.0**, para que otro agente (Claude Code, Codex…) pueda seguir el trabajo sin repetir errores. El `README.md` describe las funciones para el usuario; este documento explica **cómo está hecho, por qué y qué falta**.
+Resumen de todo lo hecho hasta la **versión 3.0.1**, para que otro agente (Claude Code, Codex…) pueda seguir el trabajo sin repetir errores. El `README.md` describe las funciones para el usuario; este documento explica **cómo está hecho, por qué y qué falta**.
+
+**Base vigente:** esta rama y las releases publicadas, no `main`. `main` conserva la versión 1.0. Antes de auditar o modificar el proyecto, comprobar las ramas, la última release y este archivo. La 3.0.1 continúa la 3.0.0; no sustituirla por cambios preparados sobre la 1.0.
 
 ---
 
@@ -24,19 +26,19 @@ Resumen de todo lo hecho hasta la **versión 3.0.0**, para que otro agente (Clau
 - **PR #1** (https://github.com/Spidy229/Super-Teclado-iOS/pull/1): abierta y **sin fusionar**; no fusionarla sin que lo pida el usuario.
 - **CI** (`.github/workflows/build-ipa.yml`, macOS 15, Xcode 16.4) se lanza con cada push a `main`, `codex/**` y `claude/**`. Pasos:
   1. XcodeGen genera el proyecto.
-  2. Compila y ejecuta las pruebas en el primer simulador de iPhone disponible.
+  2. Compila y ejecuta las pruebas en un simulador de iPhone compatible con el SDK seleccionado; falla si no hay ninguno.
   3. `scripts/build-unsigned-ipa.sh` genera la IPA sin firmar.
-  4. **Publica un release** `v<MARKETING_VERSION>-build<run_number>` con `Super-Teclado-unsigned.ipa`.
+  4. **Publica un release** `v<MARKETING_VERSION>-build<CURRENT_PROJECT_VERSION>` con `Super-Teclado-unsigned.ipa`, su SHA-256 y los metadatos del commit. La compilación del nombre coincide con la instalada.
   - Enlace de descarga: `https://github.com/Spidy229/Super-Teclado-iOS/releases/download/<tag>/Super-Teclado-unsigned.ipa`.
   - Para commits solo de documentación, usar `[skip ci]` y así no crear un release repetido.
 - **Subir versión** en cada cambio que se entregue, en dos sitios que deben coincidir:
   - `project.yml`: `MARKETING_VERSION` y `CURRENT_PROJECT_VERSION`, **4 veces cada uno** (app, teclado, share y widget).
   - `SuperTecladoApp/Package.swift`: `displayVersion` y `bundleVersion`.
-  - Estado actual: 3.0.0 / 37 en `project.yml`, 3.0.0 / 42 en `Package.swift`.
+  - Estado actual: **3.0.1 / 49**, igual en los cuatro destinos de `project.yml` y en `Package.swift`.
 - `scripts/build-unsigned-ipa.sh`:
   - firma ad hoc (`codesign -s -`) cada appex con sus entitlements y después la app;
   - **falla si falta `Assets.car` o `CFBundleIcons`** (comprobación añadida en 2.6.6).
-- `scripts/validate-project.ps1`: comprobación estática antigua (PowerShell) que **CI no ejecuta**. Además está desfasada: busca `SharedClipboardStore.captureTemporaryText` en `KeyboardViewController.swift`, que ya no existe.
+- `scripts/validate-project.ps1`: comprobación estática de estructura, versiones y compilaciones de los cuatro destinos, App Groups e icono. **CI no la ejecuta**. En 3.0.1 se eliminaron las búsquedas de funciones antiguas y el conteo de llaves en bruto.
 - No hay Mac en el entorno de los agentes en la nube: **solo CI compila con UIKit**. En Linux se puede usar un toolchain de Swift 6 para:
   - `swiftc -parse` (sintaxis);
   - compilar y ejecutar la lógica pura de `Shared/` (diccionario, glide, sugerencias en segundo plano, traspaso de ajustes).
@@ -256,6 +258,7 @@ Este archivo es la solución al **retraso al escribir**. Antes cada tecla era un
 | 2.9.8 | Informe real del usuario (iPhone 17 Pro Max, iOS 27.0.1): teclado sin congelaciones, entrega de 23 ms y 1 ms por toque. El bloqueo que nota está en la app: Ajustes cargaba todos los elementos (`@Query`) para contarlos al dibujar la sección «Datos locales»; ahora `fetchCount`. La lista principal filtra y ordena una vez por dibujado. El registrador de congelaciones también en la app |
 | 2.9.9 | Solo diagnóstico: los últimos 40 toques (una frase entera, para compararla con lo que se quería escribir) y los dedos que caen fuera de las teclas («fuera de las teclas (vista, dónde)») |
 | 3.0.0 | **Vuelta a la base de 2.9.3** (la última que el usuario dijo que iba bien), conservando solo: colocación sin animación (2.9.6), toques solo por el reconocedor (2.9.7) y los recuentos de Ajustes de la app (2.9.8). Se quitan el registrador de congelaciones (teclado y app), el contador de dedos en la ventana y quitar SwiftUI de la pantalla al escribir; vuelve `removeSystemTouchDelays`. El usuario notaba el teclado cada vez peor con esas piezas y su informe no mostraba ninguna congelación |
+| 3.0.1 | Bloqueo del historial cerrado ante fallos de autenticación; exclusión de marcas privadas también en la app; texto exacto e imágenes limitadas por píxeles; imágenes guardadas en el contenedor privado sin App Group; sensibilidad preservada al fijar, desfijar y sincronizar; sincronización que conserva los borrados y las referencias de imágenes ante errores; caducidad aplicada también a las copias en memoria y al pegado rápido. Corrección acotada de los toques del panel ⚙️ durante la inercia, sin cambiar la cuadrícula UIKit de las teclas. Versiones y número de compilación alineados en los cuatro destinos |
 
 ## 8. Errores ya resueltos (no repetirlos)
 
@@ -291,6 +294,8 @@ Este archivo es la solución al **retraso al escribir**. Antes cada tecla era un
 
 ## 9. Pendiente y sin verificar
 
+- **Fallo comunicado el 10-11-2026:** en el panel ⚙️ del teclado, no en Ajustes de la app, los toques repetidos se ignoran mientras sigue la inercia; responden cuando se para sola. En 3.0.1 se corrige el cálculo de movimiento respecto a una vista que también se desplaza y se añade una interrupción de la inercia limitada a ese panel. No se modifica la cuadrícula de teclas ni se añade un observador global en la ventana. La aceptación física en el iPhone sigue pendiente: comprobar tocar durante inercia, iniciar scroll desde un botón sin activarlo, interruptores, intensidad y volver. El CI con Xcode 16.4 prueba iOS 18, por lo que no demuestra resolver un comportamiento específico de iOS 27.
+
 - **La cuadrícula UIKit (2.6.5+) no se ha probado en un dispositivo real**; el usuario aún no ha confirmado si ha desaparecido el retraso. Puntos a vigilar:
   - posición de las ventanas emergentes en la fila superior y en modo una mano;
   - tecla del globo (`handleInputModeList`);
@@ -298,7 +303,7 @@ Este archivo es la solución al **retraso al escribir**. Antes cada tecla era un
   - toques cancelados por gestos del sistema (ahora no escriben nada).
 - No está verificado en un iPhone que «Enviar ajustes al teclado» funcione con KravaSigner (debería, con acceso total).
 - El usuario aún no ha dicho qué muestra el panel ⚙︎ (estado del acceso total y del App Group).
-- `scripts/validate-project.ps1` está desfasado (§2).
+- La validación PowerShell de 3.0.1 se ha revisado estáticamente; el entorno Linux de esta actualización no dispone de PowerShell para ejecutarla.
 - El usuario notaba que se perdían pulsaciones al teclear deprisa. Tras la 2.6.9 seguía notando fallos, así que la 2.7.0 añade la precisión inteligente y el diagnóstico de toques. Hay que pedirle una captura del diagnóstico (⚙︎) justo después de un fallo: si «Cancelados y perdidos» y «Sin aviso de fin» siguen en 0, los toques perdidos no llegan al teclado (es cosa de iOS); si llegan, se ve qué les pasa.
 - Ideas posibles:
   - pulsación larga en `?123` para escribir números sin cambiar de página;

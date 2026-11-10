@@ -47,8 +47,8 @@ enum ClipboardCapture {
 
     @discardableResult
     static func captureText(_ text: String, changeCount: Int?) -> Bool {
-        let value = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !value.isEmpty else { return false }
+        let value = text
+        guard !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return false }
         if SharedClipboardStore.skipOneTimeCodes, KeyboardTextLogic.isLikelyOneTimeCode(value) { return false }
 
         var isSensitive = false
@@ -71,7 +71,7 @@ enum ClipboardCapture {
         guard let jpeg = ClipImageProcessing.jpegThumbnail(from: data, maxPixelSize: 1_600) else { return false }
         return SharedClipboardStore.captureTemporaryImage(
             jpeg,
-            hash: ClipImageProcessing.hash(data),
+            hash: ClipImageProcessing.hash(jpeg),
             pasteboardChangeCount: changeCount
         )
     }

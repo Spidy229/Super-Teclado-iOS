@@ -21,12 +21,10 @@ final class InstantTouchRecognizer: UIGestureRecognizer {
     var onEnd: () -> Void = {}
 
     private weak var tracked: UITouch?
+    private weak var coordinateView: UIView?
     private var start: CGPoint = .zero
     private var longPressFired = false
     private var longPressTask: Task<Void, Never>?
-    /// Desplazamiento a partir del cual un toque deja de serlo (y se cede a la lista).
-    private static let tapSlop: CGFloat = 12
-
     override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent) {
         for touch in touches where touch !== tracked {
             guard tracked == nil else {
@@ -35,7 +33,8 @@ final class InstantTouchRecognizer: UIGestureRecognizer {
                 continue
             }
             tracked = touch
-            start = touch.location(in: view)
+            coordinateView = KeyboardScrollTouchPolicy.referenceView(for: view)
+            start = touch.location(in: coordinateView)
             longPressFired = false
             if startsImmediately { state = .began }
             onDown()
@@ -45,12 +44,12 @@ final class InstantTouchRecognizer: UIGestureRecognizer {
 
     override func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent) {
         guard let tracked, touches.contains(tracked) else { return }
-        let point = tracked.location(in: view)
+        let point = tracked.location(in: coordinateView)
         let translation = CGSize(width: point.x - start.x, height: point.y - start.y)
         if startsImmediately {
             state = .changed
             onMove(translation)
-        } else if hypot(translation.width, translation.height) > Self.tapSlop {
+        } else if KeyboardScrollTouchPolicy.movedBeyondTap(from: start, to: point) {
             // Se está desplazando la lista: no es un toque.
             finish(tapped: false)
             state = .failed
@@ -59,6 +58,14 @@ final class InstantTouchRecognizer: UIGestureRecognizer {
 
     override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent) {
         guard let tracked, touches.contains(tracked) else { return }
+        // El último movimiento puede llegar agrupado con el fin: tampoco entonces un arrastre
+        // debe ejecutar la acción del botón.
+        if !startsImmediately,
+           KeyboardScrollTouchPolicy.movedBeyondTap(from: start, to: tracked.location(in: coordinateView)) {
+            finish(tapped: false)
+            state = .failed
+            return
+        }
         finish(tapped: !longPressFired)
         state = startsImmediately ? .ended : .recognized
     }
@@ -76,11 +83,24 @@ final class InstantTouchRecognizer: UIGestureRecognizer {
         if tracked != nil { finish(tapped: false) }
     }
 
+    override func canPrevent(_ preventedGestureRecognizer: UIGestureRecognizer) -> Bool {
+        if !startsImmediately,
+           KeyboardScrollTouchPolicy.isAncestorScrollPan(preventedGestureRecognizer, of: view) { return false }
+        return super.canPrevent(preventedGestureRecognizer)
+    }
+
+    override func canBePrevented(by preventingGestureRecognizer: UIGestureRecognizer) -> Bool {
+        if !startsImmediately,
+           KeyboardScrollTouchPolicy.isAncestorScrollPan(preventingGestureRecognizer, of: view) { return false }
+        return super.canBePrevented(by: preventingGestureRecognizer)
+    }
+
     private func finish(tapped: Bool) {
         longPressTask?.cancel()
         longPressTask = nil
         guard tracked != nil else { return }
         tracked = nil
+        coordinateView = nil
         onEnd()
         if tapped { onTap() }
     }
@@ -90,7 +110,11 @@ final class InstantTouchRecognizer: UIGestureRecognizer {
         guard let duration = longPressDuration, onLongPress != nil else { return }
         longPressTask = Task { @MainActor [weak self] in
             try? await Task.sleep(for: .milliseconds(Int(duration * 1000)))
-            guard let self, !Task.isCancelled, self.tracked != nil else { return }
+            guard let self, !Task.isCancelled, let tracked = self.tracked else { return }
+            guard self.startsImmediately || !KeyboardScrollTouchPolicy.movedBeyondTap(
+                from: self.start,
+                to: tracked.location(in: self.coordinateView)
+            ) else { return }
             self.longPressFired = true
             self.onLongPress?()
         }

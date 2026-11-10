@@ -310,6 +310,8 @@ struct ContentView: View {
         switch ClipboardService.readCurrent() {
         case .empty:
             if origin == .manual { showToast("El portapapeles está vacío") }
+        case .privateContent:
+            if origin == .manual { showToast("Contenido privado omitido") }
         case .unsupported:
             if origin == .manual { showToast("Este tipo de contenido aún no es compatible") }
         case .content(let draft):

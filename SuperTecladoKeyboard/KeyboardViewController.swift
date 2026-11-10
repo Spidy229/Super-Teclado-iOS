@@ -246,6 +246,8 @@ final class KeyboardViewController: UIInputViewController {
     }
 
     @objc private func pollClipboard() {
+        // La caducidad también se aplica si no cambia el portapapeles o se está escribiendo.
+        engine.expireClips()
         // Mientras se escribe no se pregunta a iOS por el portapapeles (es una consulta a otro
         // proceso): lo copiado se recoge en cuanto se deja de teclear o al abrir el panel.
         guard ProcessInfo.processInfo.systemUptime - engine.lastKeyTouch > 1.5 else { return }

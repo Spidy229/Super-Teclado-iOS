@@ -13,30 +13,56 @@ enum KeyboardHistorySync {
     }
 
     /// Guarda los cambios de la app y sincroniza con el teclado en ambos sentidos.
+    private enum SyncError: Error { case storageUnavailable }
+
     static func commit(_ context: ModelContext) throws {
         try context.save()
-        let deletedIDs = pendingDeletedIDs
+        // Persistir la intención antes de reimportar: un fallo no debe resucitar borrados.
+        SharedClipboardStore.recordDeletion(of: pendingDeletedIDs)
+        guard synchronize(with: context, excluding: pendingDeletedIDs) else {
+            throw SyncError.storageUnavailable
+        }
         pendingDeletedIDs = []
-        synchronize(with: context, excluding: deletedIDs)
     }
 
-    static func synchronize(with context: ModelContext, excluding deletedIDs: Set<UUID> = []) {
-        applyKeyboardDeletions(in: context)
-        importKeyboardClips(into: context, excluding: deletedIDs)
-        importTemporaryInbox(into: context, excluding: deletedIDs)
-        publishAppHistory(from: context)
+    @discardableResult
+    static func synchronize(
+        with context: ModelContext, excluding deletedIDs: Set<UUID> = [],
+        storage: SharedClipboardStore.Storage = .live
+    ) -> Bool {
+        guard SharedClipboardStore.canRead(storage: storage) else { return false }
+        let deletions = SharedClipboardStore.pendingDeletedIDs(storage: storage).union(deletedIDs)
+        guard applyKeyboardDeletions(deletions, in: context),
+              importKeyboardClips(into: context, excluding: deletions, storage: storage),
+              importTemporaryInbox(into: context, excluding: deletions, storage: storage),
+              publishAppHistory(from: context, storage: storage) else { return false }
+        // Acusar recibo solo cuando ambos historiales ya reflejan el borrado.
+        SharedClipboardStore.forgetDeletion(of: deletions, storage: storage)
+        return true
     }
 
-    static func publishAppHistory(from context: ModelContext) {
+    @discardableResult
+    static func publishAppHistory(
+        from context: ModelContext, storage: SharedClipboardStore.Storage = .live
+    ) -> Bool {
+        guard SharedClipboardStore.canRead(storage: storage) else { return false }
         let descriptor = FetchDescriptor<ClipboardItem>(
             sortBy: [SortDescriptor(\ClipboardItem.updatedAt, order: .reverse)]
         )
-        guard let items = try? context.fetch(descriptor) else { return }
+        guard let items = try? context.fetch(descriptor) else { return false }
+        let previousTemporary = Dictionary(
+            SharedClipboardStore.loadTemporaryInbox(storage: storage).map { ($0.id, $0) },
+            uniquingKeysWith: { first, _ in first }
+        )
 
+        var imagePublicationFailed = false
         var referencedImages: Set<String> = []
         func publishedImage(for item: ClipboardItem) -> String? {
-            guard let data = item.imageData,
-                  let fileName = SharedClipboardStore.storeImageIfNeeded(data, for: item.id) else { return nil }
+            guard let data = item.imageData else { return nil }
+            guard let fileName = SharedClipboardStore.storeImageIfNeeded(data, for: item.id, storage: storage) else {
+                imagePublicationFailed = true
+                return nil
+            }
             referencedImages.insert(fileName)
             return fileName
         }
@@ -60,8 +86,6 @@ enum KeyboardHistorySync {
                 isSensitive: item.isSensitive ? true : nil
             )
         }
-        SharedClipboardStore.save(clips)
-
         let temporary = items.compactMap { item -> SharedTemporaryClip? in
             guard item.isTemporary else { return nil }
             let imageFileName = publishedImage(for: item)
@@ -73,30 +97,36 @@ enum KeyboardHistorySync {
                 capturedAt: item.updatedAt,
                 kindRawValue: item.kindRawValue,
                 expiresAt: item.expiresAt,
+                pasteboardChangeCount: previousTemporary[item.id]?.pasteboardChangeCount,
                 imageFileName: imageFileName,
                 imageHash: imageFileName == nil ? nil : item.contentHash,
                 isSensitive: item.isSensitive ? true : nil
             )
         }
-        SharedClipboardStore.replaceTemporaryInbox(temporary)
-        SharedClipboardStore.pruneImages(keeping: referencedImages)
+        guard !imagePublicationFailed,
+              SharedClipboardStore.save(clips, storage: storage),
+              SharedClipboardStore.replaceTemporaryInbox(temporary, storage: storage) else { return false }
+        SharedClipboardStore.pruneImages(keeping: referencedImages, storage: storage)
         // El widget muestra los fijados: se actualiza cuando cambia el historial.
         WidgetCenter.shared.reloadTimelines(ofKind: "PinnedClips")
+        return true
     }
 
-    private static func applyKeyboardDeletions(in context: ModelContext) {
-        let ids = SharedClipboardStore.consumeDeletedIDs()
-        guard !ids.isEmpty else { return }
-        let items = (try? context.fetch(FetchDescriptor<ClipboardItem>())) ?? []
-        for item in items where ids.contains(item.id) {
-            context.delete(item)
-        }
-        try? context.save()
+    private static func applyKeyboardDeletions(_ ids: Set<UUID>, in context: ModelContext) -> Bool {
+        guard !ids.isEmpty else { return true }
+        do {
+            let items = try context.fetch(FetchDescriptor<ClipboardItem>())
+            for item in items where ids.contains(item.id) { context.delete(item) }
+            try context.save()
+            return true
+        } catch { return false }
     }
 
-    private static func importKeyboardClips(into context: ModelContext, excluding deletedIDs: Set<UUID>) {
+    private static func importKeyboardClips(
+        into context: ModelContext, excluding deletedIDs: Set<UUID>, storage: SharedClipboardStore.Storage
+    ) -> Bool {
         let descriptor = FetchDescriptor<ClipboardItem>()
-        let existing = (try? context.fetch(descriptor)) ?? []
+        guard let existing = try? context.fetch(descriptor) else { return false }
         let existingByID = Dictionary(uniqueKeysWithValues: existing.map { ($0.id, $0) })
         let existingByText = Dictionary(
             existing.compactMap { item in item.text.map { ($0, item) } },
@@ -107,8 +137,9 @@ enum KeyboardHistorySync {
             uniquingKeysWith: { first, _ in first }
         )
 
-        for clip in SharedClipboardStore.load() where !deletedIDs.contains(clip.id) {
+        for clip in SharedClipboardStore.load(storage: storage) where !deletedIDs.contains(clip.id) {
             if let item = existingByID[clip.id] {
+                item.isSensitive = item.isSensitive || clip.isSensitive == true
                 if clip.updatedAt > item.updatedAt {
                     item.updatedAt = clip.updatedAt
                     item.isFavorite = clip.isFavorite
@@ -122,9 +153,10 @@ enum KeyboardHistorySync {
             }
 
             if let fileName = clip.imageFileName {
-                guard let data = SharedClipboardStore.imageData(fileName: fileName) else { continue }
+                guard let data = SharedClipboardStore.imageData(fileName: fileName, storage: storage) else { return false }
                 let hash = ClipboardService.hash(data)
                 if let item = existingByHash[hash] {
+                    item.isSensitive = item.isSensitive || clip.isSensitive == true
                     item.updatedAt = max(item.updatedAt, clip.updatedAt)
                     item.isPinned = clip.isPinned
                     item.isTemporary = false
@@ -143,13 +175,15 @@ enum KeyboardHistorySync {
                         isPinned: clip.isPinned,
                         folderName: clip.folderName,
                         colorTagRawValue: clip.colorTagRawValue,
-                        contentHash: hash
+                        contentHash: hash,
+                        isSensitive: clip.isSensitive == true
                     )
                 )
                 continue
             }
 
             if let item = existingByText[clip.text] {
+                item.isSensitive = item.isSensitive || clip.isSensitive == true
                 item.updatedAt = max(item.updatedAt, clip.updatedAt)
                 item.isFavorite = clip.isFavorite
                 item.isPinned = clip.isPinned
@@ -178,15 +212,17 @@ enum KeyboardHistorySync {
                 )
             )
         }
-        try? context.save()
+        do { try context.save(); return true } catch { return false }
     }
 
-    private static func importTemporaryInbox(into context: ModelContext, excluding deletedIDs: Set<UUID>) {
-        let pending = SharedClipboardStore.loadTemporaryInbox().filter { !deletedIDs.contains($0.id) }
-        guard !pending.isEmpty else { return }
+    private static func importTemporaryInbox(
+        into context: ModelContext, excluding deletedIDs: Set<UUID>, storage: SharedClipboardStore.Storage
+    ) -> Bool {
+        let pending = SharedClipboardStore.loadTemporaryInbox(storage: storage).filter { !deletedIDs.contains($0.id) }
+        guard !pending.isEmpty else { return true }
 
         let descriptor = FetchDescriptor<ClipboardItem>()
-        let existing = (try? context.fetch(descriptor)) ?? []
+        guard let existing = try? context.fetch(descriptor) else { return false }
         var existingByID = Dictionary(uniqueKeysWithValues: existing.map { ($0.id, $0) })
         var existingByText = Dictionary(
             existing.compactMap { item in item.text.map { ($0, item) } },
@@ -198,12 +234,11 @@ enum KeyboardHistorySync {
         )
 
         for clip in pending {
-            let expiration = clip.expiresAt ?? ClipboardRetentionPolicy.expirationDate(
-                hours: SharedClipboardStore.temporaryRetentionHours,
-                from: clip.capturedAt
-            )
+            // nil significa «sin caducidad»; no inventar otra política al sincronizar.
+            let expiration = clip.expiresAt
 
             if let item = existingByID[clip.id] {
+                item.isSensitive = item.isSensitive || clip.isSensitive == true
                 item.updatedAt = max(item.updatedAt, clip.capturedAt)
                 if item.isTemporary { item.expiresAt = expiration }
                 continue
@@ -212,13 +247,14 @@ enum KeyboardHistorySync {
             var imageData: Data?
             var hash = ClipboardService.hash(Data(clip.text.utf8))
             if let fileName = clip.imageFileName {
-                guard let data = SharedClipboardStore.imageData(fileName: fileName) else { continue }
+                guard let data = SharedClipboardStore.imageData(fileName: fileName, storage: storage) else { return false }
                 imageData = data
                 hash = ClipboardService.hash(data)
             }
 
             let match = imageData == nil ? existingByText[clip.text] : existingByHash[hash]
             if let item = match {
+                item.isSensitive = item.isSensitive || clip.isSensitive == true
                 item.updatedAt = max(item.updatedAt, clip.capturedAt)
                 if item.isTemporary { item.expiresAt = expiration }
                 continue
@@ -244,8 +280,10 @@ enum KeyboardHistorySync {
 
         do {
             try context.save()
+            return true
         } catch {
             // Conservamos la bandeja compartida para reintentar en la próxima apertura.
+            return false
         }
     }
 }

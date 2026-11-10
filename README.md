@@ -2,7 +2,7 @@
 
 Teclado para iPhone y iPad inspirado en Gboard, con portapapeles completo.
 
-## Versión 2.6
+## Versión 3.0.1 (compilación 49)
 
 ### Teclado
 
@@ -69,6 +69,6 @@ GitHub Actions genera `Super-Teclado-unsigned.ipa` en un runner macOS. La IPA no
 
 El código de la aplicación está en `SuperTecladoApp/`, el teclado en `SuperTecladoKeyboard/`, la extensión de Compartir en `SuperTecladoShare/`, el widget en `SuperTecladoWidget/`, las acciones de Atajos compartidas en `SharedIntents/` y el código común (almacenamiento compartido, preferencias y reglas de texto) en `Shared/`. `project.yml` genera el proyecto Xcode reproducible mediante XcodeGen.
 
-La automatización compila y **ejecuta las pruebas unitarias** en un simulador de iPhone y solo genera la IPA si pasan. En Windows puede ejecutarse `powershell -File scripts/validate-project.ps1` para comprobar estructura, metadatos y reglas esenciales antes de enviar los cambios a GitHub.
+La automatización selecciona un simulador de iPhone compatible con el SDK de Xcode y **ejecuta las pruebas unitarias**; si no hay simulador o fallan las pruebas, no genera ni publica la IPA. El release usa la versión y la compilación de la app (por ejemplo, `v3.0.1-build49`), e incluye el SHA-256 y los metadatos del commit compilado. Los resultados de XCTest quedan en un artefacto separado. En Windows puede ejecutarse `powershell -File scripts/validate-project.ps1` para comprobar la estructura, el icono, los App Groups y la coherencia de versiones de la app y sus tres extensiones antes de enviar los cambios a GitHub.
 
 Los diccionarios proceden de FrequencyWords (CC BY-SA 4.0), los pares de palabras para predecir de Tatoeba (CC BY 2.0 FR) y los nombres de emojis de Unicode CLDR (licencia Unicode); consulta `THIRD_PARTY_NOTICES.md`.

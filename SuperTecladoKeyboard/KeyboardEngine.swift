@@ -186,6 +186,8 @@ final class KeyboardEngine: ObservableObject {
     private var backgroundDate: Date?
     private var emojiIndex: EmojiSearchIndex?
     private var emojiIndexLoadStarted = false
+    /// Descarta lecturas antiguas si mientras tanto se ha borrado, fijado o recargado algo.
+    private var clipsLoadGeneration = 0
     private static let recentEmojisKey = "super-teclado-recent-emojis"
     private static let emojiTonesKey = "super-teclado-emoji-tones"
     private static let searchableEmojis = EmojiCatalog.categories.flatMap(\.emojis)
@@ -1049,6 +1051,7 @@ final class KeyboardEngine: ObservableObject {
     // MARK: Portapapeles
 
     func reloadClips() {
+        clipsLoadGeneration += 1
         applyClips(
             saved: SharedClipboardStore.load(),
             recent: SharedClipboardStore.loadTemporaryInbox(),
@@ -1060,6 +1063,8 @@ final class KeyboardEngine: ObservableObject {
     /// Igual que `reloadClips`, pero leyendo el historial fuera del hilo principal. Lo usan las
     /// comprobaciones automáticas del portapapeles, que no deben frenar nunca el teclado.
     func reloadClipsInBackground(offerQuickPaste offer: Bool = false) {
+        clipsLoadGeneration += 1
+        let generation = clipsLoadGeneration
         Task { [weak self] in
             let loaded = await Task.detached(priority: .utility) {
                 (
@@ -1069,7 +1074,7 @@ final class KeyboardEngine: ObservableObject {
                     enabled: SharedClipboardStore.automaticCaptureEnabled
                 )
             }.value
-            guard let self else { return }
+            guard let self, self.clipsLoadGeneration == generation else { return }
             self.applyClips(saved: loaded.saved, recent: loaded.recent, folders: loaded.folders, enabled: loaded.enabled)
             if offer { self.offerQuickPaste() }
         }
@@ -1077,7 +1082,8 @@ final class KeyboardEngine: ObservableObject {
 
     private func applyClips(saved: [SharedClipboardClip], recent: [SharedTemporaryClip], folders loadedFolders: [String], enabled: Bool) {
         let savedClips = saved.map(KeyboardClip.init(saved:))
-        let recentClips = recent.map(KeyboardClip.init(recent:))
+        let now = Date.now
+        let recentClips = recent.map(KeyboardClip.init(recent:)).filter { !$0.isExpired(at: now) }
         if savedClips != self.savedClips { self.savedClips = savedClips }
         if recentClips != self.recentClips { self.recentClips = recentClips }
         if loadedFolders != folders { folders = loadedFolders }
@@ -1087,22 +1093,46 @@ final class KeyboardEngine: ObservableObject {
         }
         // Sin cambios no se avisa a SwiftUI (redibujaría todo el teclado).
         if kept != selectedClipIDs { selectedClipIDs = kept }
+        expireClips(at: now)
+        if panel == .clipboardSearch { updateClipSearchResults() }
+    }
+
+    /// Solo filtra las copias en memoria: no lee archivos ni consulta a iOS al escribir.
+    func expireClips(at now: Date = .now) {
+        let current = recentClips.filter { !$0.isExpired(at: now) }
+        if current != recentClips {
+            recentClips = current
+            let ids = Set(savedClips.map(\.id) + current.map(\.id))
+            selectedClipIDs.formIntersection(ids)
+            if panel == .clipboardSearch { updateClipSearchResults() }
+        }
+        if let quickPaste,
+           quickPaste.isExpired(at: now) || now.timeIntervalSince(quickPasteDate) >= 180 {
+            self.quickPaste = nil
+        }
     }
 
     /// Muestra lo último copiado en la barra de sugerencias, como el pegado rápido de Gboard.
     func offerQuickPaste() {
+        expireClips()
         guard preferences.quickPaste, let clip = recentClips.first else { return }
         quickPaste = clip
         quickPasteDate = Date()
     }
 
     func useQuickPaste() {
+        expireClips()
         guard let clip = quickPaste else { return }
         quickPaste = nil
         useClip(clip)
     }
 
     func useClip(_ clip: KeyboardClip, transform: ClipboardClassifier.Transform? = nil) {
+        guard !clip.isExpired() else {
+            expireClips()
+            showToast("El elemento ha caducado")
+            return
+        }
         if clip.isImage {
             copyClip(clip)
             return
@@ -1121,6 +1151,11 @@ final class KeyboardEngine: ObservableObject {
 
     func copyClip(_ clip: KeyboardClip) {
         guard requireFullAccess() else { return }
+        guard !clip.isExpired() else {
+            expireClips()
+            showToast("El elemento ha caducado")
+            return
+        }
         if let fileName = clip.imageFileName {
             guard let data = SharedClipboardStore.imageData(fileName: fileName) else {
                 showToast("No se encontró la imagen")
@@ -1195,14 +1230,17 @@ final class KeyboardEngine: ObservableObject {
         guard let deletion = undoDeletion else { return }
         undoDeletion = nil
         let files = deletion.saved.compactMap(\.imageFileName) + deletion.temporary.compactMap(\.imageFileName)
-        files.forEach(SharedClipboardStore.removeImage(fileName:))
+        files.forEach { SharedClipboardStore.removeImage(fileName: $0) }
     }
 
     /// Pega varios elementos seguidos, cada uno en su línea (las imágenes se omiten).
     func pasteClips(_ clips: [KeyboardClip]) {
-        let texts = clips.filter { !$0.isImage }.map(\.text)
+        expireClips()
+        let now = Date.now
+        let current = clips.filter { !$0.isExpired(at: now) }
+        let texts = current.filter { !$0.isImage }.map(\.text)
         guard !texts.isEmpty else {
-            showToast("Las imágenes se pegan una a una desde el campo")
+            showToast(current.isEmpty ? "Los elementos han caducado" : "Las imágenes se pegan una a una desde el campo")
             return
         }
         proxy?.insertText(texts.joined(separator: "\n"))
@@ -1214,8 +1252,13 @@ final class KeyboardEngine: ObservableObject {
     /// Copia varios elementos juntos al portapapeles del sistema.
     func copyClips(_ clips: [KeyboardClip]) {
         guard requireFullAccess() else { return }
-        let texts = clips.filter { !$0.isImage }.map(\.text)
-        guard !texts.isEmpty else { return }
+        expireClips()
+        let now = Date.now
+        let texts = clips.filter { !$0.isImage && !$0.isExpired(at: now) }.map(\.text)
+        guard !texts.isEmpty else {
+            if clips.allSatisfy({ $0.isExpired(at: now) }) { showToast("Los elementos han caducado") }
+            return
+        }
         UIPasteboard.general.string = texts.joined(separator: "\n")
         ownPasteboardChangeCount = UIPasteboard.general.changeCount
         showToast(texts.count == 1 ? "Copiado" : "\(texts.count) elementos copiados juntos")

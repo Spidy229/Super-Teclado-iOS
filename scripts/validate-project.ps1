@@ -3,16 +3,20 @@ $ErrorActionPreference = 'Stop'
 $projectRoot = Split-Path -Parent $PSScriptRoot
 $requiredFiles = @(
     'project.yml',
+    'Shared/SharedClipboardStore.swift',
     'SuperTecladoApp/Models/ClipboardItem.swift',
-    'SuperTecladoApp/Services/ClipboardRetentionPolicy.swift',
-    'SuperTecladoApp/Views/ContentView.swift',
+    'SuperTecladoApp/Services/KeyboardHistorySync.swift',
     'SuperTecladoKeyboard/KeyboardViewController.swift',
-    'SuperTecladoTests/ClipboardRetentionPolicyTests.swift'
+    'SuperTecladoKeyboard/KeyboardEngine.swift',
+    'SuperTecladoKeyboard/Views/KeyGridUIView.swift',
+    'SuperTecladoShare/ShareViewController.swift',
+    'SuperTecladoWidget/SuperTecladoWidgets.swift',
+    'SharedIntents/ClipboardSharedIntents.swift',
+    'SuperTecladoTests/ClipboardRetentionPolicyTests.swift',
+    'SuperTecladoApp/Assets.xcassets/AppIcon.appiconset/Contents.json'
 )
-
 foreach ($relativePath in $requiredFiles) {
-    $path = Join-Path $projectRoot $relativePath
-    if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
+    if (-not (Test-Path -LiteralPath (Join-Path $projectRoot $relativePath) -PathType Leaf)) {
         throw "Falta el archivo obligatorio: $relativePath"
     }
 }
@@ -25,52 +29,44 @@ foreach ($file in $xmlFiles) {
 
 $projectSpec = Get-Content -LiteralPath (Join-Path $projectRoot 'project.yml') -Raw
 $packageSpec = Get-Content -LiteralPath (Join-Path $projectRoot 'SuperTecladoApp/Package.swift') -Raw
-$projectVersion = [regex]::Match($projectSpec, 'MARKETING_VERSION:\s*"([^"]+)"').Groups[1].Value
+$versions = @([regex]::Matches($projectSpec, 'MARKETING_VERSION:\s*"([^"]+)"') |
+    ForEach-Object { $_.Groups[1].Value })
+$builds = @([regex]::Matches($projectSpec, 'CURRENT_PROJECT_VERSION:\s*"([^"]+)"') |
+    ForEach-Object { $_.Groups[1].Value })
 $packageVersion = [regex]::Match($packageSpec, 'displayVersion:\s*"([^"]+)"').Groups[1].Value
-if (-not $projectVersion -or $projectVersion -ne $packageVersion) {
-    throw "Las versiones de XcodeGen ($projectVersion) y Swift Package ($packageVersion) no coinciden."
+$packageBuild = [regex]::Match($packageSpec, 'bundleVersion:\s*"([^"]+)"').Groups[1].Value
+if ($versions.Count -ne 4 -or @($versions | Select-Object -Unique).Count -ne 1 -or
+    -not $packageVersion -or $versions[0] -ne $packageVersion) {
+    throw 'La version debe coincidir en la app, las tres extensiones y Swift Package.'
+}
+if ($builds.Count -ne 4 -or @($builds | Select-Object -Unique).Count -ne 1 -or
+    -not $packageBuild -or $builds[0] -ne $packageBuild) {
+    throw 'La compilacion debe coincidir en la app, las tres extensiones y Swift Package.'
 }
 
-$appEntitlements = Get-Content -LiteralPath (Join-Path $projectRoot 'SuperTecladoApp/SuperTeclado.entitlements') -Raw
-$keyboardEntitlements = Get-Content -LiteralPath (Join-Path $projectRoot 'SuperTecladoKeyboard/SuperTecladoKeyboard.entitlements') -Raw
-$appGroupPattern = 'group\.[^<\s]+'
-$appGroup = [regex]::Match($appEntitlements, $appGroupPattern).Value
-$keyboardGroup = [regex]::Match($keyboardEntitlements, $appGroupPattern).Value
-if (-not $appGroup -or $appGroup -ne $keyboardGroup) {
-    throw 'Los App Groups de la aplicación y del teclado no coinciden.'
+$appGroup = $null
+foreach ($target in 'SuperTecladoApp', 'SuperTecladoKeyboard', 'SuperTecladoShare', 'SuperTecladoWidget') {
+    $entitlementFile = Get-ChildItem -LiteralPath (Join-Path $projectRoot $target) -Filter '*.entitlements' -File
+    if (@($entitlementFile).Count -ne 1) { throw "Entitlements ausentes o ambiguos en $target" }
+    [xml]$entitlements = Get-Content -LiteralPath $entitlementFile.FullName -Raw
+    $groupNode = $entitlements.SelectSingleNode("//key[.='com.apple.security.application-groups']/following-sibling::array[1]/string")
+    if (-not $groupNode) { throw "Falta el App Group en $target" }
+    if ($null -eq $appGroup) { $appGroup = $groupNode.InnerText }
+    elseif ($groupNode.InnerText -ne $appGroup) { throw "El App Group de $target no coincide con la app." }
 }
 
-$contentView = Get-Content -LiteralPath (Join-Path $projectRoot 'SuperTecladoApp/Views/ContentView.swift') -Raw
-foreach ($marker in 'isTemporary: true', 'promoteToPermanent()', 'captureAutomaticallyIfNeeded()', 'cleanExpiredItems()') {
-    if (-not $contentView.Contains($marker)) {
-        throw "Falta una regla del flujo temporal: $marker"
+$iconDirectory = Join-Path $projectRoot 'SuperTecladoApp/Assets.xcassets/AppIcon.appiconset'
+$icon = Get-Content -LiteralPath (Join-Path $iconDirectory 'Contents.json') -Raw | ConvertFrom-Json
+$iconFiles = @($icon.images | Where-Object { $_.filename })
+if ($iconFiles.Count -eq 0) { throw 'El catalogo AppIcon no declara ninguna imagen.' }
+foreach ($image in $iconFiles) {
+    if (-not (Test-Path -LiteralPath (Join-Path $iconDirectory $image.filename) -PathType Leaf)) {
+        throw "Falta la imagen del icono: $($image.filename)"
     }
 }
 
-$keyboard = Get-Content -LiteralPath (Join-Path $projectRoot 'SuperTecladoKeyboard/KeyboardViewController.swift') -Raw
-foreach ($marker in 'checkPasteboard()', 'SharedClipboardStore.captureTemporaryText') {
-    if (-not $keyboard.Contains($marker)) {
-        throw "Falta la captura temporal desde el teclado: $marker"
-    }
-}
-
-$sync = Get-Content -LiteralPath (Join-Path $projectRoot 'SuperTecladoApp/Services/KeyboardHistorySync.swift') -Raw
-foreach ($marker in 'importTemporaryInbox(into: context', 'applyKeyboardDeletions(in: context)', 'SharedClipboardStore.replaceTemporaryInbox(temporary)') {
-    if (-not $sync.Contains($marker)) {
-        throw "Falta la importación de temporales del teclado: $marker"
-    }
-}
-
-$swiftFiles = Get-ChildItem -LiteralPath $projectRoot -Recurse -Filter '*.swift' -File
-foreach ($file in $swiftFiles) {
-    $source = Get-Content -LiteralPath $file.FullName -Raw
-    $openingBraces = ([regex]::Matches($source, '\{')).Count
-    $closingBraces = ([regex]::Matches($source, '\}')).Count
-    if ($openingBraces -ne $closingBraces) {
-        throw "Llaves desequilibradas en $($file.FullName)"
-    }
-}
-
-Write-Output "Validación estática correcta para Super Teclado $projectVersion."
-Write-Output "App Group verificado: $appGroup"
-Write-Output "Archivos Swift comprobados: $($swiftFiles.Count)"
+# No se cuentan llaves: cadenas, interpolaciones y comentarios producen falsos errores.
+# La sintaxis Swift, UIKit y el comportamiento se comprueban con Xcode/XCTest en CI.
+Write-Output "Estructura y metadatos correctos: Super Teclado $($versions[0]), compilacion $($builds[0])."
+Write-Output "App Group verificado en la app y las tres extensiones: $appGroup"
+Write-Output 'Esta comprobacion no sustituye la compilacion ni las pruebas de GitHub Actions.'

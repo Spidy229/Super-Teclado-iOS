@@ -39,6 +39,7 @@ struct KeyboardSettingsPanelView: View {
                 diagnosticsSection
             }
             .padding(12)
+            .background(SettingsScrollTouchScope())
         }
         .onAppear {
             strength = engine.preferences.hapticsStrength

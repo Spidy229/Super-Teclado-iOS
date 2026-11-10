@@ -133,6 +133,16 @@ struct ClipboardPanelView: View {
         .onChange(of: engine.folders) { _, folders in
             if case .folder(let name) = activeFilter, !folders.contains(name) { activeFilter = .all }
         }
+        .onChange(of: engine.recentClips) { _, clips in
+            // Los menús conservan una copia del elemento: no deben seguir mostrando un secreto
+            // que acaba de caducar aunque su tarjeta ya haya desaparecido.
+            if let focusedClip, !focusedClip.isSaved, !clips.contains(where: { $0.id == focusedClip.id }) {
+                closeMenu()
+            }
+            if let fullTextClip, !fullTextClip.isSaved, !clips.contains(where: { $0.id == fullTextClip.id }) {
+                self.fullTextClip = nil
+            }
+        }
     }
 
     @ViewBuilder
@@ -614,7 +624,7 @@ struct ClipTileView: View {
                 }
                 .font(.system(size: 16, weight: .semibold))
                 .foregroundStyle(palette.text)
-                Text("Privado · se borra en 2 min")
+                Text(clip.isSaved ? "Privado · fijado" : "Privado · temporal")
                     .font(.system(size: 11))
                     .foregroundStyle(palette.secondaryText)
             } else {
