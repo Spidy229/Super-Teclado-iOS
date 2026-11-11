@@ -70,6 +70,58 @@ final class SuggestionEngineColdStartTests: XCTestCase {
     }
 
     @MainActor
+    func testRejectingAColdAccentKeepsTheOriginalWithoutSystemValidation() async {
+        let fixture = makeFixture()
+        XCTAssertEqual(fixture.engine.autocorrection(for: "tambien"), "también")
+
+        fixture.engine.reject("tambien")
+
+        XCTAssertNil(fixture.engine.autocorrection(for: "tambien"))
+        let result = await fixture.engine.result(for: "tambien")
+        XCTAssertNil(result.autocorrection)
+        XCTAssertFalse(result.needsSpellCheck)
+        XCTAssertEqual(result.slots[1], SuggestionItem(text: "tambien", kind: .typed))
+        XCTAssertEqual(fixture.validator.creations, 0)
+        XCTAssertTrue(fixture.validator.words.isEmpty)
+    }
+
+    @MainActor
+    func testRejectedShortcutStopsExpandingWhileOtherShortcutsStillWork() async {
+        let fixture = makeFixture()
+        fixture.engine.setLexicon([
+            (input: "qtal", replacement: "¿Qué tal?"),
+            (input: "bds", replacement: "Buenos días")
+        ])
+        XCTAssertEqual(fixture.engine.autocorrection(for: "qtal"), "¿Qué tal?")
+
+        fixture.engine.reject("Qtal", persist: false)
+
+        XCTAssertNil(fixture.engine.autocorrection(for: "qtal"))
+        let result = await fixture.engine.result(for: "qtal")
+        XCTAssertNil(result.autocorrection)
+        XCTAssertEqual(result.slots[1], SuggestionItem(text: "qtal", kind: .typed))
+        XCTAssertEqual(fixture.engine.autocorrection(for: "bds"), "Buenos días")
+        XCTAssertEqual(fixture.validator.creations, 0)
+        XCTAssertTrue(fixture.validator.words.isEmpty)
+    }
+
+    @MainActor
+    func testPersistentRejectionKeepsLocalLearningWithoutLearningPrivateWords() async {
+        let fixture = makeFixture()
+        fixture.engine.reject("spidy")
+        fixture.engine.reject("privado", persist: false)
+
+        let learned = await fixture.engine.result(for: "spi")
+        XCTAssertTrue(learned.slots.compactMap { $0 }.contains {
+            $0.text == "spidy" && $0.kind == .completion
+        })
+        let privateWord = await fixture.engine.result(for: "pri")
+        XCTAssertFalse(privateWord.slots.compactMap { $0 }.contains { $0.text == "privado" })
+        XCTAssertEqual(fixture.validator.creations, 0)
+        XCTAssertTrue(fixture.validator.words.isEmpty)
+    }
+
+    @MainActor
     func testChangingLanguageRequiresAnotherIdleWarmUpBeforeTypoAutocorrection() async throws {
         let fixture = makeFixture()
         XCTAssertTrue(fixture.engine.warmUpChecker())

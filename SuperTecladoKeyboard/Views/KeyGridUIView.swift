@@ -165,6 +165,9 @@ final class KeyGridUIView: UIView {
     private var laidOutSize: CGSize = .zero
     private var glideTarget = GlideTarget(centers: [:], keyWidth: 1)
     private var states: [ObjectIdentifier: TouchState] = [:]
+    /// Una tecla mantenida también cuenta como actividad aunque no haya nuevos comienzos.
+    /// Solo retrasa el trabajo de mantenimiento; no altera ni recupera estados táctiles.
+    var hasActiveTouches: Bool { !states.isEmpty }
     /// Orden en que tocaron los dedos, para escribir en ese orden al teclear rápido.
     private var touchOrder: [ObjectIdentifier] = []
     private var popupPool: [KeyPopupUIView] = []

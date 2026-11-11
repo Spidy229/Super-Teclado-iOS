@@ -25,6 +25,7 @@ final class InstantTouchRecognizer: UIGestureRecognizer {
     private var start: CGPoint = .zero
     private var longPressFired = false
     private var longPressTask: Task<Void, Never>?
+    private var recordsPanelTouch = false
     override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent) {
         for touch in touches where touch !== tracked {
             guard tracked == nil else {
@@ -33,6 +34,12 @@ final class InstantTouchRecognizer: UIGestureRecognizer {
                 continue
             }
             tracked = touch
+            recordsPanelTouch = KeyboardScrollTouchPolicy.isInSettingsScroll(view)
+            if recordsPanelTouch {
+                KeyboardPanelTouchDiagnostics.shared.recordButtonTouch(
+                    timestamp: touch.timestamp, now: ProcessInfo.processInfo.systemUptime
+                )
+            }
             coordinateView = KeyboardScrollTouchPolicy.referenceView(for: view)
             start = touch.location(in: coordinateView)
             longPressFired = false
@@ -72,6 +79,7 @@ final class InstantTouchRecognizer: UIGestureRecognizer {
 
     override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent) {
         guard let tracked, touches.contains(tracked) else { return }
+        if recordsPanelTouch { KeyboardPanelTouchDiagnostics.shared.recordButtonCancellation() }
         finish(tapped: false)
         // Un toque que no había empezado no se puede «cancelar»: falla.
         state = startsImmediately ? .cancelled : .failed
@@ -101,6 +109,8 @@ final class InstantTouchRecognizer: UIGestureRecognizer {
         guard tracked != nil else { return }
         tracked = nil
         coordinateView = nil
+        if recordsPanelTouch && tapped { KeyboardPanelTouchDiagnostics.shared.recordButtonTap() }
+        recordsPanelTouch = false
         onEnd()
         if tapped { onTap() }
     }

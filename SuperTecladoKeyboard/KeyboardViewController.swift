@@ -90,7 +90,8 @@ final class KeyboardViewController: UIInputViewController {
             guard let self, self.view.window != nil else { return }
             self.engine.reloadClipsInBackground()
             // Si ya está escribiendo, lo hará el sondeo en la siguiente pausa.
-            guard ProcessInfo.processInfo.systemUptime - self.engine.lastKeyTouch > 1.5 else { return }
+            guard !self.grid.hasActiveTouches,
+                  ProcessInfo.processInfo.systemUptime - self.engine.lastKeyTouch > 1.5 else { return }
             self.checkPasteboard()
         }
     }
@@ -250,7 +251,8 @@ final class KeyboardViewController: UIInputViewController {
         engine.expireClips()
         // Mientras se escribe no se pregunta a iOS por el portapapeles (es una consulta a otro
         // proceso): lo copiado se recoge en cuanto se deja de teclear o al abrir el panel.
-        guard ProcessInfo.processInfo.systemUptime - engine.lastKeyTouch > 1.5 else { return }
+        guard !grid.hasActiveTouches,
+              ProcessInfo.processInfo.systemUptime - engine.lastKeyTouch > 1.5 else { return }
         checkPasteboard()
         // En una pausa, no al pulsar espacio: la primera consulta al corrector de iOS es lenta.
         engine.warmUpSpellChecker()

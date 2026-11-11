@@ -30,6 +30,15 @@ enum KeyboardScrollTouchPolicy {
         return false
     }
 
+    static func isInSettingsScroll(_ view: UIView?) -> Bool {
+        var candidate = view
+        while let current = candidate {
+            if current is KeyboardPanelUIScrollView { return true }
+            candidate = current.superview
+        }
+        return false
+    }
+
     static func stopDecelerationIfNeeded(in scroll: UIScrollView) {
         guard scroll.isDecelerating, !scroll.isDragging else { return }
         scroll.setContentOffset(scroll.contentOffset, animated: false)
@@ -91,7 +100,24 @@ private final class ScrollDecelerationStopRecognizer: UIGestureRecognizer {
     required init?(coder: NSCoder) { fatalError("init(coder:) no se usa") }
 
     override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent) {
-        if let scrollView { KeyboardScrollTouchPolicy.stopDecelerationIfNeeded(in: scrollView) }
+        if let scrollView {
+            let recordsPanel = scrollView is KeyboardPanelUIScrollView
+            let decelerating = scrollView.isDecelerating
+            let dragging = scrollView.isDragging
+            if recordsPanel {
+                let now = ProcessInfo.processInfo.systemUptime
+                for touch in touches {
+                    KeyboardPanelTouchDiagnostics.shared.recordScrollTouch(
+                        timestamp: touch.timestamp, isDecelerating: decelerating,
+                        isDragging: dragging, now: now
+                    )
+                }
+            }
+            KeyboardScrollTouchPolicy.stopDecelerationIfNeeded(in: scrollView)
+            if recordsPanel && decelerating && !dragging {
+                KeyboardPanelTouchDiagnostics.shared.recordStopAttempt(stillDecelerating: scrollView.isDecelerating)
+            }
+        }
         state = .failed
     }
 

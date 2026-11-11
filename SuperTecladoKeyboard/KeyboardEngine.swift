@@ -40,6 +40,10 @@ struct TouchDiagnostics {
     private(set) var handling: [Double] = []
     /// Milisegundos que tarda iOS en aceptar cada vibración.
     private(set) var feedback: [Double] = []
+    /// Incluye las repeticiones de borrar, que no pasan por otro comienzo de toque.
+    private(set) var deletion: [Double] = []
+    private(set) var longestDeletion: Double = 0
+    private(set) var spellWarmUp: [Double] = []
     /// Vibraciones y clics que se saltaron para no acumular retraso al teclear deprisa.
     var skippedHaptics = 0
     var skippedSounds = 0
@@ -64,6 +68,15 @@ struct TouchDiagnostics {
 
     mutating func recordFeedback(_ seconds: Double) {
         Self.append(seconds * 1000, to: &feedback)
+    }
+
+    mutating func recordDeletion(_ seconds: Double) {
+        Self.append(seconds * 1000, to: &deletion)
+        if seconds.isFinite { longestDeletion = max(longestDeletion, seconds * 1000) }
+    }
+
+    mutating func recordSpellWarmUp(_ seconds: Double) {
+        Self.append(seconds * 1000, to: &spellWarmUp)
     }
 
     /// Retraso con que llega el temporizador de control: si pasa de 100 ms, el teclado estuvo
@@ -393,15 +406,31 @@ final class KeyboardEngine: ObservableObject {
             return
         }
         guard shift != .locked else { return }
-        let capitalize = KeyboardTextLogic.shouldCapitalize(
-            context: proxy?.documentContextBeforeInput,
-            mode: autocapitalizationMode
-        )
+        let mode = autocapitalizationMode
+        let capitalize: Bool
+        switch mode {
+        case .none:
+            capitalize = false
+        case .allCharacters:
+            capitalize = true
+        case .words, .sentences:
+            capitalize = KeyboardTextLogic.shouldCapitalize(
+                context: proxy?.documentContextBeforeInput,
+                mode: mode
+            )
+        }
         let newState: ShiftState = capitalize ? .on : .off
         if newState != shift { shift = newState }
     }
 
     private func refreshSuggestions() async {
+        // Sin sugerencias ni una palabra deslizada que revisar, no se consulta a la app
+        // receptora del texto. La barra y el pegado rápido se limpian igual que al finalizar.
+        guard suggestionsAllowed || lastGlide != nil else {
+            if !suggestions.isEmpty { suggestions = [] }
+            if quickPaste != nil, Date().timeIntervalSince(quickPasteDate) > 180 { quickPaste = nil }
+            return
+        }
         let word = currentWord
         if let glide = lastGlide, glide.word != word { lastGlide = nil }
 
@@ -574,6 +603,8 @@ final class KeyboardEngine: ObservableObject {
     }
 
     func deleteBackward() {
+        let started = CACurrentMediaTime()
+        defer { touchDiagnostics.recordDeletion(CACurrentMediaTime() - started) }
         if isSearching {
             setSearchQuery(String(searchQuery.dropLast()))
             return
@@ -609,6 +640,8 @@ final class KeyboardEngine: ObservableObject {
     }
 
     func deleteWordBackward() {
+        let started = CACurrentMediaTime()
+        defer { touchDiagnostics.recordDeletion(CACurrentMediaTime() - started) }
         if isSearching {
             let count = KeyboardTextLogic.wordDeletionLength(context: searchQuery)
             setSearchQuery(String(searchQuery.dropLast(max(count, 1))))
@@ -904,6 +937,8 @@ final class KeyboardEngine: ObservableObject {
             "Super Teclado \(version) · \(model) · iOS \(UIDevice.current.systemVersion)",
             "Retraso de iOS al entregar el toque: \(TouchDiagnostics.summary(diagnostics.delivery))",
             "Tiempo del teclado por toque: \(TouchDiagnostics.summary(diagnostics.handling))",
+            "Borrado (incluye repetición): \(TouchDiagnostics.summary(diagnostics.deletion)) · mayor de la sesión \(Int(diagnostics.longestDeletion)) ms",
+            "Precalentamiento del corrector: \(TouchDiagnostics.summary(diagnostics.spellWarmUp))",
             String(format: "Bloqueos de más de 100 ms: %d (el mayor %.0f ms)", diagnostics.stalls, diagnostics.longestStall),
             "Retraso del hilo principal: \(TouchDiagnostics.summary(diagnostics.lateness))",
             "Vibración (lo que tarda iOS en aceptarla): \(TouchDiagnostics.summary(diagnostics.feedback)) · saltadas \(diagnostics.skippedHaptics) · clics saltados \(diagnostics.skippedSounds)",
@@ -915,6 +950,7 @@ final class KeyboardEngine: ObservableObject {
             "Escritura deslizando \(on(preferences.glideTyping)) · precisión inteligente \(on(preferences.smartTouch)) · autocorrección \(on(preferences.autocorrect)) · tema \(preferences.theme.rawValue)",
             "Acceso total \(on(hasFullAccess)) · App Group \(on(SharedClipboardStore.isAppGroupAvailable))"
         ]
+        lines.append(KeyboardPanelTouchDiagnostics.shared.report)
         if !diagnostics.recent.isEmpty {
             lines.append("Últimos toques: " + diagnostics.recent.joined(separator: " | "))
         }
@@ -935,8 +971,11 @@ final class KeyboardEngine: ObservableObject {
     /// Prepara el corrector de iOS en una pausa al escribir: su primera consulta carga el idioma y
     /// puede congelar el teclado medio segundo si se hace al pulsar espacio.
     func warmUpSpellChecker() {
-        guard preferences.autocorrect, !safeMode else { return }
-        if suggestionEngine.warmUpChecker() { scheduleSuggestions() }
+        guard panel == .typing, preferences.autocorrect, !safeMode else { return }
+        let started = CACurrentMediaTime()
+        guard suggestionEngine.warmUpChecker() else { return }
+        touchDiagnostics.recordSpellWarmUp(CACurrentMediaTime() - started)
+        scheduleSuggestions()
     }
 
     /// Deja el motor de vibración listo antes del primer toque.

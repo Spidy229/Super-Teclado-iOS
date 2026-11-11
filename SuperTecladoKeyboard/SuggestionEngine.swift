@@ -102,7 +102,8 @@ struct SuggestionSnapshot: Sendable {
 
         var correction: String?
         var needsSpellCheck = false
-        if let shortcut = (personalShortcuts[lower] ?? lexiconShortcuts[lower]).map({ ShortcutVariables.expand($0) }) {
+        if !rejected.contains(lower),
+           let shortcut = (personalShortcuts[lower] ?? lexiconShortcuts[lower]).map({ ShortcutVariables.expand($0) }) {
             correction = shortcut
             seen.insert(shortcut.lowercased())
         } else if !isKnown, !rejected.contains(lower) {
@@ -459,7 +460,8 @@ final class SuggestionEngine {
         guard !lower.isEmpty else { return }
         rejected.insert(lower)
         guard persist else { return }
-        UITextChecker.learnWord(lower)
+        // El diccionario propio conserva el rechazo sin arrancar el aprendizaje de iOS
+        // desde la pulsación de borrar o de una sugerencia.
         learned[lower, default: 0] += 2
         scheduleSave()
     }

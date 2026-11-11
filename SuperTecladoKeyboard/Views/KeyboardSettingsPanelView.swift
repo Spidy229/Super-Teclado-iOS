@@ -225,6 +225,7 @@ struct KeyboardSettingsPanelView: View {
             }
             InstantButton("Poner a cero") {
                 engine.touchDiagnostics = TouchDiagnostics()
+                KeyboardPanelTouchDiagnostics.shared.reset()
                 diagnostics = TouchDiagnostics()
             }
             .font(.system(size: 13, weight: .medium))
