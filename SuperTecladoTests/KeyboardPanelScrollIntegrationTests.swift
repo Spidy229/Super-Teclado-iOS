@@ -113,7 +113,7 @@ final class KeyboardPanelScrollIntegrationTests: XCTestCase {
     @MainActor
     private func findScroll(in view: UIView) -> KeyboardPanelUIScrollView? {
         if let scroll = view as? KeyboardPanelUIScrollView { return scroll }
-        return view.subviews.lazy.compactMap { findScroll(in: $0) }.first
+        return view.subviews.lazy.compactMap { self.findScroll(in: $0) }.first
     }
 
     @MainActor
