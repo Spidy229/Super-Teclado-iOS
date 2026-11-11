@@ -64,7 +64,7 @@ final class KeyboardPanelScrollIntegrationTests: XCTestCase {
 
     @MainActor
     func testVerticalScrollCanCancelButtonsWithoutStealingHorizontalControls() async {
-        let scroll = KeyboardPanelUIScrollView()
+        let scroll = ControlledPanScrollView()
         let button = UIButton(type: .system)
         let toggle = UISwitch()
         let slider = UISlider()
@@ -72,12 +72,28 @@ final class KeyboardPanelScrollIntegrationTests: XCTestCase {
         toggle.addSubview(toggleChild)
         [button, toggle, slider].forEach { scroll.addSubview($0) }
 
-        scroll.panGestureRecognizer.setTranslation(CGPoint(x: 2, y: 30), in: scroll)
+        XCTAssertFalse(scroll.touchesShouldCancel(in: button))
+        XCTAssertFalse(scroll.touchesShouldCancel(in: toggleChild))
+        XCTAssertFalse(scroll.touchesShouldCancel(in: slider))
+
+        scroll.motion = (CGPoint(x: 2, y: 30), .zero)
         XCTAssertTrue(scroll.touchesShouldCancel(in: button))
         XCTAssertTrue(scroll.touchesShouldCancel(in: toggleChild))
         XCTAssertFalse(scroll.touchesShouldCancel(in: slider))
 
-        scroll.panGestureRecognizer.setTranslation(CGPoint(x: 30, y: 2), in: scroll)
+        scroll.motion = (CGPoint(x: 30, y: 2), .zero)
+        XCTAssertFalse(scroll.touchesShouldCancel(in: button))
+        XCTAssertFalse(scroll.touchesShouldCancel(in: toggleChild))
+        XCTAssertFalse(scroll.touchesShouldCancel(in: slider))
+
+        // En el primer instante del pan, UIKit puede dar traslación cero pero ya conoce
+        // su velocidad. Se mantiene la misma separación entre scroll y controles.
+        scroll.motion = (.zero, CGPoint(x: 10, y: 300))
+        XCTAssertTrue(scroll.touchesShouldCancel(in: button))
+        XCTAssertTrue(scroll.touchesShouldCancel(in: toggleChild))
+        XCTAssertFalse(scroll.touchesShouldCancel(in: slider))
+
+        scroll.motion = (.zero, CGPoint(x: 300, y: 10))
         XCTAssertFalse(scroll.touchesShouldCancel(in: button))
         XCTAssertFalse(scroll.touchesShouldCancel(in: toggleChild))
         XCTAssertFalse(scroll.touchesShouldCancel(in: slider))
@@ -124,6 +140,13 @@ final class KeyboardPanelScrollIntegrationTests: XCTestCase {
         }
         XCTAssertTrue(condition(), "La jerarquía del panel no llegó al estado esperado.", file: file, line: line)
     }
+}
+
+@MainActor
+private final class ControlledPanScrollView: KeyboardPanelUIScrollView {
+    var motion: (translation: CGPoint, velocity: CGPoint) = (.zero, .zero)
+
+    override var controlPanMotion: (translation: CGPoint, velocity: CGPoint) { motion }
 }
 
 @MainActor

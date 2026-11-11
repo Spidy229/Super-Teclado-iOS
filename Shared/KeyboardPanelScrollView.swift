@@ -24,7 +24,12 @@ struct KeyboardPanelScrollView<Content: View>: UIViewControllerRepresentable {
 }
 
 @MainActor
-final class KeyboardPanelUIScrollView: UIScrollView {
+class KeyboardPanelUIScrollView: UIScrollView {
+    /// Separar la lectura de UIKit permite comprobar la decisión sin fabricar UITouch.
+    var controlPanMotion: (translation: CGPoint, velocity: CGPoint) {
+        (panGestureRecognizer.translation(in: self), panGestureRecognizer.velocity(in: self))
+    }
+
     override func touchesShouldCancel(in view: UIView) -> Bool {
         var candidate: UIView? = view
         while let current = candidate, current !== self {
@@ -32,7 +37,10 @@ final class KeyboardPanelUIScrollView: UIScrollView {
             if current is UISwitch || current is UIButton {
                 // Un arrastre vertical sobre un control desplaza el panel; el horizontal
                 // sigue perteneciendo al interruptor. No se cancela el deslizador.
-                let movement = panGestureRecognizer.translation(in: self)
+                let motion = controlPanMotion
+                // Al reconocer el pan su traslación puede empezar en cero; la velocidad
+                // mantiene la dirección de ese primer desplazamiento.
+                let movement = motion.translation == .zero ? motion.velocity : motion.translation
                 return abs(movement.y) > abs(movement.x)
             }
             candidate = current.superview
