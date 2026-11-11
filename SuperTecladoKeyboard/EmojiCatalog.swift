@@ -1,5 +1,9 @@
 import Foundation
 
+#if SUPER_TECLADO_LOGIC_TESTS
+@testable import SuperTeclado
+#endif
+
 struct EmojiCategory: Identifiable {
     let id: String
     let title: String

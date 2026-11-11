@@ -2,15 +2,8 @@ import UIKit
 import XCTest
 @testable import SuperTeclado
 
-// El motor y el catálogo se compilan también en este destino. Estos alias usan las mismas
+// El motor de producción se compila en este destino y accede mediante @testable a las
 // implementaciones Shared de la app, sin copiarlas ni sustituir el cálculo de sugerencias.
-typealias WordDictionary = SuperTeclado.WordDictionary
-typealias LetterLayout = SuperTeclado.LetterLayout
-typealias PersonalDictionary = SuperTeclado.PersonalDictionary
-typealias KeyboardTextLogic = SuperTeclado.KeyboardTextLogic
-typealias TypoCorrector = SuperTeclado.TypoCorrector
-typealias ShortcutVariables = SuperTeclado.ShortcutVariables
-typealias BigramModel = SuperTeclado.BigramModel
 
 final class SuggestionEngineColdStartTests: XCTestCase {
     @MainActor
