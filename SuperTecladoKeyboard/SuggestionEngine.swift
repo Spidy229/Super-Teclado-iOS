@@ -29,6 +29,26 @@ struct SuggestionResult: Sendable {
     static let empty = SuggestionResult(slots: [], autocorrection: nil)
 }
 
+/// La fábrica se invoca al precalentar en una pausa, nunca al pulsar espacio.
+@MainActor
+protocol SuggestionSpellValidating {
+    func isValidSpelling(_ word: String, language: String) -> Bool
+}
+
+@MainActor
+private final class SystemSuggestionSpellValidator: SuggestionSpellValidating {
+    private let checker = UITextChecker()
+
+    func isValidSpelling(_ word: String, language: String) -> Bool {
+        if UITextChecker.hasLearnedWord(word.lowercased()) { return true }
+        let range = NSRange(location: 0, length: (word as NSString).length)
+        let misspelled = checker.rangeOfMisspelledWord(
+            in: word, range: range, startingAt: 0, wrap: false, language: language
+        )
+        return misspelled.location == NSNotFound
+    }
+}
+
 /// Copia de lo necesario para calcular sugerencias fuera del hilo principal, como hace Gboard:
 /// así una palabra larga nunca retrasa la siguiente pulsación.
 struct SuggestionSnapshot: Sendable {
@@ -142,9 +162,9 @@ struct SuggestionSnapshot: Sendable {
 /// diccionario de frecuencias, UITextChecker y el diccionario personal del usuario.
 @MainActor
 final class SuggestionEngine {
-    /// El corrector de iOS se crea (y carga su idioma, que tarda) solo si de verdad se usa: al
-    /// autocorregir al pulsar espacio. Nunca mientras se escribe.
-    private lazy var checker = UITextChecker()
+    /// Crear el corrector y cargar su idioma puede bloquear. Solo se hace en una pausa.
+    private let makeSpellValidator: @MainActor () -> any SuggestionSpellValidating
+    private var spellValidator: (any SuggestionSpellValidating)?
     private var languageCode = "es_ES"
     private var resolvedLanguage: String?
     /// Si el corrector ya cargó el idioma actual.
@@ -173,8 +193,16 @@ final class SuggestionEngine {
     /// Cambia al vaciar la caché, para descartar cálculos en segundo plano ya desfasados.
     private var cacheGeneration = 0
 
-    init() {
-        reloadPersonalData()
+    convenience init() {
+        self.init(makeSpellValidator: { SystemSuggestionSpellValidator() }, loadsPersonalData: true)
+    }
+
+    init(
+        makeSpellValidator: @escaping @MainActor () -> any SuggestionSpellValidating,
+        loadsPersonalData: Bool = false
+    ) {
+        self.makeSpellValidator = makeSpellValidator
+        if loadsPersonalData { reloadPersonalData() }
     }
 
     /// Idioma del corrector de iOS (UITextChecker) más parecido al pedido.
@@ -187,10 +215,12 @@ final class SuggestionEngine {
 
     /// Hace una consulta de prueba al corrector para que cargue el idioma ahora (en una pausa)
     /// y no la primera vez que se autocorrige al pulsar espacio.
-    func warmUpChecker() {
-        guard !checkerWarm, dictionary != nil else { return }
-        checkerWarm = true
+    @discardableResult
+    func warmUpChecker() -> Bool {
+        guard !checkerWarm, dictionary != nil else { return false }
         _ = isValidSpelling("hola")
+        checkerWarm = true
+        return true
     }
 
     private static func checkerLanguage(for code: String) -> String {
@@ -292,6 +322,9 @@ final class SuggestionEngine {
     func autocorrection(for word: String) -> String? {
         guard Self.isSuggestible(word) else { return nil }
         let result = cache[word] ?? computeNow(for: word)
+        // Si se ha empezado a escribir sin ninguna pausa, la primera errata no debe crear ni
+        // cargar UITextChecker desde la pulsación. Conservamos la propuesta para elegirla a mano.
+        guard !result.needsSpellCheck || checkerWarm else { return nil }
         let checked = finalize(result, for: word)
         if checked.needsSpellCheck != result.needsSpellCheck || checked.autocorrection != result.autocorrection {
             store(checked, for: word)
@@ -301,7 +334,10 @@ final class SuggestionEngine {
 
     /// Huecos de la barra con la fecha, la hora o el emoji que correspondan a la palabra.
     func slots(for result: SuggestionResult, word: String, includeEmoji: Bool) -> [SuggestionItem?] {
-        var slots = result.slots
+        // Antes de la primera pausa sigue siendo una sugerencia, no una autocorrección azul.
+        var slots = result.needsSpellCheck && !checkerWarm ? result.slots.map { item in
+            item.map { $0.kind == .correction ? SuggestionItem(text: $0.text, kind: .completion) : $0 }
+        } : result.slots
         guard slots.count == 3 else { return slots }
         if let dateText = Self.dateSuggestion(for: word.lowercased()) {
             slots[2] = SuggestionItem(text: dateText, kind: .completion)
@@ -338,16 +374,15 @@ final class SuggestionEngine {
     }
 
     private func isValidSpelling(_ word: String) -> Bool {
-        if UITextChecker.hasLearnedWord(word.lowercased()) { return true }
-        let range = NSRange(location: 0, length: (word as NSString).length)
-        let misspelled = checker.rangeOfMisspelledWord(
-            in: word,
-            range: range,
-            startingAt: 0,
-            wrap: false,
-            language: language
-        )
-        return misspelled.location == NSNotFound
+        let validator: any SuggestionSpellValidating
+        if let existing = spellValidator {
+            validator = existing
+        } else {
+            let created = makeSpellValidator()
+            spellValidator = created
+            validator = created
+        }
+        return validator.isValidSpelling(word, language: language)
     }
 
 

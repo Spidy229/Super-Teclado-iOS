@@ -936,7 +936,7 @@ final class KeyboardEngine: ObservableObject {
     /// puede congelar el teclado medio segundo si se hace al pulsar espacio.
     func warmUpSpellChecker() {
         guard preferences.autocorrect, !safeMode else { return }
-        suggestionEngine.warmUpChecker()
+        if suggestionEngine.warmUpChecker() { scheduleSuggestions() }
     }
 
     /// Deja el motor de vibración listo antes del primer toque.

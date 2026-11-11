@@ -26,11 +26,12 @@ private enum LongPressOption: Int, CaseIterable, Hashable {
 struct KeyboardSettingsPanelView: View {
     @EnvironmentObject private var engine: KeyboardEngine
     @Environment(\.keyboardPalette) private var palette
+    @Environment(\.colorScheme) private var colorScheme
     @State private var strength = 0.6
     @State private var diagnostics = TouchDiagnostics()
 
     var body: some View {
-        ScrollView {
+        KeyboardPanelScrollView {
             VStack(alignment: .leading, spacing: 14) {
                 statusSection
                 vibrationSection
@@ -39,7 +40,9 @@ struct KeyboardSettingsPanelView: View {
                 diagnosticsSection
             }
             .padding(12)
-            .background(SettingsScrollTouchScope())
+            .environmentObject(engine)
+            .environment(\.keyboardPalette, palette)
+            .environment(\.colorScheme, colorScheme)
         }
         .onAppear {
             strength = engine.preferences.hapticsStrength

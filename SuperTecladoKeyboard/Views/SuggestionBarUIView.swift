@@ -141,7 +141,9 @@ final class SuggestionBarUIView: UIView {
 
     func refresh() {
         let bar = engine.bar
-        let quickPaste = engine.currentWord.isEmpty ? bar.quickPaste : nil
+        // Leer el contexto consulta a la app que recibe el texto. Sin un elemento de pegado
+        // rápido no hace falta esa consulta en cada actualización de las sugerencias.
+        let quickPaste = bar.quickPaste != nil && engine.currentWord.isEmpty ? bar.quickPaste : nil
         let hasContent = bar.suggestions.contains { $0 != nil } || quickPaste != nil
 
         toggleButton.isHidden = !hasContent

@@ -1,8 +1,8 @@
 # Super Teclado: contexto para agentes
 
-Resumen de todo lo hecho hasta la **versión 3.0.1**, para que otro agente (Claude Code, Codex…) pueda seguir el trabajo sin repetir errores. El `README.md` describe las funciones para el usuario; este documento explica **cómo está hecho, por qué y qué falta**.
+Resumen de todo lo hecho hasta la **versión 3.0.2**, para que otro agente (Claude Code, Codex…) pueda seguir el trabajo sin repetir errores. El `README.md` describe las funciones para el usuario; este documento explica **cómo está hecho, por qué y qué falta**.
 
-**Base vigente:** esta rama y las releases publicadas, no `main`. `main` conserva la versión 1.0. Antes de auditar o modificar el proyecto, comprobar las ramas, la última release y este archivo. La 3.0.1 continúa la 3.0.0; no sustituirla por cambios preparados sobre la 1.0.
+**Base vigente:** esta rama y las releases publicadas, no `main`. `main` conserva la versión 1.0. Antes de auditar o modificar el proyecto, comprobar las ramas, la última release y este archivo. La 3.0.2 continúa la 3.0.1; no sustituirla por cambios preparados sobre la 1.0.
 
 ---
 
@@ -34,7 +34,7 @@ Resumen de todo lo hecho hasta la **versión 3.0.1**, para que otro agente (Clau
 - **Subir versión** en cada cambio que se entregue, en dos sitios que deben coincidir:
   - `project.yml`: `MARKETING_VERSION` y `CURRENT_PROJECT_VERSION`, **4 veces cada uno** (app, teclado, share y widget).
   - `SuperTecladoApp/Package.swift`: `displayVersion` y `bundleVersion`.
-  - Estado actual: **3.0.1 / 49**, igual en los cuatro destinos de `project.yml` y en `Package.swift`.
+  - Estado actual: **3.0.2 / 50**, igual en los cuatro destinos de `project.yml` y en `Package.swift`.
 - `scripts/build-unsigned-ipa.sh`:
   - firma ad hoc (`codesign -s -`) cada appex con sus entitlements y después la app;
   - **falla si falta `Assets.car` o `CFBundleIcons`** (comprobación añadida en 2.6.6).
@@ -260,6 +260,8 @@ Este archivo es la solución al **retraso al escribir**. Antes cada tecla era un
 | 3.0.0 | **Vuelta a la base de 2.9.3** (la última que el usuario dijo que iba bien), conservando solo: colocación sin animación (2.9.6), toques solo por el reconocedor (2.9.7) y los recuentos de Ajustes de la app (2.9.8). Se quitan el registrador de congelaciones (teclado y app), el contador de dedos en la ventana y quitar SwiftUI de la pantalla al escribir; vuelve `removeSystemTouchDelays`. El usuario notaba el teclado cada vez peor con esas piezas y su informe no mostraba ninguna congelación |
 | 3.0.1 | Bloqueo del historial cerrado ante fallos de autenticación; exclusión de marcas privadas también en la app; texto exacto e imágenes limitadas por píxeles; imágenes guardadas en el contenedor privado sin App Group; sensibilidad preservada al fijar, desfijar y sincronizar; sincronización que conserva los borrados y las referencias de imágenes ante errores; caducidad aplicada también a las copias en memoria y al pegado rápido. Corrección acotada de los toques del panel ⚙️ durante la inercia, sin cambiar la cuadrícula UIKit de las teclas. Versiones y número de compilación alineados en los cuatro destinos |
 
+| 3.0.2 | El usuario confirma que el bloqueo del panel y la pérdida de pulsaciones rápidas persisten con 3.0.1. El panel ⚙️ usa ahora UIScrollView propio con conexión táctil directa, no una búsqueda de ancestros de SwiftUI. Pruebas montan su representación real en una UIWindow, incluidos tamaño dinámico y posición. El corrector de iOS no se inicia desde un espacio mientras está frío: propone la corrección manualmente hasta precalentarse en una pausa, y actualiza entonces la barra. Se evita una lectura innecesaria del documento al refrescar sugerencias sin pegado rápido. No se modifica la máquina de estados ni la cuadrícula de letras |
+
 ## 8. Errores ya resueltos (no repetirlos)
 
 - **iOS 27 retrasa los gestos de SwiftUI** (2.9.0). `DragGesture`, `Button`, `onTapGesture` y `onLongPressGesture` pueden recibir el primer aviso del dedo hasta ~0,75 s tarde; la tecla no se ilumina ni vibra hasta soltar.
@@ -293,6 +295,8 @@ Este archivo es la solución al **retraso al escribir**. Antes cada tecla era un
 - En la primera subida el usuario envió un registro de cierre equivocado (AccessoryCrash de unos auriculares): pedir siempre el `.ips` de `SuperTecladoKeyboard-…`.
 
 ## 9. Pendiente y sin verificar
+
+- **Confirmación posterior del usuario:** el fallo persiste en la IPA 3.0.1 (49). No tratar sus 82 pruebas como prueba física del arreglo: no montaban el panel ni demostraban la conexión de la sonda al scroll real. La 3.0.2 sustituye esa dependencia por un UIScrollView propio con pruebas de montaje. No se ha encontrado una secuencia de estados que desactive todas las teclas; el cambio del corrector y la lectura de contexto evita rutas bloqueantes concretas, pero la recepción de pulsaciones en el iPhone sigue requiriendo validación física.
 
 - **Fallo comunicado el 10-11-2026:** en el panel ⚙️ del teclado, no en Ajustes de la app, los toques repetidos se ignoran mientras sigue la inercia; responden cuando se para sola. En 3.0.1 se corrige el cálculo de movimiento respecto a una vista que también se desplaza y se añade una interrupción de la inercia limitada a ese panel. No se modifica la cuadrícula de teclas ni se añade un observador global en la ventana. La aceptación física en el iPhone sigue pendiente: comprobar tocar durante inercia, iniciar scroll desde un botón sin activarlo, interruptores, intensidad y volver. El CI con Xcode 16.4 prueba iOS 18, por lo que no demuestra resolver un comportamiento específico de iOS 27.
 
