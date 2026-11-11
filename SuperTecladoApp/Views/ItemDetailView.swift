@@ -114,8 +114,7 @@ struct ItemDetailView: View {
             }
             .onDisappear {
                 item.updatedAt = .now
-                try? modelContext.save()
-                KeyboardHistorySync.publishAppHistory(from: modelContext)
+                try? KeyboardHistorySync.commit(modelContext)
             }
             .onAppear {
                 folders = SharedClipboardStore.loadFolders()
@@ -146,7 +145,6 @@ struct ItemDetailView: View {
 
     private func promote() {
         item.promoteToPermanent()
-        try? modelContext.save()
-        KeyboardHistorySync.publishAppHistory(from: modelContext)
+        try? KeyboardHistorySync.commit(modelContext)
     }
 }

@@ -46,6 +46,8 @@ final class ClipboardItem {
     var contentHash: String
     var isTemporary: Bool = false
     var expiresAt: Date?
+    /// Tarjetas, IBAN, contraseñas o códigos: se muestran ocultos.
+    var isSensitive: Bool = false
 
     init(
         id: UUID = UUID(),
@@ -62,7 +64,8 @@ final class ClipboardItem {
         colorTagRawValue: String? = nil,
         contentHash: String,
         isTemporary: Bool = false,
-        expiresAt: Date? = nil
+        expiresAt: Date? = nil,
+        isSensitive: Bool = false
     ) {
         self.id = id
         self.createdAt = createdAt
@@ -79,6 +82,7 @@ final class ClipboardItem {
         self.contentHash = contentHash
         self.isTemporary = isTemporary
         self.expiresAt = expiresAt
+        self.isSensitive = isSensitive
     }
 
     var kind: ClipboardKind {

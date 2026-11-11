@@ -26,22 +26,22 @@ struct ContentView: View {
 
     @AppStorage(
         "skipOneTimeCodes",
-        store: UserDefaults(suiteName: SharedClipboardStore.appGroupID)
+        store: SharedClipboardStore.sharedDefaults
     ) private var skipOneTimeCodes = true
     @AppStorage("localClipboardOnly") private var localClipboardOnly = true
     @AppStorage("maximumItems") private var maximumItems = 250
     @AppStorage("autoDeleteDays") private var autoDeleteDays = 30
     @AppStorage(
         "automaticCaptureEnabled",
-        store: UserDefaults(suiteName: SharedClipboardStore.appGroupID)
+        store: SharedClipboardStore.sharedDefaults
     ) private var automaticCaptureEnabled = true
     @AppStorage(
         "temporaryRetentionHours",
-        store: UserDefaults(suiteName: SharedClipboardStore.appGroupID)
+        store: SharedClipboardStore.sharedDefaults
     ) private var temporaryRetentionHours = ClipboardRetentionPolicy.defaultTemporaryHours
     @AppStorage(
         "maximumTemporaryItems",
-        store: UserDefaults(suiteName: SharedClipboardStore.appGroupID)
+        store: SharedClipboardStore.sharedDefaults
     ) private var maximumTemporaryItems = ClipboardRetentionPolicy.defaultMaximumTemporaryItems
     @AppStorage("lastHandledPasteboardChangeCount") private var lastHandledPasteboardChangeCount = -1
 
@@ -77,7 +77,9 @@ struct ContentView: View {
     var body: some View {
         NavigationStack {
             Group {
-                if filteredItems.isEmpty { emptyState } else { itemList }
+                // Se filtra y ordena una sola vez por dibujado (antes, dos veces).
+                let visibleItems = filteredItems
+                if visibleItems.isEmpty { emptyState } else { itemList(visibleItems) }
             }
             .navigationTitle("Super Teclado")
             .searchable(text: $searchText, prompt: "Buscar textos, OCR o etiquetas")
@@ -112,6 +114,7 @@ struct ContentView: View {
                 KeyboardHistorySync.synchronize(with: modelContext)
                 performMaintenance()
                 captureAutomaticallyIfNeeded()
+                await recognizeImportedImages()
             }
             .onChange(of: scenePhase) { _, phase in
                 guard phase == .active else { return }
@@ -119,6 +122,7 @@ struct ContentView: View {
                 KeyboardHistorySync.synchronize(with: modelContext)
                 performMaintenance()
                 captureAutomaticallyIfNeeded()
+                Task { await recognizeImportedImages() }
             }
             .onChange(of: showingSettings) { _, isShowing in
                 if !isShowing { reloadFolders(); performMaintenance() }
@@ -161,9 +165,9 @@ struct ContentView: View {
         return "Los elementos que decidas conservar aparecerán aquí y en el teclado."
     }
 
-    private var itemList: some View {
+    private func itemList(_ visibleItems: [ClipboardItem]) -> some View {
         List {
-            ForEach(filteredItems) { item in
+            ForEach(visibleItems) { item in
                 ClipboardRow(item: item)
                     .onTapGesture { selectedItem = item }
                     .accessibilityAddTraits(.isButton)
@@ -306,6 +310,8 @@ struct ContentView: View {
         switch ClipboardService.readCurrent() {
         case .empty:
             if origin == .manual { showToast("El portapapeles está vacío") }
+        case .privateContent:
+            if origin == .manual { showToast("Contenido privado omitido") }
         case .unsupported:
             if origin == .manual { showToast("Este tipo de contenido aún no es compatible") }
         case .content(let draft):
@@ -314,6 +320,19 @@ struct ContentView: View {
                ClipboardService.isLikelyOneTimeCode(text) {
                 if origin == .manual { showToast("Código temporal omitido por privacidad") }
                 return
+            }
+
+            var isSensitive = false
+            if let text = draft.text, ClipboardClassifier.isSensitive(text) {
+                switch SharedClipboardStore.sensitiveMode {
+                case .skip:
+                    if origin == .manual { showToast("Contenido privado omitido") }
+                    return
+                case .mask:
+                    isSensitive = true
+                case .normal:
+                    break
+                }
             }
 
             if let existing = existingItem(withContentHash: draft.contentHash) {
@@ -334,7 +353,10 @@ struct ContentView: View {
                 kind: draft.kind,
                 contentHash: draft.contentHash,
                 isTemporary: true,
-                expiresAt: ClipboardRetentionPolicy.expirationDate(hours: temporaryRetentionHours)
+                expiresAt: isSensitive
+                    ? Date.now.addingTimeInterval(ClipboardClassifier.sensitiveLifetime)
+                    : ClipboardRetentionPolicy.expirationDate(hours: temporaryRetentionHours),
+                isSensitive: isSensitive
             )
             modelContext.insert(item)
             save()
@@ -373,9 +395,20 @@ struct ContentView: View {
     }
 
     private func delete(_ item: ClipboardItem) {
-        modelContext.delete(item)
+        KeyboardHistorySync.delete(item, from: modelContext)
         save()
         showToast("Eliminado")
+    }
+
+    /// Extrae el texto de las capturas copiadas desde el teclado para poder buscarlas.
+    private func recognizeImportedImages() async {
+        let pending = items.filter { $0.kind == .image && $0.recognizedText == nil && $0.imageData != nil }
+        guard !pending.isEmpty else { return }
+        for item in pending {
+            guard let data = item.imageData else { continue }
+            item.recognizedText = await OCRService.recognizeText(in: data) ?? ""
+        }
+        save()
     }
 
     private func performMaintenance() {
@@ -391,13 +424,13 @@ struct ContentView: View {
             expiresAt: item.expiresAt,
             at: now
         ) {
-            modelContext.delete(item)
+            KeyboardHistorySync.delete(item, from: modelContext)
             changed = true
         }
         if autoDeleteDays > 0,
            let threshold = Calendar.current.date(byAdding: .day, value: -autoDeleteDays, to: now) {
             for item in items where item.isPermanent && item.updatedAt < threshold && !item.isFavorite && !item.isPinned {
-                modelContext.delete(item)
+                KeyboardHistorySync.delete(item, from: modelContext)
                 changed = true
             }
         }
@@ -412,20 +445,19 @@ struct ContentView: View {
 
         let temporaryItems = storedItems.filter(\.isTemporary)
         let temporaryOverflow = max(0, temporaryItems.count - max(1, maximumTemporaryItems))
-        for item in temporaryItems.prefix(temporaryOverflow) { modelContext.delete(item) }
+        for item in temporaryItems.prefix(temporaryOverflow) { KeyboardHistorySync.delete(item, from: modelContext) }
 
         let permanentItems = storedItems.filter(\.isPermanent)
         let permanentOverflow = max(0, permanentItems.count - max(1, maximumItems))
         let removable = permanentItems.filter { !$0.isPinned && !$0.isFavorite }
-        for item in removable.prefix(permanentOverflow) { modelContext.delete(item) }
+        for item in removable.prefix(permanentOverflow) { KeyboardHistorySync.delete(item, from: modelContext) }
 
         if temporaryOverflow > 0 || permanentOverflow > 0 { save() }
     }
 
     private func save() {
         do {
-            try modelContext.save()
-            KeyboardHistorySync.publishAppHistory(from: modelContext)
+            try KeyboardHistorySync.commit(modelContext)
         } catch {
             showToast("No se pudieron guardar los cambios")
         }
