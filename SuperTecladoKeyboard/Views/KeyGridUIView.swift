@@ -104,8 +104,8 @@ private final class TouchState {
 /// Recibe los dedos para la cuadrícula. iOS entrega los toques a los reconocedores de gestos al
 /// instante, mientras que a las vistas puede retrasárselos (cerca de los bordes de la pantalla,
 /// o mientras otros gestos deciden): así ninguna tecla espera. Nunca «reconoce» nada ni puede
-/// ser anulado por otros gestos, para no interferir ni perder dedos. La vista también recibe
-/// los dedos y se atiende el primer aviso de cada uno (si un camino falla, queda el otro).
+/// ser anulado por otros gestos. Al levantarse el último dedo termina como gesto fallido
+/// para que UIKit pueda reiniciarlo antes de la siguiente secuencia.
 private final class KeyTouchRecognizer: UIGestureRecognizer {
     weak var grid: KeyGridUIView?
 
@@ -119,10 +119,20 @@ private final class KeyTouchRecognizer: UIGestureRecognizer {
 
     override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent) {
         grid?.fingersEnded(touches, event: event)
+        finishSequenceIfNeeded(event)
     }
 
     override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent) {
         grid?.fingersCancelled(touches, event: event)
+        finishSequenceIfNeeded(event)
+    }
+
+    private func finishSequenceIfNeeded(_ event: UIEvent) {
+        guard state == .possible, grid?.hasActiveTouches != true else { return }
+        let stillDown = event.touches(for: self)?.contains {
+            $0.phase == .began || $0.phase == .moved || $0.phase == .stationary
+        }
+        if stillDown != true { state = .failed }
     }
 
     override func canBePrevented(by preventingGestureRecognizer: UIGestureRecognizer) -> Bool { false }
@@ -1010,10 +1020,12 @@ final class KeyGridUIView: UIView {
 
     private func startDeleteRepeat(for state: TouchState) {
         state.timer?.cancel()
-        state.timer = Task { @MainActor [weak self] in
+        state.timer = Task { @MainActor [weak self, weak state] in
             try? await Task.sleep(for: .milliseconds(420))
             var count = 0
-            while !Task.isCancelled, let engine = self?.engine {
+            while !Task.isCancelled, let engine = self?.engine,
+                  let state, state.phase == .pressed, let touch = state.touch,
+                  touch.phase == .began || touch.phase == .moved || touch.phase == .stationary {
                 if count < 20 {
                     engine.deleteBackward()
                     try? await Task.sleep(for: .milliseconds(65))

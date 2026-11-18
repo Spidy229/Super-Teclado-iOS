@@ -38,6 +38,25 @@ final class KeyboardPanelScrollIntegrationTests: XCTestCase {
     }
 
     @MainActor
+    func testFlingEndsAtFingerLiftInMountedSettingsPanel() async throws {
+        let host = UIHostingController(rootView: panel(height: 2_000, revision: "prueba", recorder: EnvironmentRecorder()))
+        let window = makeWindow(host: host)
+        defer { window.isHidden = true; window.rootViewController = nil }
+        await waitUntil { (findScroll(in: host.view)?.contentSize.height ?? 0) > 1_800 }
+        let scroll = try XCTUnwrap(findScroll(in: host.view))
+        let delegate = try XCTUnwrap(scroll.delegate)
+        scroll.contentOffset = CGPoint(x: 0, y: 170)
+        for destination in [CGFloat(0), 950] {
+            var target = CGPoint(x: 0, y: destination)
+            let velocity = CGPoint(x: 0, y: destination == 0 ? -5 : 5)
+            delegate.scrollViewWillEndDragging?(scroll, withVelocity: velocity, targetContentOffset: &target)
+            XCTAssertEqual(target, scroll.contentOffset)
+        }
+        XCTAssertFalse(scroll.bounces)
+        XCTAssertTrue(scroll.panGestureRecognizer.isEnabled)
+    }
+
+    @MainActor
     func testRemovingHostedPanelRestoresTouchesAndRemovesOnlyItsObserver() async throws {
         let recorder = EnvironmentRecorder()
         let host = UIHostingController(rootView: panel(height: 2_000, revision: "visible", recorder: recorder))

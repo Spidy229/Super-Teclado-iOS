@@ -121,15 +121,19 @@ enum KeyboardTextLogic {
     /// Caracteres que se borran al eliminar una palabra hacia atrás.
     static func wordDeletionLength(context: String?) -> Int {
         guard let context, !context.isEmpty else { return 0 }
-        let characters = Array(context.reversed())
-        var index = 0
-        while index < characters.count, characters[index].isWhitespace { index += 1 }
-        if index < characters.count, isWordCharacter(characters[index]) {
-            while index < characters.count, isWordCharacter(characters[index]) { index += 1 }
-        } else if index < characters.count {
-            index += 1
+        var suffix = context.reversed().makeIterator()
+        var count = 0
+        var next = suffix.next()
+        while next?.isWhitespace == true {
+            count += 1
+            next = suffix.next()
         }
-        return index
+        guard let first = next else { return count }
+        count += 1
+        if isWordCharacter(first) {
+            while let character = suffix.next(), isWordCharacter(character) { count += 1 }
+        }
+        return count
     }
 
     /// Desplazamiento (positivo) hasta el inicio de la palabra siguiente.

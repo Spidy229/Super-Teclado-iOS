@@ -49,10 +49,23 @@ class KeyboardPanelUIScrollView: UIScrollView {
     }
 }
 
+/// En el panel compacto de ajustes la lista sigue el dedo hasta que se levanta.
+@MainActor
+private final class SettingsDragDelegate: NSObject, UIScrollViewDelegate {
+    func scrollViewWillEndDragging(
+        _ scrollView: UIScrollView,
+        withVelocity velocity: CGPoint,
+        targetContentOffset: UnsafeMutablePointer<CGPoint>
+    ) {
+        targetContentOffset.pointee = scrollView.contentOffset
+    }
+}
+
 @MainActor
 final class KeyboardPanelScrollController<Content: View>: UIViewController {
     let scrollView = KeyboardPanelUIScrollView()
     private let contentController: UIHostingController<Content>
+    private let dragDelegate = SettingsDragDelegate()
     private let touchScope = KeyboardScrollTouchScope()
 
     init(content: Content) {
@@ -70,7 +83,8 @@ final class KeyboardPanelScrollController<Content: View>: UIViewController {
     override func viewDidLoad() {
         super.viewDidLoad()
         scrollView.backgroundColor = .clear
-        scrollView.alwaysBounceVertical = true
+        scrollView.delegate = dragDelegate
+        scrollView.bounces = false
         scrollView.isDirectionalLockEnabled = true
         scrollView.canCancelContentTouches = true
         scrollView.contentInsetAdjustmentBehavior = .never
