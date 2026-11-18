@@ -1,6 +1,6 @@
 # Super Teclado: contexto para agentes
 
-Resumen de todo lo hecho hasta la **versión 3.0.4**, para que otro agente (Claude Code, Codex…) pueda seguir el trabajo sin repetir errores. El `README.md` describe las funciones para el usuario; este documento explica **cómo está hecho, por qué y qué falta**.
+Resumen de todo lo hecho hasta la **versión 3.0.5**, para que otro agente (Claude Code, Codex…) pueda seguir el trabajo sin repetir errores. El `README.md` describe las funciones para el usuario; este documento explica **cómo está hecho, por qué y qué falta**.
 
 **Base vigente:** esta rama y las releases publicadas, no `main`. `main` conserva la versión 1.0. Antes de auditar o modificar el proyecto, comprobar las ramas, la última release y este archivo. La 3.0.3 continúa la 3.0.2; no sustituirla por cambios preparados sobre la 1.0.
 
@@ -34,7 +34,7 @@ Resumen de todo lo hecho hasta la **versión 3.0.4**, para que otro agente (Clau
 - **Subir versión** en cada cambio que se entregue, en dos sitios que deben coincidir:
   - `project.yml`: `MARKETING_VERSION` y `CURRENT_PROJECT_VERSION`, **4 veces cada uno** (app, teclado, share y widget).
   - `SuperTecladoApp/Package.swift`: `displayVersion` y `bundleVersion`.
-  - Estado actual: **3.0.4 / 52**, igual en los cuatro destinos de `project.yml` y en `Package.swift`.
+  - Estado actual: **3.0.5 / 53**, igual en los cuatro destinos de `project.yml` y en `Package.swift`.
 - `scripts/build-unsigned-ipa.sh`:
   - firma ad hoc (`codesign -s -`) cada appex con sus entitlements y después la app;
   - **falla si falta `Assets.car` o `CFBundleIcons`** (comprobación añadida en 2.6.6).
@@ -110,12 +110,7 @@ Este archivo es la solución al **retraso al escribir**. Antes cada tecla era un
 - `apply(_:palette:)` recibe un `KeyGridConfiguration` (`Equatable`) y la paleta, y no hace nada si no cambian. Ya no hay `UIViewRepresentable`: la cuadrícula es una subvista directa de la vista del teclado.
   - Las teclas se reutilizan por `KeySpec.id`.
   - Si las filas no cambian, solo se actualizan textos y colores.
-- **Una sola vista recibe todos los dedos**, a través de `KeyTouchRecognizer` (2.7.1).
-  - Es un `UIGestureRecognizer` que nunca reconoce nada (`canBePrevented` y `canPrevent` devuelven `false`, `cancelsTouchesInView = false`).
-  - iOS entrega los toques a los reconocedores al instante; a las vistas puede retrasarlos (bordes de la pantalla, otros gestos).
-  - De 2.8.4 a 2.9.6 la vista también atendía los toques (dos caminos y se descartaba el repetido con `isDuplicateBegin`). **Desde 2.9.7 solo el reconocedor**, como KeyboardKit: sin los retrasos quitados a los gestos de iOS (2.9.5), el aviso de la vista llegaba tarde, cuando el dedo ya se había atendido y olvidado, y la tecla se escribía dos veces. No volver a los dos caminos.
-    - En 2.8.5 se quitó la lista de dedos terminados de 2.8.4: iOS puede reutilizar el mismo objeto `UITouch` para un toque nuevo y ese toque se descartaba (sin luz ni vibración). Un aviso es duplicado solo si el dedo ya está en `states` con el mismo `touch.timestamp` de inicio, si ya no está en `.began` o si ya terminó. Si un camino falla, no se pierde ningún toque.
-  - `fingersReset()` cierra los dedos que quedaran al terminar la secuencia. La tecla tocada es la más cercana de su fila, así que los huecos cuentan para la tecla de al lado.
+- **3.0.5:** la cuadrícula es una vista UIKit multitáctil con entrega directa por los cuatro métodos de UIResponder. En 3.0.4 solo se usaba KeyTouchRecognizer y la vista descartaba los eventos directos. Los gestos de las vistas anfitrionas conservan su configuración. Los subcontroles de las teclas son decorativos, de modo que un dedo cae en la cuadrícula incluso entre teclas. La barra y los paneles están fuera de su marco.
   - Al tocar: resalta la tecla y la ventana emergente, vibra/suena y programa la pulsación larga.
   - Al levantar: escribe.
   - **Rollover:** si toca otro dedo antes de levantar el anterior, la letra o el espacio anterior se escriben ya (estado `.committed`).

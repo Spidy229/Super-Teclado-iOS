@@ -14,8 +14,7 @@ enum KeyFeedbackKind {
 /// alguno (se ve en el engranaje ⚙︎ de la barra).
 struct TouchDiagnostics {
     var touches = 0
-    /// Por qué camino llegó primero cada dedo (el reconocedor de gestos o la vista).
-    var viaRecognizer = 0
+    /// Comienzos entregados directamente por UIKit, incluidos los que no encuentran tecla.
     var viaView = 0
     var typed = 0
     /// Teclas escritas porque tocó otro dedo antes de levantar el anterior.
@@ -943,7 +942,7 @@ final class KeyboardEngine: ObservableObject {
             "Retraso del hilo principal: \(TouchDiagnostics.summary(diagnostics.lateness))",
             "Vibración (lo que tarda iOS en aceptarla): \(TouchDiagnostics.summary(diagnostics.feedback)) · saltadas \(diagnostics.skippedHaptics) · clics saltados \(diagnostics.skippedSounds)",
             String(format: "Memoria libre: %.0f MB", memory),
-            "Toques \(diagnostics.touches) (por reconocedor \(diagnostics.viaRecognizer), por la vista \(diagnostics.viaView)) · escritos \(diagnostics.typed) · con otro dedo \(diagnostics.rollovers)",
+            "Toques \(diagnostics.touches) (comienzos recibidos por la vista \(diagnostics.viaView)) · escritos \(diagnostics.typed) · con otro dedo \(diagnostics.rollovers)",
             "Cancelados por iOS: escritos \(diagnostics.cancelledTyped), perdidos \(diagnostics.cancelledLost) · sin aviso de fin \(diagnostics.unfinished) · ignorados \(diagnostics.ignored)",
             "Deslizamientos \(diagnostics.glides) (eran toques \(diagnostics.glidesAsTaps)) · cursor \(diagnostics.cursorSwipes) · pulsación larga \(diagnostics.alternates) · precisión \(diagnostics.smartChoices)",
             "Vibración \(on(preferences.haptics && hasFullAccess)) (\(preferences.hapticsStyle.rawValue), \(Int(preferences.hapticsStrength * 100)) %) · sonido \(on(preferences.sound)) · ventana al pulsar \(on(preferences.keyPopups))",
