@@ -41,10 +41,16 @@ struct ClipboardRow: View {
                     }
                 }
 
-                Text(item.previewText)
-                    .font(.body)
-                    .lineLimit(item.kind == .image ? 2 : 3)
-                    .textSelection(.enabled)
+                if item.isSensitive {
+                    Label("Contenido privado", systemImage: "lock.fill")
+                        .font(.body)
+                        .foregroundStyle(.secondary)
+                } else {
+                    Text(item.previewText)
+                        .font(.body)
+                        .lineLimit(item.kind == .image ? 2 : 3)
+                        .textSelection(.enabled)
+                }
 
                 HStack(spacing: 8) {
                     Text(item.updatedAt, style: .relative)
