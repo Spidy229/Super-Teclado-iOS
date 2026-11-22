@@ -1,5 +1,6 @@
 import SwiftUI
 import UIKit
+import UIKit.UIGestureRecognizerSubclass
 
 /// Lo que la cuadrícula necesita para dibujarse. Si no cambia, no se toca ninguna tecla.
 struct KeyGridConfiguration: Equatable {
@@ -77,6 +78,10 @@ private final class TouchState {
     var gap = 0
     /// Marca de tiempo del último movimiento procesado.
     var lastMoveTimestamp: TimeInterval = 0
+    /// Marca de tiempo del `UITouch` al comenzar (para deduplicar entre reconocedor y vista).
+    var downTimestamp: TimeInterval = 0
+    /// Indica si este dedo lo gestiona `KeyTouchRecognizer` o el respaldo de `UIView`.
+    var deliveredByRecognizer = false
     /// El dedo de iOS, para saber si sigue en la pantalla.
     weak var touch: UITouch?
     var phase: Phase = .pressed
@@ -95,6 +100,77 @@ private final class TouchState {
         self.start = start
         self.beganAt = beganAt
         last = start
+    }
+}
+
+/// Recibe todos los dedos sobre la cuadrícula al instante, antes de que gestos del sistema
+/// con `delaysTouchesBegan` (bordes de pantalla o barra de inicio) puedan retrasar o perder
+/// `UIView.touchesBegan`. Sigue el ciclo continuo `.began → .changed → .ended/.cancelled` para
+/// que UIKit lo reinicie limpiamente tras cada secuencia multitáctil.
+@MainActor
+private final class KeyTouchRecognizer: UIGestureRecognizer, UIGestureRecognizerDelegate {
+    weak var grid: KeyGridUIView?
+
+    override init(target: Any?, action: Selector?) {
+        super.init(target: target, action: action)
+        cancelsTouchesInView = false
+        delaysTouchesBegan = false
+        delaysTouchesEnded = false
+        requiresExclusiveTouchType = false
+        delegate = self
+    }
+
+    override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent) {
+        grid?.handleTouchesBegan(touches, with: event, fromRecognizer: true)
+        if state == .possible {
+            state = .began
+        } else if state == .began || state == .changed {
+            state = .changed
+        }
+    }
+
+    override func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent) {
+        grid?.handleTouchesMoved(touches, with: event, fromRecognizer: true)
+        if state == .began || state == .changed {
+            state = .changed
+        }
+    }
+
+    override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent) {
+        grid?.handleTouchesEnded(touches, with: event, fromRecognizer: true)
+        finishIfNoActiveTouches(in: event, cancelled: false)
+    }
+
+    override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent) {
+        grid?.handleTouchesCancelled(touches, with: event, fromRecognizer: true)
+        finishIfNoActiveTouches(in: event, cancelled: true)
+    }
+
+    private func finishIfNoActiveTouches(in event: UIEvent, cancelled: Bool) {
+        let stillDownInEvent = event.touches(for: self)?.contains {
+            $0.phase == .began || $0.phase == .moved || $0.phase == .stationary
+        } ?? false
+        guard !stillDownInEvent, grid?.hasLiveRecognizerTouches != true else { return }
+        if state == .began || state == .changed {
+            state = cancelled ? .cancelled : .ended
+        } else if state == .possible {
+            state = .failed
+        }
+    }
+
+    override func reset() {
+        super.reset()
+        grid?.reconcileTouchesAfterReset()
+    }
+
+    override func canPrevent(_ preventedGestureRecognizer: UIGestureRecognizer) -> Bool { false }
+    override func canBePrevented(by preventingGestureRecognizer: UIGestureRecognizer) -> Bool { false }
+
+    func gestureRecognizer(
+        _ gestureRecognizer: UIGestureRecognizer,
+        shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer
+    ) -> Bool {
+        true
     }
 }
 
@@ -126,11 +202,28 @@ final class KeyGridUIView: UIView {
     private var rowBands: [RowBand] = []
     private var keyViews: [String: KeyCapUIView] = [:]
     private var laidOutSize: CGSize = .zero
+    private var laidOutInsets: UIEdgeInsets = .zero
+    /// Márgenes visuales internos (p. ej. safe area): la vista cubre toda el área táctil de
+    /// borde a borde sin huecos muertos, y las teclas visuales se colocan dentro de estos márgenes.
+    var keyContentInsets: UIEdgeInsets = .zero {
+        didSet {
+            guard keyContentInsets != oldValue else { return }
+            laidOutSize = .zero
+            setNeedsLayout()
+        }
+    }
+    private let touchRecognizer = KeyTouchRecognizer(target: nil, action: nil)
     private var glideTarget = GlideTarget(centers: [:], keyWidth: 1)
     private var states: [ObjectIdentifier: TouchState] = [:]
     /// Una tecla mantenida también cuenta como actividad aunque no haya nuevos comienzos.
     /// Solo retrasa el trabajo de mantenimiento; no altera ni recupera estados táctiles.
     var hasActiveTouches: Bool { !states.isEmpty }
+    fileprivate var hasLiveRecognizerTouches: Bool {
+        states.values.contains { state in
+            guard state.deliveredByRecognizer, let touch = state.touch else { return false }
+            return touch.phase == .began || touch.phase == .moved || touch.phase == .stationary
+        }
+    }
     /// Orden en que tocaron los dedos, para escribir en ese orden al teclear rápido.
     private var touchOrder: [ObjectIdentifier] = []
     private var popupPool: [KeyPopupUIView] = []
@@ -150,9 +243,13 @@ final class KeyGridUIView: UIView {
     init(engine: KeyboardEngine) {
         self.engine = engine
         super.init(frame: .zero)
-        backgroundColor = .clear
+        // Alfa mínimo para que cada hueco entre tapas de tecla siga siendo táctil incluso en el
+        // tema Cristal (fondo totalmente transparente en la ventana remota de la extensión).
+        backgroundColor = UIColor(white: 0, alpha: 0.01)
         isMultipleTouchEnabled = true
         isExclusiveTouch = false
+        touchRecognizer.grid = self
+        addGestureRecognizer(touchRecognizer)
         trailLayer.fillColor = nil
         trailLayer.lineWidth = 6
         trailLayer.lineCap = .round
@@ -239,17 +336,28 @@ final class KeyGridUIView: UIView {
 
     private func layoutContents() {
         if trailLayer.frame != bounds { trailLayer.frame = bounds }
-        guard bounds.size != laidOutSize, bounds.width > 0, bounds.height > 0 else { return }
+        guard bounds.size != laidOutSize || keyContentInsets != laidOutInsets,
+              bounds.width > 0, bounds.height > 0 else { return }
         laidOutSize = bounds.size
+        laidOutInsets = keyContentInsets
         layoutKeys()
     }
 
+    private func ensureLayoutIfNeeded() {
+        guard (keys.isEmpty || bounds.size != laidOutSize || keyContentInsets != laidOutInsets),
+              bounds.width > 0, bounds.height > 0 else { return }
+        UIView.withoutAnimation { layoutContents() }
+    }
+
     /// Reparte el ancho en unidades igual que antes, para que el trazo deslizado y los centros
-    /// de las teclas coincidan.
+    /// de las teclas coincidan. Las teclas visuales respetan `keyContentInsets` mientras toda
+    /// `bounds` (márgenes y huecos incluidos) queda cubierta por `keyIndex(at:)`.
     private func layoutKeys() {
         let rows = configuration.rows
-        let width = bounds.width
-        let geometry = KeyGridGeometry(size: bounds.size, showsNumberRow: configuration.showsNumberRow, rowCount: rows.count)
+        let contentRect = bounds.inset(by: keyContentInsets)
+        guard contentRect.width > 0, contentRect.height > 0 else { return }
+        let width = contentRect.width
+        let geometry = KeyGridGeometry(size: contentRect.size, showsNumberRow: configuration.showsNumberRow, rowCount: rows.count)
         let padding = KeyGridGeometry.horizontalPadding
         // El iPad tiene filas más largas (intro, comas, segunda tecla de mayúsculas…).
         let totalUnits = max(10, rows.map { $0.reduce(0) { $0 + $1.units } }.max() ?? 10)
@@ -262,9 +370,9 @@ final class KeyGridUIView: UIView {
         var flatIndex = 0
         for (rowIndex, row) in rows.enumerated() {
             let height = geometry.height(ofRow: rowIndex)
-            let originY = geometry.originY(ofRow: rowIndex)
+            let originY = contentRect.minY + geometry.originY(ofRow: rowIndex)
             let rowWidth = row.reduce(0) { $0 + $1.units } * unit
-            var x = padding + max(0, (width - padding * 2 - rowWidth) / 2)
+            var x = contentRect.minX + padding + max(0, (width - padding * 2 - rowWidth) / 2)
             let first = newKeys.count
             for spec in row {
                 let id = seen.contains(spec.id) ? "\(spec.id)#\(flatIndex)" : spec.id
@@ -410,6 +518,13 @@ final class KeyGridUIView: UIView {
 
     // MARK: Toques
 
+    /// Identificador de la tecla asignada a cualquier punto de la cuadrícula (útil en pruebas).
+    func resolvedKeyID(at point: CGPoint) -> String? {
+        ensureLayoutIfNeeded()
+        guard let index = keyIndex(at: point) else { return nil }
+        return keys[index].id
+    }
+
     /// Tecla más cercana al dedo: los huecos entre teclas y los bordes cuentan para la de al lado.
     private func keyIndex(at point: CGPoint) -> Int? {
         guard let band = rowBands.first(where: { point.y < $0.maxY }) ?? rowBands.last else { return nil }
@@ -428,25 +543,61 @@ final class KeyGridUIView: UIView {
     }
 
     override func touchesBegan(_ incoming: Set<UITouch>, with event: UIEvent?) {
-        // UIKit entrega cada comienzo una vez a esta vista. Si reutiliza la identidad de
-        // un dedo sin aviso de fin, cerrar antes el estado antiguo y su repetición.
-        let reused = incoming.map(ObjectIdentifier.init).filter { states[$0] != nil }
-        if !reused.isEmpty {
-            dropTouchesThatEnded(liveIDs: Set(states.keys).subtracting(reused))
+        handleTouchesBegan(incoming, with: event, fromRecognizer: false)
+    }
+
+    override func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent?) {
+        handleTouchesMoved(touches, with: event, fromRecognizer: false)
+    }
+
+    override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent?) {
+        handleTouchesEnded(touches, with: event, fromRecognizer: false)
+    }
+
+    override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent?) {
+        handleTouchesCancelled(touches, with: event, fromRecognizer: false)
+    }
+
+    fileprivate func handleTouchesBegan(_ incoming: Set<UITouch>, with event: UIEvent?, fromRecognizer: Bool) {
+        ensureLayoutIfNeeded()
+        var fresh: [UITouch] = []
+        fresh.reserveCapacity(incoming.count)
+        for touch in incoming {
+            let id = ObjectIdentifier(touch)
+            if let existing = states[id] {
+                // Mismo dedo ya atendido por el otro camino (reconocedor vs vista) en el mismo comienzo.
+                if existing.deliveredByRecognizer != fromRecognizer,
+                   existing.downTimestamp == touch.timestamp {
+                    continue
+                }
+                // Entrega repetida del mismo comienzo por el mismo canal.
+                if existing.deliveredByRecognizer == fromRecognizer,
+                   touch.timestamp > 0, existing.downTimestamp == touch.timestamp {
+                    continue
+                }
+                // UIKit reutilizó la identidad de un dedo sin aviso de fin: cerrar el estado antiguo.
+                dropTouchesThatEnded(liveIDs: Set(states.keys).subtracting([id]))
+            }
+            fresh.append(touch)
         }
-        engine.touchDiagnostics.viaView += incoming.count
+        guard !fresh.isEmpty else { return }
+        if fromRecognizer {
+            engine.touchDiagnostics.viaRecognizer += fresh.count
+        } else {
+            engine.touchDiagnostics.viaView += fresh.count
+        }
         let started = CACurrentMediaTime()
         // Cuánto tardó iOS en entregar el toque y cuánto se tarda en atenderlo (diagnóstico).
-        for touch in incoming { engine.touchDiagnostics.recordDelivery(started - touch.timestamp) }
+        for touch in fresh { engine.touchDiagnostics.recordDelivery(started - touch.timestamp) }
         defer { engine.touchDiagnostics.recordHandling(CACurrentMediaTime() - started) }
         dropTouchesThatEnded(keeping: event?.allTouches)
         // Con varios dedos a la vez, de izquierda a derecha si llegan en el mismo instante.
-        let ordered = incoming.sorted {
+        let ordered = fresh.sorted {
             $0.timestamp == $1.timestamp ? $0.location(in: self).x < $1.location(in: self).x : $0.timestamp < $1.timestamp
         }
         pendingFeedback.removeAll(keepingCapacity: true)
         for touch in ordered {
-            begin(touch, event: event)
+            begin(touch, event: event, fromRecognizer: fromRecognizer)
         }
         syncWithEngine()
         if let kind = pendingFeedback.first { engine.keyFeedback(kind) }
@@ -469,8 +620,24 @@ final class KeyGridUIView: UIView {
     /// Si iOS no avisó del final de algún dedo, se da por levantado: su tecla se escribe y no
     /// deja el teclado bloqueado (p. ej. creyendo que sigue un trazo deslizado).
     private func dropTouchesThatEnded(keeping liveTouches: Set<UITouch>?) {
-        guard let liveTouches else { return }
+        guard let liveTouches, !liveTouches.isEmpty else { return }
         dropTouchesThatEnded(liveIDs: Self.activeTouchIDs(in: liveTouches))
+    }
+
+    /// Al reiniciarse `KeyTouchRecognizer`, cierra cualquier estado suyo cuyo dedo ya terminó.
+    fileprivate func reconcileTouchesAfterReset() {
+        guard !states.isEmpty else { return }
+        let live = Set(states.compactMap { entry -> ObjectIdentifier? in
+            if !entry.value.deliveredByRecognizer { return entry.key }
+            guard let touch = entry.value.touch,
+                  touch.phase == .began || touch.phase == .moved || touch.phase == .stationary else {
+                return nil
+            }
+            return entry.key
+        })
+        guard live.count < states.count else { return }
+        dropTouchesThatEnded(liveIDs: live)
+        syncWithEngine()
     }
 
     private func dropTouchesThatEnded(liveIDs live: Set<ObjectIdentifier>) {
@@ -492,9 +659,11 @@ final class KeyGridUIView: UIView {
         touchOrder.removeAll { !live.contains($0) }
     }
 
-    override func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent?) {
+    fileprivate func handleTouchesMoved(_ touches: Set<UITouch>, with event: UIEvent?, fromRecognizer: Bool) {
         for touch in touches {
-            guard let state = states[ObjectIdentifier(touch)], touch.timestamp > state.lastMoveTimestamp else { continue }
+            guard let state = states[ObjectIdentifier(touch)],
+                  state.deliveredByRecognizer == fromRecognizer,
+                  touch.timestamp > state.lastMoveTimestamp else { continue }
             state.lastMoveTimestamp = touch.timestamp
             if state.phase == .gliding {
                 // Todos los puntos intermedios (hasta 120 por segundo) para un trazo más fiel.
@@ -516,12 +685,13 @@ final class KeyGridUIView: UIView {
         }
     }
 
-    override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent?) {
-        guard touches.contains(where: { states[ObjectIdentifier($0)] != nil }) else { return }
+    fileprivate func handleTouchesEnded(_ touches: Set<UITouch>, with event: UIEvent?, fromRecognizer: Bool) {
+        let owned = touches.filter { states[ObjectIdentifier($0)]?.deliveredByRecognizer == fromRecognizer }
+        guard !owned.isEmpty else { return }
         let started = CACurrentMediaTime()
         defer { engine.touchDiagnostics.recordHandling(CACurrentMediaTime() - started) }
         // En el orden en que tocaron, para que dos letras levantadas a la vez no se crucen.
-        let ordered = touches.sorted { first, second in
+        let ordered = owned.sorted { first, second in
             let a = touchOrder.firstIndex(of: ObjectIdentifier(first)) ?? .max
             let b = touchOrder.firstIndex(of: ObjectIdentifier(second)) ?? .max
             return a < b
@@ -532,15 +702,16 @@ final class KeyGridUIView: UIView {
         syncWithEngine()
     }
 
-    override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent?) {
-        guard touches.contains(where: { states[ObjectIdentifier($0)] != nil }) else { return }
-        for touch in touches {
+    fileprivate func handleTouchesCancelled(_ touches: Set<UITouch>, with event: UIEvent?, fromRecognizer: Bool) {
+        let owned = touches.filter { states[ObjectIdentifier($0)]?.deliveredByRecognizer == fromRecognizer }
+        guard !owned.isEmpty else { return }
+        for touch in owned {
             end(touch, event: event, cancelled: true)
         }
         syncWithEngine()
     }
 
-    private func begin(_ touch: UITouch, event: UIEvent?) {
+    private func begin(_ touch: UITouch, event: UIEvent?, fromRecognizer: Bool) {
         let id = ObjectIdentifier(touch)
         let point = touch.location(in: self)
         guard let nearest = keyIndex(at: point) else {
@@ -580,6 +751,8 @@ final class KeyGridUIView: UIView {
         let state = TouchState(keyID: key.id, spec: key.spec, frame: key.frame, start: point, beganAt: now)
         state.gap = gap
         state.touch = touch
+        state.downTimestamp = touch.timestamp
+        state.deliveredByRecognizer = fromRecognizer
         states[id] = state
         touchOrder.append(id)
         if index != nearest, let from = keys[nearest].letter, let to = key.letter {
@@ -860,8 +1033,10 @@ final class KeyGridUIView: UIView {
 
     private func isQuickTap(_ state: TouchState) -> Bool {
         switch state.spec.kind {
-        case .character, .space:
-            return CACurrentMediaTime() - state.beganAt < 0.4 && GlideDecoder.distance(state.start, state.last) < 14
+        case .character, .space, .returnKey, .emoji, .dismiss:
+            let maxDistance = max(20.0, Double(glideTarget.keyWidth) * 0.55)
+            return CACurrentMediaTime() - state.beganAt < 0.45
+                && GlideDecoder.distance(state.start, state.last) < maxDistance
         default:
             return false
         }
@@ -1008,9 +1183,10 @@ final class KeyGridUIView: UIView {
         let popupHeight = max(36, frame.height - 8)
         let optionWidth = max(30, min(44, frame.width - 6))
         let barWidth = CGFloat(options.count) * optionWidth + 6
+        let contentRect = bounds.inset(by: keyContentInsets)
         var start = frame.minX + (frame.width - optionWidth) / 2 - 3
-        if start + barWidth > bounds.width - 2 { start = bounds.width - 2 - barWidth }
-        if start < 2 { start = 2 }
+        if start + barWidth > contentRect.maxX - 2 { start = contentRect.maxX - 2 - barWidth }
+        if start < contentRect.minX + 2 { start = contentRect.minX + 2 }
         state.alternatesStart = start
         state.optionWidth = optionWidth
         state.phase = .alternates

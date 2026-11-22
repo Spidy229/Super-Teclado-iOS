@@ -30,6 +30,8 @@ final class KeyboardSettingsPanelUIView: UIView {
     private let engine: KeyboardEngine
     private var appliedPalette: KeyboardPalette?
     private var headerHeight: CGFloat = 44
+    private var contentInsets: UIEdgeInsets = .zero
+    private let touchScope = KeyboardScrollTouchScope()
 
     let headerView = UIView()
     let backButton = SettingsBackButton()
@@ -37,6 +39,10 @@ final class KeyboardSettingsPanelUIView: UIView {
 
     let scrollView = KeyboardPanelUIScrollView()
     private let contentStack = UIStackView()
+    private var contentLeadingConstraint: NSLayoutConstraint?
+    private var contentTrailingConstraint: NSLayoutConstraint?
+    private var contentBottomConstraint: NSLayoutConstraint?
+    private var contentWidthConstraint: NSLayoutConstraint?
 
     // Estado
     private let statusCard = UIView()
@@ -55,7 +61,7 @@ final class KeyboardSettingsPanelUIView: UIView {
     // Vibración
     let hapticsSwitchRow = SettingsSwitchRow(title: "Vibrar al pulsar")
     private let hapticsDetailsStack = UIStackView()
-    private let hapticStyleChips = SettingsChipBar(titles: HapticStyleOption.allCases.map(\.title))
+    let hapticStyleChips = SettingsChipBar(titles: HapticStyleOption.allCases.map(\.title))
     private let strengthTitleLabel = UILabel()
     let strengthSlider = UISlider()
     private let strengthValueLabel = UILabel()
@@ -69,7 +75,7 @@ final class KeyboardSettingsPanelUIView: UIView {
     let autocorrectSwitchRow = SettingsSwitchRow(title: "Autocorrección")
     private let spaceAfterSuggestionRow = SettingsSwitchRow(title: "Espacio tras elegir una sugerencia")
     private let smartTouchRow = SettingsSwitchRow(title: "Precisión inteligente")
-    private let longPressChips = SettingsChipBar(titles: SettingsLongPressOption.allCases.map(\.title))
+    let longPressChips = SettingsChipBar(titles: SettingsLongPressOption.allCases.map(\.title))
     private let numberRowSwitchRow = SettingsSwitchRow(title: "Fila de números")
     private let keyBordersSwitchRow = SettingsSwitchRow(title: "Bordes de las teclas")
     private let incognitoSwitchRow = SettingsSwitchRow(title: "Modo incógnito")
@@ -120,7 +126,8 @@ final class KeyboardSettingsPanelUIView: UIView {
     init(engine: KeyboardEngine) {
         self.engine = engine
         super.init(frame: .zero)
-        backgroundColor = .clear
+        // Alfa mínimo para garantizar hit-testing continuo incluso en el tema Cristal (fondo claro).
+        backgroundColor = UIColor(white: 0, alpha: 0.01)
         setupHeader()
         setupScrollAndSections()
         wireActions()
@@ -158,15 +165,19 @@ final class KeyboardSettingsPanelUIView: UIView {
     }
 
     private func setupScrollAndSections() {
-        scrollView.backgroundColor = .clear
-        scrollView.delaysContentTouches = false
+        scrollView.backgroundColor = UIColor(white: 0, alpha: 0.01)
+        // Igual que Ajustes de iOS: retrasar el toque a los controles permite que cualquier
+        // arrastre vertical sobre interruptores, chips o deslizador desplace la lista sin trabarse,
+        // mientras que un toque rápido se entrega al instante al levantar el dedo.
+        scrollView.delaysContentTouches = true
         scrollView.canCancelContentTouches = true
         scrollView.decelerationRate = .fast
         scrollView.alwaysBounceVertical = true
-        scrollView.isDirectionalLockEnabled = true
+        scrollView.isDirectionalLockEnabled = false
         scrollView.contentInsetAdjustmentBehavior = .never
         scrollView.scrollsToTop = false
         addSubview(scrollView)
+        touchScope.attach(to: scrollView, disableContentTouchDelay: false)
 
         contentStack.axis = .vertical
         contentStack.spacing = 14
@@ -174,12 +185,21 @@ final class KeyboardSettingsPanelUIView: UIView {
         contentStack.translatesAutoresizingMaskIntoConstraints = false
         scrollView.addSubview(contentStack)
 
+        let leading = contentStack.leadingAnchor.constraint(equalTo: scrollView.contentLayoutGuide.leadingAnchor, constant: 12)
+        let trailing = contentStack.trailingAnchor.constraint(equalTo: scrollView.contentLayoutGuide.trailingAnchor, constant: -12)
+        let bottom = contentStack.bottomAnchor.constraint(equalTo: scrollView.contentLayoutGuide.bottomAnchor, constant: -14)
+        let width = contentStack.widthAnchor.constraint(equalTo: scrollView.frameLayoutGuide.widthAnchor, constant: -24)
+        contentLeadingConstraint = leading
+        contentTrailingConstraint = trailing
+        contentBottomConstraint = bottom
+        contentWidthConstraint = width
+
         NSLayoutConstraint.activate([
-            contentStack.leadingAnchor.constraint(equalTo: scrollView.contentLayoutGuide.leadingAnchor, constant: 12),
-            contentStack.trailingAnchor.constraint(equalTo: scrollView.contentLayoutGuide.trailingAnchor, constant: -12),
+            leading,
+            trailing,
             contentStack.topAnchor.constraint(equalTo: scrollView.contentLayoutGuide.topAnchor, constant: 12),
-            contentStack.bottomAnchor.constraint(equalTo: scrollView.contentLayoutGuide.bottomAnchor, constant: -14),
-            contentStack.widthAnchor.constraint(equalTo: scrollView.frameLayoutGuide.widthAnchor, constant: -24)
+            bottom,
+            width
         ])
 
         buildStatusCard()
@@ -436,17 +456,30 @@ final class KeyboardSettingsPanelUIView: UIView {
         super.layoutSubviews()
         UIView.withoutAnimation {
             let width = bounds.width
-            let topHeight = min(headerHeight, bounds.height)
-            let headerFrame = CGRect(x: 0, y: 0, width: width, height: topHeight)
+            let topOffset = contentInsets.top
+            let availableHeight = max(0, bounds.height - topOffset)
+            let topHeight = min(headerHeight, availableHeight)
+            let headerFrame = CGRect(
+                x: contentInsets.left,
+                y: topOffset,
+                width: max(0, width - contentInsets.left - contentInsets.right),
+                height: topHeight
+            )
             if headerView.frame != headerFrame { headerView.frame = headerFrame }
-            let scrollFrame = CGRect(x: 0, y: topHeight, width: width, height: max(0, bounds.height - topHeight))
+            let scrollTop = topOffset + topHeight
+            let scrollFrame = CGRect(x: 0, y: scrollTop, width: width, height: max(0, bounds.height - scrollTop))
             if scrollView.frame != scrollFrame { scrollView.frame = scrollFrame }
         }
     }
 
-    func apply(palette: KeyboardPalette, stripHeight: CGFloat) {
-        if abs(headerHeight - stripHeight) > 0.5 {
+    func apply(palette: KeyboardPalette, stripHeight: CGFloat, safeAreaInsets: UIEdgeInsets = .zero) {
+        if abs(headerHeight - stripHeight) > 0.5 || contentInsets != safeAreaInsets {
             headerHeight = stripHeight
+            contentInsets = safeAreaInsets
+            contentLeadingConstraint?.constant = 12 + safeAreaInsets.left
+            contentTrailingConstraint?.constant = -(12 + safeAreaInsets.right)
+            contentBottomConstraint?.constant = -(14 + safeAreaInsets.bottom)
+            contentWidthConstraint?.constant = -(24 + safeAreaInsets.left + safeAreaInsets.right)
             setNeedsLayout()
         }
         if appliedPalette != palette {
@@ -669,6 +702,7 @@ final class SettingsBackButton: UIControl {
 private final class SettingsStatusRow: UIView {
     private let iconView = UIImageView()
     private let label = UILabel()
+    private var lastIsOK: Bool?
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -702,9 +736,12 @@ private final class SettingsStatusRow: UIView {
     }
 
     func configure(isOK: Bool, text: String) {
-        let name = isOK ? "checkmark.circle.fill" : "exclamationmark.triangle.fill"
-        iconView.image = UIImage(systemName: name, withConfiguration: UIImage.SymbolConfiguration(pointSize: 13))
-        iconView.tintColor = isOK ? .systemGreen : .systemOrange
+        if lastIsOK != isOK {
+            lastIsOK = isOK
+            let name = isOK ? "checkmark.circle.fill" : "exclamationmark.triangle.fill"
+            iconView.image = UIImage(systemName: name, withConfiguration: UIImage.SymbolConfiguration(pointSize: 13))
+            iconView.tintColor = isOK ? .systemGreen : .systemOrange
+        }
         if label.text != text { label.text = text }
     }
 }
@@ -889,7 +926,7 @@ private final class SettingsChipPill: UIControl {
 }
 
 @MainActor
-private final class SettingsChipBar: UIScrollView {
+final class SettingsChipBar: UIScrollView {
     var onSelect: (Int) -> Void = { _ in }
     private var pills: [SettingsChipPill] = []
     private var selectedIndex = 0
@@ -902,8 +939,9 @@ private final class SettingsChipBar: UIScrollView {
         super.init(frame: .zero)
         showsHorizontalScrollIndicator = false
         showsVerticalScrollIndicator = false
-        delaysContentTouches = false
+        delaysContentTouches = true
         canCancelContentTouches = true
+        isDirectionalLockEnabled = false
         alwaysBounceVertical = false
         contentInsetAdjustmentBehavior = .never
 
@@ -934,6 +972,29 @@ private final class SettingsChipBar: UIScrollView {
     @available(*, unavailable)
     required init?(coder: NSCoder) {
         fatalError("init(coder:) no se usa")
+    }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        // Si todos los chips caben en pantalla, desactivar el scroll horizontal evita cualquier
+        // competencia de gestos con el desplazamiento vertical del panel de ajustes.
+        let overflows = contentSize.width > bounds.width + 1
+        if isScrollEnabled != overflows { isScrollEnabled = overflows }
+    }
+
+    override func touchesShouldCancel(in view: UIView) -> Bool {
+        true
+    }
+
+    override func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
+        guard gestureRecognizer === panGestureRecognizer else {
+            return super.gestureRecognizerShouldBegin(gestureRecognizer)
+        }
+        guard isScrollEnabled else { return false }
+        let velocity = panGestureRecognizer.velocity(in: self)
+        let translation = panGestureRecognizer.translation(in: self)
+        let movement = velocity == .zero ? translation : velocity
+        return abs(movement.x) > abs(movement.y) * 1.2
     }
 
     func apply(chip: UIColor, accent: UIColor, text: UIColor, accentText: UIColor) {

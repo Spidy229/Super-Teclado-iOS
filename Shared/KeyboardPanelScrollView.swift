@@ -30,18 +30,54 @@ class KeyboardPanelUIScrollView: UIScrollView {
         (panGestureRecognizer.translation(in: self), panGestureRecognizer.velocity(in: self))
     }
 
+    private func isHorizontalInteractiveControl(_ view: UIView) -> Bool {
+        var candidate: UIView? = view
+        while let current = candidate, current !== self {
+            if current is UISlider || current is UISwitch { return true }
+            if let nestedScroll = current as? UIScrollView, nestedScroll.isScrollEnabled {
+                return true
+            }
+            candidate = current.superview
+        }
+        return false
+    }
+
+    override func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
+        guard gestureRecognizer === panGestureRecognizer else {
+            return super.gestureRecognizerShouldBegin(gestureRecognizer)
+        }
+        let location = panGestureRecognizer.location(in: self)
+        if let hit = hitTest(location, with: nil), isHorizontalInteractiveControl(hit) {
+            let motion = controlPanMotion
+            let movement = motion.velocity == .zero ? motion.translation : motion.velocity
+            // Solo ceder a un deslizador, interruptor o barra de chips desplazable cuando el
+            // gesto es claramente horizontal; cualquier arrastre vertical o diagonal desplaza la lista.
+            if abs(movement.x) > abs(movement.y) * 1.2 {
+                return false
+            }
+        }
+        return super.gestureRecognizerShouldBegin(gestureRecognizer)
+    }
+
     override func touchesShouldCancel(in view: UIView) -> Bool {
         var candidate: UIView? = view
         while let current = candidate, current !== self {
-            if current is UISlider { return false }
-            if current is UISwitch || current is UIControl {
-                // Un arrastre vertical sobre un control desplaza el panel; el horizontal
-                // sigue perteneciendo al interruptor o a los chips. No se cancela el deslizador.
+            if current is UISlider {
                 let motion = controlPanMotion
-                // Al reconocer el pan su traslación puede empezar en cero; la velocidad
-                // mantiene la dirección de ese primer desplazamiento.
                 let movement = motion.translation == .zero ? motion.velocity : motion.translation
-                return abs(movement.y) > abs(movement.x)
+                return abs(movement.y) > abs(movement.x) * 1.2
+            }
+            if current is UISwitch {
+                // Solo mantener el interruptor en un deslizamiento claramente horizontal; el resto
+                // (incluido movimiento inicial cero o un arco natural del pulgar) desplaza el panel.
+                let motion = controlPanMotion
+                let movement = motion.translation == .zero ? motion.velocity : motion.translation
+                if abs(movement.x) > abs(movement.y) * 1.2 { return false }
+                return true
+            }
+            if current is UIControl {
+                // Botones y chips de toque nunca deben bloquear el desplazamiento vertical.
+                return true
             }
             candidate = current.superview
         }
@@ -82,10 +118,10 @@ final class KeyboardPanelScrollController<Content: View>: UIViewController {
 
     override func viewDidLoad() {
         super.viewDidLoad()
-        scrollView.backgroundColor = .clear
+        scrollView.backgroundColor = UIColor(white: 0, alpha: 0.01)
         scrollView.delegate = dragDelegate
         scrollView.bounces = false
-        scrollView.isDirectionalLockEnabled = true
+        scrollView.isDirectionalLockEnabled = false
         scrollView.canCancelContentTouches = true
         scrollView.contentInsetAdjustmentBehavior = .never
         scrollView.scrollsToTop = false

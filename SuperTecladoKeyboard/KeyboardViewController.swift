@@ -301,6 +301,9 @@ final class KeyboardViewController: UIInputViewController {
     // MARK: Diseño
 
     private func installKeyboardView() {
+        // Alfa mínimo en la vista raíz para que nunca existan zonas transparentes sin hit-testing
+        // en la ventana remota de la extensión (incluido el tema Cristal).
+        view.backgroundColor = UIColor(white: 0, alpha: 0.01)
         backgroundView.frame = view.bounds
         backgroundView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
         view.addSubview(backgroundView)
@@ -402,8 +405,9 @@ final class KeyboardViewController: UIInputViewController {
             }
             return
         }
-        let frame = gridFrame(for: panel)
-        if grid.frame != frame { grid.frame = frame }
+        let layout = gridLayout(for: panel)
+        if grid.frame != layout.frame { grid.frame = layout.frame }
+        if grid.keyContentInsets != layout.insets { grid.keyContentInsets = layout.insets }
         grid.isHidden = false
         grid.apply(KeyGridConfiguration(engine: engine), palette: palette)
     }
@@ -413,17 +417,11 @@ final class KeyboardViewController: UIInputViewController {
             if !settingsPanel.isHidden { settingsPanel.isHidden = true }
             return
         }
-        let insets = view.safeAreaInsets
-        let frame = CGRect(
-            x: insets.left,
-            y: insets.top,
-            width: max(0, view.bounds.width - insets.left - insets.right),
-            height: max(0, view.bounds.height - insets.top - insets.bottom)
-        )
+        let frame = view.bounds
         if settingsPanel.frame != frame { settingsPanel.frame = frame }
         let justOpened = settingsPanel.isHidden
         settingsPanel.isHidden = false
-        settingsPanel.apply(palette: palette, stripHeight: engine.metrics.stripHeight)
+        settingsPanel.apply(palette: palette, stripHeight: engine.metrics.stripHeight, safeAreaInsets: view.safeAreaInsets)
         if justOpened { settingsPanel.refreshDiagnostics() }
     }
 
@@ -452,28 +450,46 @@ final class KeyboardViewController: UIInputViewController {
         }
     }
 
-    /// El mismo hueco que deja `KeyboardRootView`: barra arriba, fila de favoritos si se ve,
-    /// resultados de la búsqueda del portapapeles y el panel lateral del modo una mano.
-    private func gridFrame(for panel: KeyboardPanel) -> CGRect {
+    /// Cubre todo el ancho y alto disponible debajo de la barra para que no quede ningún hueco
+    /// muerto en los bordes o al fondo; las teclas visuales respetan los márgenes seguros.
+    private func gridLayout(for panel: KeyboardPanel) -> (frame: CGRect, insets: UIEdgeInsets) {
         let metrics = engine.metrics
         let showsFavorites = metrics.favoritesRowHeight > 0 && panel == .typing
         var top = metrics.stripHeight + (showsFavorites ? metrics.favoritesRowHeight : 0)
-        var height = metrics.keyAreaHeight + (showsFavorites ? 0 : metrics.favoritesRowHeight)
+        var minHeight = metrics.keyAreaHeight + (showsFavorites ? 0 : metrics.favoritesRowHeight)
         if panel == .clipboardSearch {
             top += 50
-            height -= 50
+            minHeight -= 50
         }
-        // Los márgenes seguros (en horizontal, en iPhone con Face ID) los respeta SwiftUI igual.
         let insets = view.safeAreaInsets
-        let width = view.bounds.width - insets.left - insets.right
+        let safeWidth = max(0, view.bounds.width - insets.left - insets.right)
         let mode = engine.preferences.oneHandedMode
-        let side: CGFloat = mode == .off ? 0 : min(72, width * 0.17)
-        return CGRect(
-            x: insets.left + (mode == .right ? side : 0),
-            y: insets.top + top,
-            width: max(0, width - side),
-            height: max(0, height)
-        )
+        let side: CGFloat = mode == .off ? 0 : min(72, safeWidth * 0.17)
+        let originY = insets.top + top
+        let availableHeight = view.bounds.height > originY
+            ? (view.bounds.height - originY)
+            : max(0, minHeight)
+        let bottomVisualInset = max(0, min(insets.bottom, availableHeight - 1))
+
+        switch mode {
+        case .off:
+            return (
+                CGRect(x: 0, y: originY, width: view.bounds.width, height: availableHeight),
+                UIEdgeInsets(top: 0, left: insets.left, bottom: bottomVisualInset, right: insets.right)
+            )
+        case .right:
+            let originX = insets.left + side
+            return (
+                CGRect(x: originX, y: originY, width: max(0, view.bounds.width - originX), height: availableHeight),
+                UIEdgeInsets(top: 0, left: 0, bottom: bottomVisualInset, right: insets.right)
+            )
+        case .left:
+            let width = max(0, view.bounds.width - insets.right - side)
+            return (
+                CGRect(x: 0, y: originY, width: width, height: availableHeight),
+                UIEdgeInsets(top: 0, left: insets.left, bottom: bottomVisualInset, right: 0)
+            )
+        }
     }
 
     // MARK: Diagnóstico

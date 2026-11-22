@@ -91,29 +91,32 @@ final class KeyboardPanelScrollIntegrationTests: XCTestCase {
         toggle.addSubview(toggleChild)
         [button, toggle, slider].forEach { scroll.addSubview($0) }
 
-        XCTAssertFalse(scroll.touchesShouldCancel(in: button))
-        XCTAssertFalse(scroll.touchesShouldCancel(in: toggleChild))
+        // Sin movimiento inicial aún medido: botones e interruptores no deben trabar el scroll;
+        // el deslizador mantiene el toque hasta ver un arrastre claramente vertical.
+        XCTAssertTrue(scroll.touchesShouldCancel(in: button))
+        XCTAssertTrue(scroll.touchesShouldCancel(in: toggleChild))
         XCTAssertFalse(scroll.touchesShouldCancel(in: slider))
 
+        // Arrastre vertical: cancela botones, interruptores y también el deslizador para bajar sin trabas.
         scroll.motion = (CGPoint(x: 2, y: 30), .zero)
         XCTAssertTrue(scroll.touchesShouldCancel(in: button))
         XCTAssertTrue(scroll.touchesShouldCancel(in: toggleChild))
-        XCTAssertFalse(scroll.touchesShouldCancel(in: slider))
+        XCTAssertTrue(scroll.touchesShouldCancel(in: slider))
 
+        // Arrastre claramente horizontal: respeta interruptor y deslizador; un botón de toque sigue cediendo.
         scroll.motion = (CGPoint(x: 30, y: 2), .zero)
-        XCTAssertFalse(scroll.touchesShouldCancel(in: button))
+        XCTAssertTrue(scroll.touchesShouldCancel(in: button))
         XCTAssertFalse(scroll.touchesShouldCancel(in: toggleChild))
         XCTAssertFalse(scroll.touchesShouldCancel(in: slider))
 
-        // En el primer instante del pan, UIKit puede dar traslación cero pero ya conoce
-        // su velocidad. Se mantiene la misma separación entre scroll y controles.
+        // En el primer instante del pan, UIKit puede dar traslación cero pero ya conoce su velocidad.
         scroll.motion = (.zero, CGPoint(x: 10, y: 300))
         XCTAssertTrue(scroll.touchesShouldCancel(in: button))
         XCTAssertTrue(scroll.touchesShouldCancel(in: toggleChild))
-        XCTAssertFalse(scroll.touchesShouldCancel(in: slider))
+        XCTAssertTrue(scroll.touchesShouldCancel(in: slider))
 
         scroll.motion = (.zero, CGPoint(x: 300, y: 10))
-        XCTAssertFalse(scroll.touchesShouldCancel(in: button))
+        XCTAssertTrue(scroll.touchesShouldCancel(in: button))
         XCTAssertFalse(scroll.touchesShouldCancel(in: toggleChild))
         XCTAssertFalse(scroll.touchesShouldCancel(in: slider))
     }

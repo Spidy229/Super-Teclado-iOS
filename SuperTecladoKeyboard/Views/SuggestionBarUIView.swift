@@ -37,7 +37,8 @@ final class SuggestionBarUIView: UIView {
         slotButtons = (0..<3).map { _ in BarTextButton() }
         separators = (0..<2).map { _ in UIView() }
         super.init(frame: .zero)
-        backgroundColor = .clear
+        // Alfa mínimo para hit-testing continuo también en el tema Cristal.
+        backgroundColor = UIColor(white: 0, alpha: 0.01)
 
         toggleButton.onDown = { [weak self] in self?.engine.keyFeedback(.modifier) }
         toggleButton.onTap = { [weak self] in self?.engine.showsToolbar.toggle() }
@@ -240,11 +241,10 @@ final class SuggestionBarUIView: UIView {
         case .glide:
             glideLabel.frame = CGRect(x: x, y: 0, width: width, height: height)
         case .tools:
-            let count = CGFloat(toolButtons.count)
-            let buttonWidth = min(44, width / count)
-            let spacing = count > 1 ? (width - buttonWidth * count) / (count - 1) : 0
+            let count = CGFloat(max(toolButtons.count, 1))
+            let slotWidth = width / count
             for (index, button) in toolButtons.enumerated() {
-                button.frame = CGRect(x: x + CGFloat(index) * (buttonWidth + spacing), y: 0, width: buttonWidth, height: height)
+                button.frame = CGRect(x: x + CGFloat(index) * slotWidth, y: 0, width: slotWidth, height: height)
             }
         case .quickPaste:
             let compactWidth: CGFloat = 44 * CGFloat(compactButtons.count)

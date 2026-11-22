@@ -41,7 +41,14 @@ enum KeyboardScrollTouchPolicy {
 
     static func stopDecelerationIfNeeded(in scroll: UIScrollView) {
         guard scroll.isDecelerating, !scroll.isDragging else { return }
-        scroll.setContentOffset(scroll.contentOffset, animated: false)
+        var target = scroll.contentOffset
+        if scroll.bounds.height > 0, scroll.contentSize.height > 0 {
+            let insets = scroll.adjustedContentInset
+            let minY = -insets.top
+            let maxY = max(minY, scroll.contentSize.height - scroll.bounds.height + insets.bottom)
+            target.y = min(max(target.y, minY), maxY)
+        }
+        scroll.setContentOffset(target, animated: false)
     }
 }
 
@@ -51,8 +58,9 @@ enum KeyboardScrollTouchPolicy {
 final class KeyboardScrollTouchScope {
     private weak var scrollView: UIScrollView?
     private var observer: ScrollDecelerationStopRecognizer?
+    private var disabledContentTouchDelay = false
 
-    func attach(to scroll: UIScrollView) {
+    func attach(to scroll: UIScrollView, disableContentTouchDelay: Bool = true) {
         guard scrollView !== scroll else { return }
         detach()
         let observer: ScrollDecelerationStopRecognizer
@@ -63,7 +71,11 @@ final class KeyboardScrollTouchScope {
             scroll.addGestureRecognizer(observer)
         }
         observer.owners += 1
-        scroll.delaysContentTouches = false
+        if disableContentTouchDelay {
+            observer.delayOwners += 1
+            scroll.delaysContentTouches = false
+        }
+        disabledContentTouchDelay = disableContentTouchDelay
         scrollView = scroll
         self.observer = observer
     }
@@ -71,10 +83,16 @@ final class KeyboardScrollTouchScope {
     func detach() {
         guard let observer else { return }
         observer.owners -= 1
+        if disabledContentTouchDelay {
+            observer.delayOwners -= 1
+            if observer.delayOwners == 0, let scroll = scrollView {
+                scroll.delaysContentTouches = observer.originalDelaysContentTouches
+            }
+        }
         if observer.owners == 0, let scroll = scrollView {
             scroll.removeGestureRecognizer(observer)
-            scroll.delaysContentTouches = observer.originalDelaysContentTouches
         }
+        disabledContentTouchDelay = false
         self.observer = nil
         scrollView = nil
     }
@@ -86,6 +104,7 @@ private final class ScrollDecelerationStopRecognizer: UIGestureRecognizer {
     weak var scrollView: UIScrollView?
     let originalDelaysContentTouches: Bool
     var owners = 0
+    var delayOwners = 0
 
     init(scrollView: UIScrollView) {
         self.scrollView = scrollView
