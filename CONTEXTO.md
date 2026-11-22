@@ -1,6 +1,6 @@
 # Super Teclado: contexto para agentes
 
-Resumen de todo lo hecho hasta la **versión 3.0.7**, para que otro agente (Claude Code, Codex…) pueda seguir el trabajo sin repetir errores. El `README.md` describe las funciones para el usuario; este documento explica **cómo está hecho, por qué y qué falta**.
+Resumen de todo lo hecho hasta la **versión 3.0.8**, para que otro agente (Claude Code, Codex…) pueda seguir el trabajo sin repetir errores. El `README.md` describe las funciones para el usuario; este documento explica **cómo está hecho, por qué y qué falta**.
 
 **Base vigente:** esta rama y las releases publicadas, no `main`. `main` conserva la versión 1.0. Antes de auditar o modificar el proyecto, comprobar las ramas, la última release y este archivo. La 3.0.3 continúa la 3.0.2; no sustituirla por cambios preparados sobre la 1.0.
 
@@ -34,7 +34,7 @@ Resumen de todo lo hecho hasta la **versión 3.0.7**, para que otro agente (Clau
 - **Subir versión** en cada cambio que se entregue, en dos sitios que deben coincidir:
   - `project.yml`: `MARKETING_VERSION` y `CURRENT_PROJECT_VERSION`, **4 veces cada uno** (app, teclado, share y widget).
   - `SuperTecladoApp/Package.swift`: `displayVersion` y `bundleVersion`.
-  - Estado actual: **3.0.7 / 55**, igual en los cuatro destinos de `project.yml` y en `Package.swift`.
+  - Estado actual: **3.0.8 / 56**, igual en los cuatro destinos de `project.yml` y en `Package.swift`.
 - `scripts/build-unsigned-ipa.sh`:
   - firma ad hoc (`codesign -s -`) cada appex con sus entitlements y después la app;
   - **falla si falta `Assets.car` o `CFBundleIcons`** (comprobación añadida en 2.6.6).
@@ -260,6 +260,7 @@ Este archivo es la solución al **retraso al escribir**. Antes cada tecla era un
 | 3.0.4 – 3.0.5 | El panel ⚙️ detiene el scroll al levantar el dedo; la cuadrícula pasa a entrega multitáctil directa por `UIResponder` sin alterar los gestos del host |
 | 3.0.6 | Auditoría integral de bloqueos táctiles en teclado y app: panel ⚙️ reescrito en UIKit puro (`KeyboardSettingsPanelUIView`) y `UIHostingController` perezoso (cero SwiftUI al escribir o en ⚙️); eliminado `CATransaction.flush()` en `touchesBegan`, filtrado de fases activas en `dropTouchesThatEnded`, caché de filas de teclas y fondo, agrupación de `textDidChange`/`selectionDidChange` y caché de rasgos del campo para cortar las llamadas XPC por tecla; `didReceiveMemoryWarning`; en `InstantTouchRecognizer` coexistencia real con todos los gestos del `UIScrollView` padre; en la app: eliminados `.textSelection(.enabled)` y el refresco por segundo en `ClipboardRow`, miniaturas asíncronas con caché, `Button` nativo en la lista, sincronización `KeyboardHistorySync` en una sola pasada sin leer blobs ya publicados, lectura de portapapeles asíncrona (`ClipboardService.readCurrentAsync`), `ItemDetailView` solo guarda si hubo cambios, deslizadores sin escribir en cada fotograma; y sin App Group (KravaSigner) historial y diccionario personal pasan a ficheros locales en vez de saturar `UserDefaults` y `sharedDefaults` usa `.standard` tras migrar una vez |
 | 3.0.7 | Corrección de los dos fallos físicos reportados en 3.0.6: (1) desplazamiento trabado al bajar en ⚙️ (`KeyboardSettingsPanelUIView` + `KeyboardPanelUIScrollView`): activado `delaysContentTouches = true`, desactivado `isDirectionalLockEnabled` (bloqueaba arrastres diagonales del pulgar en un scroll solo vertical), corregido `touchesShouldCancel(in:)` y añadido `gestureRecognizerShouldBegin` para que botones, chips, interruptores y el deslizador cedan siempre ante un arrastre vertical (manteniendo el deslizamiento horizontal en deslizador/interruptor), `SettingsChipBar` desactiva su scroll horizontal cuando los chips caben y cede en vertical, y reconectado `ScrollDecelerationStopRecognizer` con sujeción de límites y diagnóstico; (2) eliminación de huecos muertos al pulsar teclas (`KeyGridUIView` + `KeyboardViewController` + `SuggestionBarUIView`): restaurado `KeyTouchRecognizer` con ciclo continuo real `.began → .changed → .ended/.cancelled` y deduplicación por canal/timestamp para evitar retrasos de los gestos de borde de iOS sin tocar la ventana anfitriona, alfa mínimo (`0.01`) en vistas transparentes (vital en el tema Cristal para el hit-testing remoto de la extensión), área de cuadrícula extendida de borde a borde con `keyContentInsets` visuales, rescate de toques rápidos cancelados también en Intro/Emoji/Ocultar, y barra de herramientas sin huecos entre iconos |
+| 3.0.8 | Eliminada la doble pulsación ocasional de 3.0.7: los toques de `KeyGridUIView` entran exclusivamente por `KeyTouchRecognizer` (`cancelsTouchesInView = true`) y los métodos `UIResponder` de la vista no procesan teclas, evitando que un toque retrasado por los gestos de borde de iOS llegue después de soltar o mover el dedo y vuelva a escribir la misma tecla |
 
 ## 8. Errores ya resueltos (no repetirlos)
 

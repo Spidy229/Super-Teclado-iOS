@@ -42,19 +42,56 @@ final class KeyGridDeliveryTests: XCTestCase {
         let s = try finger(on: "s")
         let delete = try finger(on: "Borrar")
         let d = try finger(on: "d")
-        grid.touchesBegan([a], with: nil)
-        grid.touchesBegan([s], with: nil)
+        grid.fingersBegan([a], with: nil)
+        grid.fingersBegan([s], with: nil)
         XCTAssertEqual(engine.searchQuery, "a")
-        grid.touchesEnded([a], with: nil)
-        grid.touchesBegan([delete], with: nil)
+        grid.fingersEnded([a], with: nil)
+        grid.fingersBegan([delete], with: nil)
         XCTAssertEqual(engine.searchQuery, "a")
-        grid.touchesEnded([s], with: nil)
-        grid.touchesBegan([d], with: nil)
-        grid.touchesEnded([d], with: nil)
+        grid.fingersEnded([s], with: nil)
+        grid.fingersBegan([d], with: nil)
+        grid.fingersEnded([d], with: nil)
         try await Task.sleep(for: .milliseconds(550))
         XCTAssertEqual(engine.searchQuery, "ad")
-        grid.touchesEnded([delete], with: nil)
+        grid.fingersEnded([delete], with: nil)
         XCTAssertFalse(grid.hasActiveTouches)
+    }
+
+    @MainActor
+    func testDelayedUIViewTouchDeliveryAfterRecognizerNeverDoubleTypes() throws {
+        let engine = KeyboardEngine()
+        engine.panel = .clipboardSearch
+        engine.preferences.keyPopups = false
+        engine.preferences.sound = false
+        engine.shift = .off
+        let grid = KeyGridUIView(engine: engine)
+        grid.frame = CGRect(x: 0, y: 0, width: 390, height: 224)
+        grid.apply(KeyGridConfiguration(engine: engine), palette: .make(theme: .dark, systemIsDark: true))
+        grid.layoutIfNeeded()
+
+        let aCap = try XCTUnwrap(grid.subviews.first { $0.accessibilityLabel == "a" })
+        let a = Finger()
+        a.point = CGPoint(x: aCap.frame.midX, y: aCap.frame.midY)
+
+        // El reconocedor atiende la pulsación y la escribe al soltar; una entrega tardía a
+        // UIView.touchesBegan/Ended tras fallar un gesto de borde de iOS no debe duplicarla.
+        grid.fingersBegan([a], with: nil)
+        grid.fingersEnded([a], with: nil)
+        XCTAssertEqual(engine.searchQuery, "a")
+        grid.touchesBegan([a], with: nil)
+        grid.touchesEnded([a], with: nil)
+        XCTAssertEqual(engine.searchQuery, "a")
+
+        // Tampoco si UIView.touchesBegan llega mientras el dedo sigue apoyado.
+        let sCap = try XCTUnwrap(grid.subviews.first { $0.accessibilityLabel == "s" })
+        let s = Finger()
+        s.point = CGPoint(x: sCap.frame.midX, y: sCap.frame.midY)
+        grid.fingersBegan([s], with: nil)
+        grid.touchesBegan([s], with: nil)
+        XCTAssertEqual(engine.searchQuery, "a")
+        grid.fingersEnded([s], with: nil)
+        grid.touchesEnded([s], with: nil)
+        XCTAssertEqual(engine.searchQuery, "as")
     }
 
     @MainActor
@@ -81,7 +118,7 @@ final class KeyGridDeliveryTests: XCTestCase {
         XCTAssertEqual(grid.gestureRecognizers?.count, 1)
         XCTAssertFalse(recognizer.delaysTouchesBegan)
         XCTAssertFalse(recognizer.delaysTouchesEnded)
-        XCTAssertFalse(recognizer.cancelsTouchesInView)
+        XCTAssertTrue(recognizer.cancelsTouchesInView)
         XCTAssertFalse(recognizer.canPrevent(gate))
         XCTAssertFalse(recognizer.canBePrevented(by: gate))
         XCTAssertTrue(gate.delaysTouchesBegan)
@@ -144,8 +181,8 @@ final class KeyGridDeliveryTests: XCTestCase {
             let before = engine.searchQuery.count
             let tap = Finger()
             tap.point = point
-            grid.touchesBegan([tap], with: nil)
-            grid.touchesEnded([tap], with: nil)
+            grid.fingersBegan([tap], with: nil)
+            grid.fingersEnded([tap], with: nil)
             XCTAssertEqual(engine.searchQuery.count, before + 1, "No se activó ninguna tecla en \(point)")
         }
     }
