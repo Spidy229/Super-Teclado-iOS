@@ -117,6 +117,28 @@ final class ClipboardStorageRegressionTests: XCTestCase {
     }
 
     @MainActor
+    func testPrivateStorageWithoutAppGroupUsesFilesInsteadOfUserDefaultsAndMigratesLegacyBlobs() async throws {
+        try withStorage(hasAppGroup: false) { storage in
+            let legacy = savedClip("migrated from defaults")
+            storage.defaults.set(try JSONEncoder().encode([legacy]), forKey: "super-teclado-saved-fallback")
+            XCTAssertEqual(SharedClipboardStore.load(storage: storage).map(\.text), ["migrated from defaults"])
+
+            XCTAssertTrue(SharedClipboardStore.save([legacy], storage: storage))
+            XCTAssertNil(storage.defaults.object(forKey: "super-teclado-saved-fallback"))
+            XCTAssertEqual(SharedClipboardStore.load(storage: storage).map(\.text), ["migrated from defaults"])
+
+            PersonalDictionary.saveLearnedWords(["superteclado": 5], storage: storage)
+            PersonalDictionary.saveLearnedBigrams(["buen": ["dia": 3]], storage: storage)
+            XCTAssertEqual(PersonalDictionary.learnedWords(storage: storage)["superteclado"], 5)
+            XCTAssertEqual(PersonalDictionary.learnedBigrams(storage: storage)["buen"]?["dia"], 3)
+            XCTAssertNil(storage.settingsDefaults?.object(forKey: KeyboardPreferenceKey.learnedWords))
+            XCTAssertNil(storage.settingsDefaults?.object(forKey: KeyboardPreferenceKey.learnedBigrams))
+            PersonalDictionary.clearLearned(storage: storage)
+            XCTAssertTrue(PersonalDictionary.learnedWords(storage: storage).isEmpty)
+        }
+    }
+
+    @MainActor
     private func memoryContext() throws -> ModelContext {
         let configuration = ModelConfiguration(isStoredInMemoryOnly: true)
         return ModelContext(try ModelContainer(for: ClipboardItem.self, configurations: configuration))

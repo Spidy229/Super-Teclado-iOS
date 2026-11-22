@@ -22,16 +22,40 @@ extension KeyGridConfiguration {
     }
 }
 
+struct KeyRowsCacheKey: Equatable {
+    let page: KeyboardPage
+    let isPad: Bool
+    let numberRow: Bool
+    let longPressSymbols: Bool
+    let letterLayout: LetterLayout
+    let keyboardType: UIKeyboardType
+    let needsInputModeSwitchKey: Bool
+}
+
 /// Construye las filas de teclas para la página actual y el tipo de campo.
 extension KeyboardEngine {
-    /// Filas de teclas de la página actual.
+    /// Filas de teclas de la página actual, cacheadas para no reasignar ~35 `KeySpec` en cada toque.
     func keyRows() -> [[KeySpec]] {
+        let key = KeyRowsCacheKey(
+            page: page,
+            isPad: metrics.isPad,
+            numberRow: preferences.numberRow,
+            longPressSymbols: preferences.longPressSymbols,
+            letterLayout: letterLayout,
+            keyboardType: keyboardType,
+            needsInputModeSwitchKey: needsInputModeSwitchKey
+        )
+        if cachedKeyRowsKey == key { return cachedKeyRows }
+        let rows: [[KeySpec]]
         switch page {
-        case .letters: letterRows()
-        case .numbers: symbolPageRows(KeyboardLayout.numberRows, toggle: .page(.symbols, "=\\<"))
-        case .symbols: symbolPageRows(KeyboardLayout.symbolRows, toggle: .page(.numbers, "?123"))
-        case .numberPad: numberPadRows()
+        case .letters: rows = letterRows()
+        case .numbers: rows = symbolPageRows(KeyboardLayout.numberRows, toggle: .page(.symbols, "=\\<"))
+        case .symbols: rows = symbolPageRows(KeyboardLayout.symbolRows, toggle: .page(.numbers, "?123"))
+        case .numberPad: rows = numberPadRows()
         }
+        cachedKeyRowsKey = key
+        cachedKeyRows = rows
+        return rows
     }
 
     private func letterRows() -> [[KeySpec]] {

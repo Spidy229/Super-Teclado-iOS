@@ -118,4 +118,20 @@ final class ThemeAndHapticsTests: XCTestCase {
         XCTAssertTrue(KeyboardThemeOption.allCases.contains(.custom))
         XCTAssertNil(KeyboardThemeOption.custom.isDark)
     }
+
+    func testSaveChangesWritesOnlyModifiedKeys() throws {
+        let suite = "super-teclado-tests-\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+
+        let before = KeyboardPreferences()
+        var after = before
+        after.autocorrect = false
+        after.saveChanges(from: before, to: defaults)
+
+        XCTAssertEqual(defaults.object(forKey: KeyboardPreferenceKey.autocorrect) as? Bool, false)
+        XCTAssertNil(defaults.object(forKey: KeyboardPreferenceKey.theme))
+        XCTAssertNil(defaults.object(forKey: KeyboardPreferenceKey.haptics))
+        XCTAssertFalse(KeyboardPreferences.load(from: defaults).autocorrect)
+    }
 }

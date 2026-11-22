@@ -279,6 +279,10 @@ final class SuggestionEngine {
         }
     }
 
+    func clearCache() {
+        invalidateCache()
+    }
+
     private func invalidateCache() {
         cache.removeAll(keepingCapacity: true)
         cacheGeneration &+= 1

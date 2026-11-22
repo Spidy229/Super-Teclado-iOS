@@ -1,6 +1,6 @@
 # Super Teclado: contexto para agentes
 
-Resumen de todo lo hecho hasta la **versión 3.0.5**, para que otro agente (Claude Code, Codex…) pueda seguir el trabajo sin repetir errores. El `README.md` describe las funciones para el usuario; este documento explica **cómo está hecho, por qué y qué falta**.
+Resumen de todo lo hecho hasta la **versión 3.0.6**, para que otro agente (Claude Code, Codex…) pueda seguir el trabajo sin repetir errores. El `README.md` describe las funciones para el usuario; este documento explica **cómo está hecho, por qué y qué falta**.
 
 **Base vigente:** esta rama y las releases publicadas, no `main`. `main` conserva la versión 1.0. Antes de auditar o modificar el proyecto, comprobar las ramas, la última release y este archivo. La 3.0.3 continúa la 3.0.2; no sustituirla por cambios preparados sobre la 1.0.
 
@@ -34,7 +34,7 @@ Resumen de todo lo hecho hasta la **versión 3.0.5**, para que otro agente (Clau
 - **Subir versión** en cada cambio que se entregue, en dos sitios que deben coincidir:
   - `project.yml`: `MARKETING_VERSION` y `CURRENT_PROJECT_VERSION`, **4 veces cada uno** (app, teclado, share y widget).
   - `SuperTecladoApp/Package.swift`: `displayVersion` y `bundleVersion`.
-  - Estado actual: **3.0.5 / 53**, igual en los cuatro destinos de `project.yml` y en `Package.swift`.
+  - Estado actual: **3.0.6 / 54**, igual en los cuatro destinos de `project.yml` y en `Package.swift`.
 - `scripts/build-unsigned-ipa.sh`:
   - firma ad hoc (`codesign -s -`) cada appex con sus entitlements y después la app;
   - **falla si falta `Assets.car` o `CFBundleIcons`** (comprobación añadida en 2.6.6).
@@ -257,6 +257,8 @@ Este archivo es la solución al **retraso al escribir**. Antes cada tecla era un
 
 | 3.0.2 | El usuario confirma que el bloqueo del panel y la pérdida de pulsaciones rápidas persisten con 3.0.1. El panel ⚙️ usa ahora UIScrollView propio con conexión táctil directa, no una búsqueda de ancestros de SwiftUI. Pruebas montan su representación real en una UIWindow, incluidos tamaño dinámico y posición. El corrector de iOS no se inicia desde un espacio mientras está frío: propone la corrección manualmente hasta precalentarse en una pausa, y actualiza entonces la barra. Se evita una lectura innecesaria del documento al refrescar sugerencias sin pegado rápido. No se modifica la máquina de estados ni la cuadrícula de letras |
 | 3.0.3 | Persisten los fallos en 3.0.2. El rechazo de una corrección ya no llama al aprendizaje global de iOS desde borrar; conserva el aprendizaje propio y los atajos rechazados no se reexpanden. Sin sugerencias ni autocapitalización se evitan consultas al documento. Una tecla mantenida impide arrancar mantenimiento; el corrector no se precalienta en ⚙️. Informe ampliado con tiempos de borrado/precalentamiento y contadores pasivos del panel para localizar el fallo físico restante |
+| 3.0.4 – 3.0.5 | El panel ⚙️ detiene el scroll al levantar el dedo; la cuadrícula pasa a entrega multitáctil directa por `UIResponder` sin alterar los gestos del host |
+| 3.0.6 | Auditoría integral de bloqueos táctiles en teclado y app: panel ⚙️ reescrito en UIKit puro (`KeyboardSettingsPanelUIView`) y `UIHostingController` perezoso (cero SwiftUI al escribir o en ⚙️); eliminado `CATransaction.flush()` en `touchesBegan`, filtrado de fases activas en `dropTouchesThatEnded`, caché de filas de teclas y fondo, agrupación de `textDidChange`/`selectionDidChange` y caché de rasgos del campo para cortar las llamadas XPC por tecla; `didReceiveMemoryWarning`; en `InstantTouchRecognizer` coexistencia real con todos los gestos del `UIScrollView` padre; en la app: eliminados `.textSelection(.enabled)` y el refresco por segundo en `ClipboardRow`, miniaturas asíncronas con caché, `Button` nativo en la lista, sincronización `KeyboardHistorySync` en una sola pasada sin leer blobs ya publicados, lectura de portapapeles asíncrona (`ClipboardService.readCurrentAsync`), `ItemDetailView` solo guarda si hubo cambios, deslizadores sin escribir en cada fotograma; y sin App Group (KravaSigner) historial y diccionario personal pasan a ficheros locales en vez de saturar `UserDefaults` y `sharedDefaults` usa `.standard` tras migrar una vez |
 
 ## 8. Errores ya resueltos (no repetirlos)
 

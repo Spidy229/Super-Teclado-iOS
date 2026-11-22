@@ -3,14 +3,14 @@ import Foundation
 import UIKit
 import UniformTypeIdentifiers
 
-struct ClipboardDraft {
+struct ClipboardDraft: Sendable {
     let text: String?
     let imageData: Data?
     let kind: ClipboardKind
     let contentHash: String
 }
 
-enum ClipboardReadResult {
+enum ClipboardReadResult: Sendable {
     case content(ClipboardDraft)
     case empty
     case privateContent
@@ -19,6 +19,66 @@ enum ClipboardReadResult {
 
 @MainActor
 enum ClipboardService {
+    /// Versión asíncrona para la app: lee los bytes del portapapeles y realiza el redimensionado
+    /// JPEG y el hash SHA-256 fuera del hilo principal para no bloquear el táctil al volver a la app.
+    static func readCurrentAsync(from pasteboard: UIPasteboard = .general) async -> ClipboardReadResult {
+        guard !ClipboardCapture.isPrivate(types: pasteboard.types) else { return .privateContent }
+
+        if pasteboard.hasImages {
+            if let rawData = ClipImageProcessing.pasteboardImageData(pasteboard) {
+                let processed: (data: Data, hash: String)? = await Task.detached(priority: .userInitiated) {
+                    guard let jpeg = ClipImageProcessing.jpegThumbnail(from: rawData, maxPixelSize: 2_048) else {
+                        return nil
+                    }
+                    return (jpeg, Self.hash(jpeg))
+                }.value
+                if let processed {
+                    return .content(
+                        ClipboardDraft(
+                            text: nil,
+                            imageData: processed.data,
+                            kind: .image,
+                            contentHash: processed.hash
+                        )
+                    )
+                }
+            } else if let image = pasteboard.image {
+                let processed: (data: Data, hash: String)? = await Task.detached(priority: .userInitiated) {
+                    guard let jpeg = Self.normalizedJPEG(from: image) else { return nil }
+                    return (jpeg, Self.hash(jpeg))
+                }.value
+                if let processed {
+                    return .content(
+                        ClipboardDraft(
+                            text: nil,
+                            imageData: processed.data,
+                            kind: .image,
+                            contentHash: processed.hash
+                        )
+                    )
+                }
+            }
+        }
+
+        if let originalText = pasteboard.string {
+            let meaningfulText = originalText.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !meaningfulText.isEmpty else { return .empty }
+            return await Task.detached(priority: .userInitiated) {
+                let data = Data(originalText.utf8)
+                return .content(
+                    ClipboardDraft(
+                        text: originalText,
+                        imageData: nil,
+                        kind: Self.detectKind(for: meaningfulText),
+                        contentHash: Self.hash(data)
+                    )
+                )
+            }.value
+        }
+
+        return pasteboard.hasStrings || pasteboard.hasImages ? .unsupported : .empty
+    }
+
     static func readCurrent(from pasteboard: UIPasteboard = .general) -> ClipboardReadResult {
         guard !ClipboardCapture.isPrivate(types: pasteboard.types) else { return .privateContent }
 
@@ -81,11 +141,11 @@ enum ClipboardService {
         return compact.range(of: #"^\d{4,8}$"#, options: .regularExpression) != nil
     }
 
-    static func hash(_ data: Data) -> String {
+    nonisolated static func hash(_ data: Data) -> String {
         SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
     }
 
-    static func normalizedJPEG(from image: UIImage) -> Data? {
+    nonisolated static func normalizedJPEG(from image: UIImage) -> Data? {
         let maximumDimension: CGFloat = 2_048
         let pixelSize = CGSize(
             width: image.size.width * image.scale,
@@ -109,7 +169,7 @@ enum ClipboardService {
         return normalizedImage.jpegData(compressionQuality: 0.82)
     }
 
-    private static func detectKind(for text: String) -> ClipboardKind {
+    nonisolated private static func detectKind(for text: String) -> ClipboardKind {
         if let url = URL(string: text),
            let scheme = url.scheme?.lowercased(),
            ["http", "https"].contains(scheme) {

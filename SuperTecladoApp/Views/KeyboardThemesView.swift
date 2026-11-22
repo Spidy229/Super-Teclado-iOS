@@ -18,6 +18,12 @@ struct KeyboardThemesView: View {
     @State private var isSavingPhoto = false
     @State private var errorMessage: String?
     @State private var customColors = CustomThemeColors.load()
+    /// Valores en curso al arrastrar los deslizadores para no escribir en `UserDefaults` en cada fotograma.
+    @State private var draftGlassTransparency: Double?
+    @State private var draftBackgroundDim: Double?
+
+    private var effectiveGlassTransparency: Double { draftGlassTransparency ?? glassTransparency }
+    private var effectiveBackgroundDim: Double { draftBackgroundDim ?? backgroundDim }
 
     private let columns = [GridItem(.adaptive(minimum: 100), spacing: 14)]
 
@@ -38,11 +44,23 @@ struct KeyboardThemesView: View {
                 if theme == .glass {
                     VStack(alignment: .leading) {
                         LabeledContent("Transparencia del cristal") {
-                            Text("\(Int((glassTransparency * 100).rounded())) %")
+                            Text("\(Int((effectiveGlassTransparency * 100).rounded())) %")
                                 .monospacedDigit()
                         }
-                        Slider(value: $glassTransparency, in: 0...1, step: 0.05)
-                            .accessibilityLabel("Transparencia del cristal")
+                        Slider(
+                            value: Binding(
+                                get: { effectiveGlassTransparency },
+                                set: { draftGlassTransparency = $0 }
+                            ),
+                            in: 0...1,
+                            step: 0.05
+                        ) { editing in
+                            if !editing, let value = draftGlassTransparency {
+                                glassTransparency = value
+                                draftGlassTransparency = nil
+                            }
+                        }
+                        .accessibilityLabel("Transparencia del cristal")
                     }
                 }
                 Toggle("Bordes de las teclas", isOn: $keyBorders)
@@ -94,7 +112,18 @@ struct KeyboardThemesView: View {
                 if photo != nil {
                     VStack(alignment: .leading) {
                         Text("Oscurecer la foto")
-                        Slider(value: $backgroundDim, in: 0...0.7)
+                        Slider(
+                            value: Binding(
+                                get: { effectiveBackgroundDim },
+                                set: { draftBackgroundDim = $0 }
+                            ),
+                            in: 0...0.7
+                        ) { editing in
+                            if !editing, let value = draftBackgroundDim {
+                                backgroundDim = value
+                                draftBackgroundDim = nil
+                            }
+                        }
                     }
                     Button("Quitar foto", role: .destructive, action: removePhoto)
                 }
@@ -156,8 +185,8 @@ struct KeyboardThemesView: View {
                     systemIsDark: colorScheme == .dark,
                     custom: customColors,
                     photo: photo,
-                    dim: backgroundDim,
-                    glassTransparency: glassTransparency
+                    dim: effectiveBackgroundDim,
+                    glassTransparency: effectiveGlassTransparency
                 )
                     .frame(height: 74)
                     .overlay {

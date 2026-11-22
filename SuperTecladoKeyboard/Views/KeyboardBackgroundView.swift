@@ -8,6 +8,7 @@ final class KeyboardBackgroundView: UIView {
     private let imageView = UIImageView()
     private let dimView = UIView()
     private var appliedKey = ""
+    private var appliedPalette: KeyboardPalette?
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -44,28 +45,28 @@ final class KeyboardBackgroundView: UIView {
             let key = "photo-\(ObjectIdentifier(photo).hashValue)-\(dim)"
             guard key != appliedKey else { return }
             appliedKey = key
+            appliedPalette = nil
             backgroundColor = .clear
             gradient.isHidden = true
             imageView.image = photo
             imageView.isHidden = false
             dimView.isHidden = false
             dimView.backgroundColor = UIColor.black.withAlphaComponent(dim)
-        } else if let colors = palette.gradient {
-            let cgColors = colors.map { UIColor($0).cgColor }
+            return
+        }
+        guard !appliedKey.isEmpty || appliedPalette != palette else { return }
+        appliedKey = ""
+        appliedPalette = palette
+        imageView.isHidden = true
+        imageView.image = nil
+        dimView.isHidden = true
+        if let colors = palette.gradient {
             backgroundColor = .clear
-            imageView.isHidden = true
-            imageView.image = nil
-            dimView.isHidden = true
             gradient.isHidden = false
-            gradient.colors = cgColors
-            appliedKey = ""
+            gradient.colors = colors.map { UIColor($0).cgColor }
         } else {
-            imageView.isHidden = true
-            imageView.image = nil
-            dimView.isHidden = true
             gradient.isHidden = true
             backgroundColor = UIColor(palette.background)
-            appliedKey = ""
         }
     }
 }

@@ -449,17 +449,28 @@ final class KeyGridUIView: UIView {
             begin(touch, event: event)
         }
         syncWithEngine()
-        // La tecla resaltada y su ventana se envían ya a la pantalla; luego, vibración y sonido.
-        CATransaction.flush()
         if let kind = pendingFeedback.first { engine.keyFeedback(kind) }
         pendingFeedback.removeAll(keepingCapacity: true)
+    }
+
+    /// Devuelve solo los dedos que siguen apoyados (descarta `.ended` y `.cancelled`, que aún
+    /// pueden aparecer dentro de `event.allTouches`).
+    static func activeTouchIDs(in touches: Set<UITouch>) -> Set<ObjectIdentifier> {
+        Set(touches.compactMap { touch in
+            switch touch.phase {
+            case .began, .moved, .stationary:
+                return ObjectIdentifier(touch)
+            default:
+                return nil
+            }
+        })
     }
 
     /// Si iOS no avisó del final de algún dedo, se da por levantado: su tecla se escribe y no
     /// deja el teclado bloqueado (p. ej. creyendo que sigue un trazo deslizado).
     private func dropTouchesThatEnded(keeping liveTouches: Set<UITouch>?) {
         guard let liveTouches else { return }
-        dropTouchesThatEnded(liveIDs: Set(liveTouches.map(ObjectIdentifier.init)))
+        dropTouchesThatEnded(liveIDs: Self.activeTouchIDs(in: liveTouches))
     }
 
     private func dropTouchesThatEnded(liveIDs live: Set<ObjectIdentifier>) {

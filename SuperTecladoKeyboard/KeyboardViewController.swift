@@ -10,12 +10,14 @@ final class KeyboardViewController: UIInputViewController {
     /// de la vista SwiftUI (barra, paneles). Un toque en una tecla no pasa nunca por SwiftUI.
     private let backgroundView = KeyboardBackgroundView()
     private lazy var grid = KeyGridUIView(engine: engine)
-    /// La barra de sugerencias y los avisos también van en UIKit: al escribir no se redibuja
-    /// nada de SwiftUI.
+    /// La barra de sugerencias, los ajustes rápidos y los avisos también van en UIKit: al escribir
+    /// o abrir ⚙️ no interviene SwiftUI ni ningún `UIHostingController`.
     private lazy var suggestionBar = SuggestionBarUIView(engine: engine)
+    private lazy var settingsPanel = KeyboardSettingsPanelUIView(engine: engine)
     private let toastView = KeyboardToastView()
     private var engineObserver: AnyCancellable?
     private var gridSyncScheduled = false
+    private var contextRefreshScheduled = false
     /// Mide si el hilo principal se queda atascado (para el diagnóstico de toques). Es un
     /// temporizador y no un `CADisplayLink`, que podría cambiar la frecuencia de la pantalla.
     private var stallTimer: Timer?
@@ -136,12 +138,29 @@ final class KeyboardViewController: UIInputViewController {
 
     override func textDidChange(_ textInput: UITextInput?) {
         super.textDidChange(textInput)
-        engine.refreshContext()
+        scheduleContextRefresh()
     }
 
     override func selectionDidChange(_ textInput: UITextInput?) {
         super.selectionDidChange(textInput)
-        engine.refreshContext()
+        scheduleContextRefresh()
+    }
+
+    /// Agrupa `textDidChange` y `selectionDidChange` cuando iOS los dispara seguidos tras la misma
+    /// pulsación, evitando duplicar lecturas XPC a `textDocumentProxy`.
+    private func scheduleContextRefresh() {
+        guard !contextRefreshScheduled else { return }
+        contextRefreshScheduled = true
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            self.contextRefreshScheduled = false
+            self.engine.refreshContext()
+        }
+    }
+
+    override func didReceiveMemoryWarning() {
+        super.didReceiveMemoryWarning()
+        engine.releaseMemoryCaches()
     }
 
     // MARK: Portapapeles
@@ -162,8 +181,12 @@ final class KeyboardViewController: UIInputViewController {
     /// universal, puede tardar medio segundo o más y congelaba el teclado.
     func checkPasteboard() {
         guard hasFullAccess, !clipboardCheckInFlight else { return }
-        clipboardCheckInFlight = true
+        // Comprobación barata en el hilo principal antes de lanzar una tarea: si el portapapeles
+        // no ha cambiado, no se toca en segundo plano.
+        let currentChangeCount = UIPasteboard.general.changeCount
         let lastSeen = lastSeenChangeCount
+        guard currentChangeCount != lastSeen else { return }
+        clipboardCheckInFlight = true
         let ownChange = engine.ownPasteboardChangeCount
         let canCapture = !engine.isIncognito
         Task { @MainActor [weak self] in
@@ -232,11 +255,13 @@ final class KeyboardViewController: UIInputViewController {
         engine.expireClips()
         // Mientras se escribe no se pregunta a iOS por el portapapeles (es una consulta a otro
         // proceso): lo copiado se recoge en cuanto se deja de teclear o al abrir el panel.
-        guard !grid.hasActiveTouches,
-              ProcessInfo.processInfo.systemUptime - engine.lastKeyTouch > 1.5 else { return }
+        let idle = ProcessInfo.processInfo.systemUptime - engine.lastKeyTouch
+        guard !grid.hasActiveTouches, idle > 1.5 else { return }
         checkPasteboard()
-        // En una pausa, no al pulsar espacio: la primera consulta al corrector de iOS es lenta.
-        engine.warmUpSpellChecker()
+        // Esperar una pausa más clara (3 s) antes de cargar `UITextChecker` en el hilo principal.
+        if idle > 3.0 {
+            engine.warmUpSpellChecker()
+        }
     }
 
     /// Reconocedores de gestos que ven los toques de las teclas (los del sistema incluidos),
@@ -280,11 +305,38 @@ final class KeyboardViewController: UIInputViewController {
         backgroundView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
         view.addSubview(backgroundView)
 
+        // Al escribir y en el panel de ajustes todo es UIKit puro (como en Gboard y el teclado de
+        // Apple): el `UIHostingController` de SwiftUI se crea solo cuando hace falta otro panel.
+        view.addSubview(suggestionBar)
+        view.addSubview(grid)
+        settingsPanel.isHidden = true
+        view.addSubview(settingsPanel)
+        toastView.onAction = { [weak self] in self?.engine.performToastAction() }
+        view.addSubview(toastView)
+        engineObserver = engine.objectWillChange.sink { [weak self] _ in
+            self?.scheduleGridSync()
+        }
+        syncGrid()
+    }
+
+    private func needsSwiftUI(for panel: KeyboardPanel) -> Bool {
+        switch panel {
+        case .settings:
+            return false
+        case .typing:
+            return engine.metrics.favoritesRowHeight > 0 || engine.preferences.oneHandedMode != .off
+        case .clipboard, .emoji, .emojiSearch, .clipboardSearch, .editing, .themes:
+            return true
+        }
+    }
+
+    private func ensureSwiftUIHost() -> UIHostingController<KeyboardRootView> {
+        if let host { return host }
         let controller = UIHostingController(rootView: KeyboardRootView(engine: engine))
         controller.view.backgroundColor = .clear
         controller.sizingOptions = []
         addChild(controller)
-        view.addSubview(controller.view)
+        view.insertSubview(controller.view, aboveSubview: backgroundView)
         controller.view.translatesAutoresizingMaskIntoConstraints = false
         NSLayoutConstraint.activate([
             controller.view.leadingAnchor.constraint(equalTo: view.leadingAnchor),
@@ -294,17 +346,20 @@ final class KeyboardViewController: UIInputViewController {
         ])
         controller.didMove(toParent: self)
         host = controller
+        return controller
+    }
 
-        // La barra y las teclas, encima de SwiftUI, en el hueco que SwiftUI deja para ellas; los
-        // avisos, encima de todo.
-        view.addSubview(suggestionBar)
-        view.addSubview(grid)
-        toastView.onAction = { [weak self] in self?.engine.performToastAction() }
-        view.addSubview(toastView)
-        engineObserver = engine.objectWillChange.sink { [weak self] _ in
-            self?.scheduleGridSync()
+    private func syncSwiftUIHost(needed: Bool) {
+        if needed {
+            let controller = ensureSwiftUIHost()
+            if controller.view.isHidden {
+                controller.view.isHidden = false
+                controller.view.isUserInteractionEnabled = true
+            }
+        } else if let hostView = host?.view, !hostView.isHidden {
+            hostView.isHidden = true
+            hostView.isUserInteractionEnabled = false
         }
-        syncGrid()
     }
 
     /// Los cambios del motor se aplican a las teclas en cuanto termina el cambio (una vez aunque
@@ -337,6 +392,8 @@ final class KeyboardViewController: UIInputViewController {
             dim: preferences.backgroundDim
         )
         let panel = engine.panel
+        syncSwiftUIHost(needed: needsSwiftUI(for: panel))
+        syncSettingsPanel(panel: panel, palette: palette)
         syncBarAndToast(panel: panel, palette: palette)
         guard panel == .typing || panel == .emojiSearch || panel == .clipboardSearch else {
             if !grid.isHidden {
@@ -349,6 +406,25 @@ final class KeyboardViewController: UIInputViewController {
         if grid.frame != frame { grid.frame = frame }
         grid.isHidden = false
         grid.apply(KeyGridConfiguration(engine: engine), palette: palette)
+    }
+
+    private func syncSettingsPanel(panel: KeyboardPanel, palette: KeyboardPalette) {
+        guard panel == .settings else {
+            if !settingsPanel.isHidden { settingsPanel.isHidden = true }
+            return
+        }
+        let insets = view.safeAreaInsets
+        let frame = CGRect(
+            x: insets.left,
+            y: insets.top,
+            width: max(0, view.bounds.width - insets.left - insets.right),
+            height: max(0, view.bounds.height - insets.top - insets.bottom)
+        )
+        if settingsPanel.frame != frame { settingsPanel.frame = frame }
+        let justOpened = settingsPanel.isHidden
+        settingsPanel.isHidden = false
+        settingsPanel.apply(palette: palette, stripHeight: engine.metrics.stripHeight)
+        if justOpened { settingsPanel.refreshDiagnostics() }
     }
 
     private func syncBarAndToast(panel: KeyboardPanel, palette: KeyboardPalette) {

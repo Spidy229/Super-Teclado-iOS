@@ -165,6 +165,15 @@ final class KeyboardEngine: ObservableObject {
     /// Letras que el propio teclado acaba de escribir en la palabra actual. Al teclear muy
     /// deprisa el contexto del documento puede ir una letra por detrás.
     private var typedWord = ""
+    /// Caché de filas de teclas para evitar reconstruir ~35 structs en cada toque.
+    var cachedKeyRowsKey: KeyRowsCacheKey?
+    var cachedKeyRows: [[KeySpec]] = []
+    /// Rasgos del campo de texto cacheados al cambiar de campo/contexto para evitar llamadas
+    /// síncronas XPC a `textDocumentProxy` en cada pulsación.
+    private var cachedAutocapitalizationType: UITextAutocapitalizationType = .sentences
+    private var cachedAutocorrectionType: UITextAutocorrectionType = .default
+    private var cachedTextContentType: UITextContentType?
+    private var cachedKeyboardAppearance: UIKeyboardAppearance = .default
 
     /// Cambio del portapapeles hecho por el propio teclado (para no volver a capturarlo).
     var ownPasteboardChangeCount: Int?
@@ -225,8 +234,7 @@ final class KeyboardEngine: ObservableObject {
     /// Modo incógnito elegido por el usuario o campo sensible (contraseñas, códigos, tarjetas).
     var isIncognito: Bool {
         if preferences.incognito { return true }
-        let contentType: UITextContentType? = proxy?.textContentType ?? nil
-        guard let contentType else { return false }
+        guard let contentType = cachedTextContentType else { return false }
         return [.password, .newPassword, .oneTimeCode, .creditCardNumber].contains(contentType)
     }
 
@@ -241,18 +249,19 @@ final class KeyboardEngine: ObservableObject {
     var dictionary: WordDictionary? { suggestionEngine.dictionary }
 
     /// Palabra que se está escribiendo, en minúsculas, para elegir la tecla más probable.
+    /// Si ya tenemos las letras recién escritas en `typedWord`, evitamos una consulta XPC al
+    /// documento en mitad de `touchesBegan`.
     var wordForPrediction: String {
-        let context = currentWord.lowercased()
-        return typedWord.count > context.count && typedWord.hasPrefix(context) ? typedWord : context
+        if !typedWord.isEmpty { return typedWord }
+        return currentWord.lowercased()
     }
 
     /// La precisión inteligente no se usa donde se escriben cosas que no son palabras.
     var smartTouchAllowed: Bool {
         guard preferences.smartTouch, panel == .typing, page == .letters,
               !isWebField, !isEmailField, suggestionEngine.dictionary != nil else { return false }
-        guard proxy?.autocorrectionType != .no else { return false }
-        let contentType: UITextContentType? = proxy?.textContentType ?? nil
-        guard let contentType else { return true }
+        guard cachedAutocorrectionType != .no else { return false }
+        guard let contentType = cachedTextContentType else { return true }
         let free: [UITextContentType] = [.password, .newPassword, .oneTimeCode, .creditCardNumber, .username, .emailAddress, .URL]
         return !free.contains(contentType)
     }
@@ -294,10 +303,17 @@ final class KeyboardEngine: ObservableObject {
             keyboardType = newType
             page = Self.defaultPage(for: newType)
         }
+        cachedAutocapitalizationType = proxy.autocapitalizationType ?? .sentences
+        cachedAutocorrectionType = proxy.autocorrectionType ?? .default
+        cachedTextContentType = proxy.textContentType ?? nil
+        cachedKeyboardAppearance = proxy.keyboardAppearance ?? .default
         updateAppearance()
+        // Una sola consulta XPC al texto antes del cursor para sincronizar palabra y mayúsculas.
+        let beforeInput = proxy.documentContextBeforeInput
+        let contextWord = KeyboardTextLogic.currentWord(before: beforeInput)
         // Si el cursor se ha ido a otra palabra, lo escrito antes ya no cuenta.
-        if !typedWord.hasPrefix(currentWord.lowercased()) { typedWord = "" }
-        updateShiftState()
+        if !typedWord.hasPrefix(contextWord.lowercased()) { typedWord = "" }
+        updateShiftState(contextBeforeInput: beforeInput, useProvidedContext: true)
         scheduleSuggestions()
     }
 
@@ -314,7 +330,7 @@ final class KeyboardEngine: ObservableObject {
         } else if let fixed = preferences.theme.isDark {
             dark = fixed
         } else {
-            switch proxy?.keyboardAppearance ?? .default {
+            switch cachedKeyboardAppearance {
             case .dark: dark = true
             case .light: dark = false
             default: dark = traitStyle == .dark
@@ -381,7 +397,7 @@ final class KeyboardEngine: ObservableObject {
 
     private var autocapitalizationMode: AutoCapitalizationMode {
         guard preferences.autocapitalize, !isWebField, !isEmailField else { return .none }
-        switch proxy?.autocapitalizationType ?? .sentences {
+        switch cachedAutocapitalizationType {
         case .none: return .none
         case .words: return .words
         case .allCharacters: return .allCharacters
@@ -396,10 +412,10 @@ final class KeyboardEngine: ObservableObject {
 
     private var autocorrectAllowed: Bool {
         guard preferences.autocorrect, suggestionsAllowed else { return false }
-        return proxy?.autocorrectionType != .no
+        return cachedAutocorrectionType != .no
     }
 
-    private func updateShiftState() {
+    private func updateShiftState(contextBeforeInput: String? = nil, useProvidedContext: Bool = false) {
         if isSearching {
             if shift != .off { shift = .off }
             return
@@ -413,8 +429,9 @@ final class KeyboardEngine: ObservableObject {
         case .allCharacters:
             capitalize = true
         case .words, .sentences:
+            let context = useProvidedContext ? contextBeforeInput : proxy?.documentContextBeforeInput
             capitalize = KeyboardTextLogic.shouldCapitalize(
-                context: proxy?.documentContextBeforeInput,
+                context: context,
                 mode: mode
             )
         }
@@ -481,7 +498,13 @@ final class KeyboardEngine: ObservableObject {
 
     private func afterEdit(keepingTypedWord: Bool = false) {
         if !keepingTypedWord { typedWord = "" }
-        updateShiftState()
+        // Si acabamos de escribir una letra dentro de una palabra y no estamos en todo mayúsculas,
+        // no hace falta consultar `documentContextBeforeInput` por XPC en cada tecla.
+        if keepingTypedWord && !typedWord.isEmpty && autocapitalizationMode != .allCharacters {
+            if shift == .on { shift = .off }
+        } else {
+            updateShiftState()
+        }
         scheduleSuggestions()
     }
 
@@ -907,17 +930,32 @@ final class KeyboardEngine: ObservableObject {
     /// Cambia ajustes desde el panel del teclado y los guarda. Funciona aunque la firma no
     /// comparta el App Group con la app.
     func updatePreferences(_ change: (inout KeyboardPreferences) -> Void) {
-        var updated = preferences
+        let previous = preferences
+        var updated = previous
         change(&updated)
-        guard updated != preferences else { return }
-        let layoutChanged = updated.numberRow != preferences.numberRow
-            || updated.height != preferences.height
-            || updated.favoritesRow != preferences.favoritesRow
+        guard updated != previous else { return }
+        let layoutChanged = updated.numberRow != previous.numberRow
+            || updated.height != previous.height
+            || updated.favoritesRow != previous.favoritesRow
         preferences = updated
-        updated.save()
+        updated.saveChanges(from: previous)
         updateAppearance()
         if !safeMode { loadDictionaryIfNeeded() }
         if layoutChanged { controller?.view.setNeedsLayout() }
+    }
+
+    /// Libera cachés prescindibles ante avisos de memoria de iOS para evitar cierres por Jetsam.
+    func releaseMemoryCaches() {
+        ClipThumbnailCache.clear()
+        suggestionEngine.clearCache()
+        if panel != .emojiSearch {
+            emojiIndex = nil
+            emojiIndexLoadStarted = false
+        }
+        if preferences.theme != .photo {
+            backgroundImage = nil
+            backgroundDate = nil
+        }
     }
 
     /// Informe de los toques y de cómo está configurado el teclado, para pegarlo en un mensaje.

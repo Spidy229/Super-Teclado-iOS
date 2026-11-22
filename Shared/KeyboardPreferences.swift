@@ -316,6 +316,47 @@ struct KeyboardPreferences: Equatable {
         customColors.save(to: defaults)
     }
 
+    /// Guarda solo los ajustes que han cambiado respecto a `previous`, evitando 39 escrituras
+    /// innecesarias en `UserDefaults` cada vez que se toca un interruptor.
+    func saveChanges(from previous: KeyboardPreferences, to defaults: UserDefaults? = SharedClipboardStore.sharedDefaults) {
+        guard let defaults else { return }
+        if theme != previous.theme { defaults.set(theme.rawValue, forKey: KeyboardPreferenceKey.theme) }
+        if keyBorders != previous.keyBorders { defaults.set(keyBorders, forKey: KeyboardPreferenceKey.keyBorders) }
+        if sound != previous.sound { defaults.set(sound, forKey: KeyboardPreferenceKey.sound) }
+        if haptics != previous.haptics { defaults.set(haptics, forKey: KeyboardPreferenceKey.haptics) }
+        if autocorrect != previous.autocorrect { defaults.set(autocorrect, forKey: KeyboardPreferenceKey.autocorrect) }
+        if autocapitalize != previous.autocapitalize { defaults.set(autocapitalize, forKey: KeyboardPreferenceKey.autocapitalize) }
+        if doubleSpacePeriod != previous.doubleSpacePeriod { defaults.set(doubleSpacePeriod, forKey: KeyboardPreferenceKey.doubleSpacePeriod) }
+        if suggestions != previous.suggestions { defaults.set(suggestions, forKey: KeyboardPreferenceKey.suggestions) }
+        if numberRow != previous.numberRow { defaults.set(numberRow, forKey: KeyboardPreferenceKey.numberRow) }
+        if keyPopups != previous.keyPopups { defaults.set(keyPopups, forKey: KeyboardPreferenceKey.keyPopups) }
+        if longPressSymbols != previous.longPressSymbols { defaults.set(longPressSymbols, forKey: KeyboardPreferenceKey.longPressSymbols) }
+        if quickPaste != previous.quickPaste { defaults.set(quickPaste, forKey: KeyboardPreferenceKey.quickPaste) }
+        if oneHandedMode != previous.oneHandedMode { defaults.set(oneHandedMode.rawValue, forKey: KeyboardPreferenceKey.oneHandedMode) }
+        if glideTyping != previous.glideTyping { defaults.set(glideTyping, forKey: KeyboardPreferenceKey.glideTyping) }
+        if glideTrail != previous.glideTrail { defaults.set(glideTrail, forKey: KeyboardPreferenceKey.glideTrail) }
+        if nextWordPrediction != previous.nextWordPrediction { defaults.set(nextWordPrediction, forKey: KeyboardPreferenceKey.nextWordPrediction) }
+        if emojiSuggestions != previous.emojiSuggestions { defaults.set(emojiSuggestions, forKey: KeyboardPreferenceKey.emojiSuggestions) }
+        if height != previous.height { defaults.set(height.rawValue, forKey: KeyboardPreferenceKey.height) }
+        if longPressDelay != previous.longPressDelay { defaults.set(longPressDelay, forKey: KeyboardPreferenceKey.longPressDelay) }
+        if incognito != previous.incognito { defaults.set(incognito, forKey: KeyboardPreferenceKey.incognito) }
+        if smartTouch != previous.smartTouch { defaults.set(smartTouch, forKey: KeyboardPreferenceKey.smartTouch) }
+        if spaceAfterSuggestion != previous.spaceAfterSuggestion { defaults.set(spaceAfterSuggestion, forKey: KeyboardPreferenceKey.spaceAfterSuggestion) }
+        if showSpeed != previous.showSpeed { defaults.set(showSpeed, forKey: KeyboardPreferenceKey.showSpeed) }
+        if backgroundDim != previous.backgroundDim { defaults.set(backgroundDim, forKey: KeyboardPreferenceKey.backgroundDim) }
+        if glassTransparency != previous.glassTransparency { defaults.set(glassTransparency, forKey: KeyboardPreferenceKey.glassTransparency) }
+        if hapticsStrength != previous.hapticsStrength { defaults.set(hapticsStrength, forKey: KeyboardPreferenceKey.hapticsStrength) }
+        if hapticsStyle != previous.hapticsStyle { defaults.set(hapticsStyle.rawValue, forKey: KeyboardPreferenceKey.hapticsStyle) }
+        if keyLabelSize != previous.keyLabelSize { defaults.set(keyLabelSize.rawValue, forKey: KeyboardPreferenceKey.keyLabelSize) }
+        if primaryLanguage != previous.primaryLanguage { defaults.set(primaryLanguage.rawValue, forKey: KeyboardPreferenceKey.primaryLanguage) }
+        if secondaryLanguage != previous.secondaryLanguage { defaults.set(secondaryLanguage?.rawValue ?? "", forKey: KeyboardPreferenceKey.secondaryLanguage) }
+        if layoutOverride != previous.layoutOverride { defaults.set(layoutOverride?.rawValue ?? "auto", forKey: KeyboardPreferenceKey.layout) }
+        if soundStyle != previous.soundStyle { defaults.set(soundStyle.rawValue, forKey: KeyboardPreferenceKey.soundStyle) }
+        if favoritesRow != previous.favoritesRow { defaults.set(favoritesRow, forKey: KeyboardPreferenceKey.favoritesRow) }
+        if favorites != previous.favorites { defaults.set(favorites, forKey: KeyboardPreferenceKey.favorites) }
+        if customColors != previous.customColors { customColors.save(to: defaults) }
+    }
+
     static func setKeyBorders(_ enabled: Bool) {
         SharedClipboardStore.sharedDefaults?.set(enabled, forKey: KeyboardPreferenceKey.keyBorders)
     }
@@ -333,8 +374,7 @@ struct KeyboardPreferences: Equatable {
     }
 
     static func clearLearnedWords() {
-        SharedClipboardStore.sharedDefaults?.removeObject(forKey: KeyboardPreferenceKey.learnedWords)
-        SharedClipboardStore.sharedDefaults?.removeObject(forKey: KeyboardPreferenceKey.learnedBigrams)
+        PersonalDictionary.clearLearned()
     }
 }
 

@@ -34,9 +34,9 @@ class KeyboardPanelUIScrollView: UIScrollView {
         var candidate: UIView? = view
         while let current = candidate, current !== self {
             if current is UISlider { return false }
-            if current is UISwitch || current is UIButton {
+            if current is UISwitch || current is UIControl {
                 // Un arrastre vertical sobre un control desplaza el panel; el horizontal
-                // sigue perteneciendo al interruptor. No se cancela el deslizador.
+                // sigue perteneciendo al interruptor o a los chips. No se cancela el deslizador.
                 let motion = controlPanMotion
                 // Al reconocer el pan su traslación puede empezar en cero; la velocidad
                 // mantiene la dirección de ese primer desplazamiento.

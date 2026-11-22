@@ -1,7 +1,7 @@
 import Foundation
 import SwiftData
 
-enum ClipboardKind: String, Codable, CaseIterable {
+enum ClipboardKind: String, Codable, CaseIterable, Sendable {
     case text
     case image
     case link

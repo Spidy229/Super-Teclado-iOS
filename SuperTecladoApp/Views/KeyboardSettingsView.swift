@@ -43,6 +43,9 @@ struct KeyboardSettingsView: View {
 
     @State private var testText = ""
     @State private var showClearWordsConfirmation = false
+    @State private var draftHapticsStrength: Double?
+
+    private var effectiveHapticsStrength: Double { draftHapticsStrength ?? hapticsStrength }
 
     var body: some View {
         Form {
@@ -140,18 +143,31 @@ struct KeyboardSettingsView: View {
                         HStack {
                             Text("Intensidad")
                             Spacer()
-                            Text("\(Int((hapticsStrength * 100).rounded())) %")
+                            Text("\(Int((effectiveHapticsStrength * 100).rounded())) %")
                                 .foregroundStyle(.secondary)
                                 .monospacedDigit()
                         }
-                        Slider(value: $hapticsStrength, in: 0.1...1, step: 0.05) {
+                        Slider(
+                            value: Binding(
+                                get: { effectiveHapticsStrength },
+                                set: { draftHapticsStrength = $0 }
+                            ),
+                            in: 0.1...1,
+                            step: 0.05
+                        ) {
                             Text("Intensidad")
                         } minimumValueLabel: {
                             Image(systemName: "iphone.radiowaves.left.and.right").imageScale(.small)
                         } maximumValueLabel: {
                             Image(systemName: "iphone.radiowaves.left.and.right").imageScale(.large)
                         } onEditingChanged: { editing in
-                            if !editing { testHaptic() }
+                            if !editing {
+                                if let value = draftHapticsStrength {
+                                    hapticsStrength = value
+                                    draftHapticsStrength = nil
+                                }
+                                testHaptic()
+                            }
                         }
                     }
                     Button(action: testHaptic) {

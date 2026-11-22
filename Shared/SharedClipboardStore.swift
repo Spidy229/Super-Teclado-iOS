@@ -83,9 +83,40 @@ enum SharedClipboardStore {
     /// Imágenes que se conservan como máximo en Recientes, aparte del límite general.
     static let maximumTemporaryImages = 100
 
-    /// Una sola instancia para todo el proceso: crearla en cada lectura (y en cada redibujado de
-    /// los ajustes de la app, una por ajuste) costaba tiempo del hilo principal.
-    nonisolated(unsafe) static let sharedDefaults: UserDefaults? = UserDefaults(suiteName: appGroupID)
+    /// Una sola instancia para todo el proceso. Cuando la firma incluye el App Group usa el
+    /// dominio compartido; si no (p. ej. KravaSigner), usa `UserDefaults.standard` para evitar
+    /// errores de sandbox en `cfprefsd`, migrando una sola vez los ajustes locales anteriores.
+    nonisolated(unsafe) static let sharedDefaults: UserDefaults? = makeSharedDefaults()
+
+    private static func makeSharedDefaults() -> UserDefaults? {
+        if cachedContainerURL != nil, let suite = UserDefaults(suiteName: appGroupID) {
+            return suite
+        }
+        let standard = UserDefaults.standard
+        let migratedKey = "super-teclado-migrated-local-defaults-v1"
+        if !standard.bool(forKey: migratedKey) {
+            if let legacy = UserDefaults(suiteName: appGroupID) {
+                for (key, value) in legacy.dictionaryRepresentation() where isLocalMigratableKey(key) {
+                    if standard.object(forKey: key) == nil {
+                        standard.set(value, forKey: key)
+                    }
+                }
+            }
+            standard.set(true, forKey: migratedKey)
+        }
+        return standard
+    }
+
+    private static func isLocalMigratableKey(_ key: String) -> Bool {
+        key.hasPrefix("keyboard")
+            || key.hasPrefix("super-teclado")
+            || key.hasPrefix("diagnostics")
+            || key == automaticCaptureKey
+            || key == sensitiveModeKey
+            || key == "skipOneTimeCodes"
+            || key == "temporaryRetentionHours"
+            || key == "maximumTemporaryItems"
+    }
 
     /// `false` si la firma de la app no incluye el App Group: entonces la app y el teclado no
     /// comparten ajustes ni portapapeles (cada uno guarda los suyos).
@@ -142,8 +173,11 @@ enum SharedClipboardStore {
     @discardableResult
     static func save(_ clips: [SharedClipboardClip], storage: Storage = .live) -> Bool {
         let sorted = sort(clips)
-        if let url = historyURL(storage: storage) { return encodeFile(sorted, at: url) }
-        return encodeDefaults(sorted, forKey: savedFallbackKey, storage: storage)
+        let saved = encodeFile(sorted, at: historyURL(storage: storage))
+        if saved, storage.directoryURL == nil, storage.defaults.object(forKey: savedFallbackKey) != nil {
+            storage.defaults.removeObject(forKey: savedFallbackKey)
+        }
+        return saved
     }
 
     /// No convertir errores de lectura en un historial vacío que sobrescriba los datos.
@@ -152,6 +186,23 @@ enum SharedClipboardStore {
                     fallbackKey: savedFallbackKey, storage: storage)
             && canReadList(SharedTemporaryClip.self, at: temporaryInboxURL(storage: storage),
                            fallbackKey: temporaryFallbackKey, storage: storage)
+    }
+
+    /// Lee ambos historiales en una sola pasada y devuelve `nil` si algún archivo está dañado.
+    static func loadIfReadable(
+        storage: Storage = .live
+    ) -> (saved: [SharedClipboardClip], temporary: [SharedTemporaryClip])? {
+        guard let saved: [SharedClipboardClip] = readValidatedList(
+            at: historyURL(storage: storage), fallbackKey: savedFallbackKey, storage: storage
+        ),
+        let rawTemporary: [SharedTemporaryClip] = readValidatedList(
+            at: temporaryInboxURL(storage: storage), fallbackKey: temporaryFallbackKey, storage: storage
+        ) else { return nil }
+        let now = Date.now
+        let temporary = rawTemporary
+            .filter { $0.expiresAt.map { $0 > now } ?? true }
+            .sorted { $0.capturedAt > $1.capturedAt }
+        return (saved: sort(saved), temporary: temporary)
     }
 
     static func addCopiedText(_ text: String, maximumItems: Int = 250) {
@@ -500,6 +551,19 @@ enum SharedClipboardStore {
         }
     }
 
+    /// Comprueba si la imagen ya está publicada en disco sin leer el blob externo de SwiftData.
+    static func existingImageFileName(for id: UUID, storage: Storage = .live) -> String? {
+        let fileName = "\(id.uuidString).jpg"
+        let url = (storage.directoryURL ?? storage.localDirectoryURL)
+            .appendingPathComponent(imagesDirectoryName, isDirectory: true)
+            .appendingPathComponent(fileName, isDirectory: false)
+        var isDirectory: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory), !isDirectory.boolValue else {
+            return nil
+        }
+        return fileName
+    }
+
     /// Publica la imagen de un elemento de la app para que el teclado pueda mostrarla.
     static func storeImageIfNeeded(_ data: Data, for id: UUID, storage: Storage = .live) -> String? {
         let fileName = "\(id.uuidString).jpg"
@@ -591,16 +655,25 @@ enum SharedClipboardStore {
         cachedContainerURL
     }
 
-    private static func historyURL(storage: Storage = .live) -> URL? {
-        storage.directoryURL?.appendingPathComponent(fileName, isDirectory: false)
+    /// Carpeta compartida si el App Group existe, o privada del proceso (evita saturar `UserDefaults`).
+    static func storageDirectoryURL(storage: Storage = .live) -> URL {
+        let url = storage.directoryURL ?? storage.localDirectoryURL
+        if !FileManager.default.fileExists(atPath: url.path) {
+            try? FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+        }
+        return url
     }
 
-    private static func temporaryInboxURL(storage: Storage = .live) -> URL? {
-        storage.directoryURL?.appendingPathComponent(temporaryInboxFileName, isDirectory: false)
+    private static func historyURL(storage: Storage = .live) -> URL {
+        storageDirectoryURL(storage: storage).appendingPathComponent(fileName, isDirectory: false)
+    }
+
+    private static func temporaryInboxURL(storage: Storage = .live) -> URL {
+        storageDirectoryURL(storage: storage).appendingPathComponent(temporaryInboxFileName, isDirectory: false)
     }
 
     private static func imagesDirectoryURL(storage: Storage = .live) -> URL? {
-        let url = (storage.directoryURL ?? storage.localDirectoryURL)
+        let url = storageDirectoryURL(storage: storage)
             .appendingPathComponent(imagesDirectoryName, isDirectory: true)
         if !FileManager.default.fileExists(atPath: url.path) {
             try? FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
@@ -610,16 +683,30 @@ enum SharedClipboardStore {
 
     @discardableResult
     private static func saveTemporaryInbox(_ clips: [SharedTemporaryClip], storage: Storage = .live) -> Bool {
-        if let url = temporaryInboxURL(storage: storage) { return encodeFile(clips, at: url) }
-        return encodeDefaults(clips, forKey: temporaryFallbackKey, storage: storage)
+        let saved = encodeFile(clips, at: temporaryInboxURL(storage: storage))
+        if saved, storage.directoryURL == nil, storage.defaults.object(forKey: temporaryFallbackKey) != nil {
+            storage.defaults.removeObject(forKey: temporaryFallbackKey)
+        }
+        return saved
     }
 
-    /// El archivo del App Group es la fuente de verdad. La copia de UserDefaults es local a cada
-    /// proceso, así que solo se usa si el contenedor compartido no existe;
-    /// de lo contrario reaparecerían elementos borrados desde la app o el teclado.
-    private static func readList<Value: Decodable>(at url: URL?, fallbackKey: String, storage: Storage = .live) -> [Value] {
-        if let url { return decodeFile(at: url) ?? [] }
-        return decodeDefaults(forKey: fallbackKey, storage: storage) ?? []
+    /// El archivo JSON es la fuente de verdad (en el App Group si existe, o en el contenedor
+    /// privado del proceso). Solo se lee la copia antigua de `UserDefaults` una vez cuando no
+    /// hay App Group y aún no existe el archivo local, para no perder datos al actualizar.
+    private static func readList<Value: Decodable>(at url: URL, fallbackKey: String, storage: Storage = .live) -> [Value] {
+        readValidatedList(at: url, fallbackKey: fallbackKey, storage: storage) ?? []
+    }
+
+    private static func readValidatedList<Value: Decodable>(
+        at url: URL, fallbackKey: String, storage: Storage
+    ) -> [Value]? {
+        if FileManager.default.fileExists(atPath: url.path) {
+            return decodeFile(at: url)
+        }
+        if storage.directoryURL == nil, let data = storage.defaults.data(forKey: fallbackKey) {
+            return try? JSONDecoder().decode([Value].self, from: data)
+        }
+        return []
     }
 
     private static func decodeFile<Value: Decodable>(at url: URL?) -> Value? {
@@ -636,27 +723,10 @@ enum SharedClipboardStore {
         } catch { return false }
     }
 
-    private static func decodeDefaults<Value: Decodable>(forKey key: String, storage: Storage = .live) -> Value? {
-        guard let data = storage.defaults.data(forKey: key) else { return nil }
-        return try? JSONDecoder().decode(Value.self, from: data)
-    }
-
-    @discardableResult
-    private static func encodeDefaults<Value: Encodable>(_ value: Value, forKey key: String, storage: Storage = .live) -> Bool {
-        guard let data = try? JSONEncoder().encode(value) else { return false }
-        storage.defaults.set(data, forKey: key)
-        return true
-    }
-
     private static func canReadList<Value: Decodable>(
-        _ type: Value.Type, at url: URL?, fallbackKey: String, storage: Storage
+        _ type: Value.Type, at url: URL, fallbackKey: String, storage: Storage
     ) -> Bool {
-        if let url {
-            if !FileManager.default.fileExists(atPath: url.path) { return true }
-            let values: [Value]? = decodeFile(at: url)
-            return values != nil
-        }
-        guard let data = storage.defaults.data(forKey: fallbackKey) else { return true }
-        return (try? JSONDecoder().decode([Value].self, from: data)) != nil
+        let values: [Value]? = readValidatedList(at: url, fallbackKey: fallbackKey, storage: storage)
+        return values != nil
     }
 }

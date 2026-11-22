@@ -11,7 +11,7 @@ import UIKit.UIGestureRecognizerSubclass
 /// - `startsImmediately`: para teclas (borrar, flechas…): se queda el toque desde el principio.
 /// - Si no, se comporta como un toque: si el dedo se desplaza, deja paso al desplazamiento de
 ///   la lista que lo contiene.
-final class InstantTouchRecognizer: UIGestureRecognizer {
+final class InstantTouchRecognizer: UIGestureRecognizer, UIGestureRecognizerDelegate {
     var startsImmediately = false
     var longPressDuration: Double?
     var onDown: () -> Void = {}
@@ -27,6 +27,10 @@ final class InstantTouchRecognizer: UIGestureRecognizer {
     private var longPressTask: Task<Void, Never>?
     private var recordsPanelTouch = false
     override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent) {
+        if !startsImmediately && Self.isAncestorScrollDragging(view) {
+            for touch in touches { ignore(touch, for: event) }
+            return
+        }
         for touch in touches where touch !== tracked {
             guard tracked == nil else {
                 // Solo se sigue un dedo; los demás van a otras teclas.
@@ -92,15 +96,45 @@ final class InstantTouchRecognizer: UIGestureRecognizer {
     }
 
     override func canPrevent(_ preventedGestureRecognizer: UIGestureRecognizer) -> Bool {
-        if !startsImmediately,
-           KeyboardScrollTouchPolicy.isAncestorScrollPan(preventedGestureRecognizer, of: view) { return false }
+        if !startsImmediately { return false }
         return super.canPrevent(preventedGestureRecognizer)
     }
 
     override func canBePrevented(by preventingGestureRecognizer: UIGestureRecognizer) -> Bool {
         if !startsImmediately,
-           KeyboardScrollTouchPolicy.isAncestorScrollPan(preventingGestureRecognizer, of: view) { return false }
+           Self.belongsToAncestorScrollView(preventingGestureRecognizer, of: view) { return false }
         return super.canBePrevented(by: preventingGestureRecognizer)
+    }
+
+    func gestureRecognizer(
+        _ gestureRecognizer: UIGestureRecognizer,
+        shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer
+    ) -> Bool {
+        guard !startsImmediately else { return false }
+        return Self.belongsToAncestorScrollView(otherGestureRecognizer, of: view)
+    }
+
+    private static func belongsToAncestorScrollView(_ recognizer: UIGestureRecognizer, of view: UIView?) -> Bool {
+        guard let owner = recognizer.view else { return false }
+        var candidate = view
+        while let current = candidate {
+            if let scroll = current as? UIScrollView, scroll === owner {
+                return true
+            }
+            candidate = current.superview
+        }
+        return false
+    }
+
+    private static func isAncestorScrollDragging(_ view: UIView?) -> Bool {
+        var candidate = view
+        while let current = candidate {
+            if let scroll = current as? UIScrollView, scroll.isDragging {
+                return true
+            }
+            candidate = current.superview
+        }
+        return false
     }
 
     private func finish(tapped: Bool) {
@@ -143,6 +177,7 @@ struct InstantTouchGesture: UIGestureRecognizerRepresentable {
 
     func makeUIGestureRecognizer(context: Context) -> InstantTouchRecognizer {
         let recognizer = InstantTouchRecognizer(target: nil, action: nil)
+        recognizer.delegate = recognizer
         recognizer.cancelsTouchesInView = false
         recognizer.delaysTouchesBegan = false
         recognizer.delaysTouchesEnded = false

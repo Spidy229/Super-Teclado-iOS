@@ -9,6 +9,16 @@ final class KeyGridDeliveryTests: XCTestCase {
     }
 
     @MainActor
+    private final class PhasedTouch: UITouch {
+        var customPhase: UITouch.Phase
+        init(phase: UITouch.Phase) {
+            self.customPhase = phase
+            super.init()
+        }
+        override var phase: UITouch.Phase { customPhase }
+    }
+
+    @MainActor
     func testOverlappingLettersThenBackspaceCommitOnceAndNextKeyStopsRepeat() async throws {
         let engine = KeyboardEngine()
         engine.panel = .clipboardSearch
@@ -75,5 +85,40 @@ final class KeyGridDeliveryTests: XCTestCase {
         XCTAssertFalse(window.hitTest(CGPoint(x: 20, y: 20), with: nil) === grid)
         grid.isHidden = true
         XCTAssertFalse(window.hitTest(CGPoint(x: 195, y: 162), with: nil) === grid)
+    }
+
+    @MainActor
+    func testActiveTouchIDsExcludeEndedAndCancelledTouches() {
+        let began = PhasedTouch(phase: .began)
+        let moved = PhasedTouch(phase: .moved)
+        let stationary = PhasedTouch(phase: .stationary)
+        let ended = PhasedTouch(phase: .ended)
+        let cancelled = PhasedTouch(phase: .cancelled)
+
+        let active = KeyGridUIView.activeTouchIDs(in: [began, moved, stationary, ended, cancelled])
+        XCTAssertEqual(active, [ObjectIdentifier(began), ObjectIdentifier(moved), ObjectIdentifier(stationary)])
+    }
+
+    @MainActor
+    func testPureUIKitSettingsPanelTogglesPreferencesAndClosesWithoutHostingController() {
+        let engine = KeyboardEngine()
+        engine.panel = .settings
+        engine.preferences.autocorrect = true
+        let panel = KeyboardSettingsPanelUIView(engine: engine)
+        panel.frame = CGRect(x: 0, y: 0, width: 390, height: 260)
+        panel.apply(palette: .make(theme: .dark, systemIsDark: true), stripHeight: 44)
+        panel.layoutIfNeeded()
+
+        XCTAssertFalse(panel.scrollView.delaysContentTouches)
+        XCTAssertTrue(panel.scrollView.canCancelContentTouches)
+        XCTAssertEqual(panel.scrollView.decelerationRate, .fast)
+        XCTAssertTrue(panel.autocorrectSwitchRow.toggle.isOn)
+
+        panel.autocorrectSwitchRow.toggle.setOn(false, animated: false)
+        panel.autocorrectSwitchRow.toggle.sendActions(for: .valueChanged)
+        XCTAssertFalse(engine.preferences.autocorrect)
+
+        panel.backButton.sendActions(for: .touchUpInside)
+        XCTAssertEqual(engine.panel, .typing)
     }
 }

@@ -18,4 +18,8 @@ enum ClipThumbnailCache {
         cache.setObject(thumbnail, forKey: fileName as NSString)
         return thumbnail
     }
+
+    static func clear() {
+        cache.removeAllObjects()
+    }
 }

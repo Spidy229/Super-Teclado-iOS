@@ -31,7 +31,6 @@ struct KeyboardRootView: View {
         .environment(\.keyboardPalette, palette)
         .environment(\.colorScheme, engine.isDark ? .dark : .light)
         .environmentObject(engine)
-        .animation(.easeOut(duration: 0.15), value: engine.panel)
     }
 
     @ViewBuilder
