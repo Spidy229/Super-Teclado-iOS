@@ -28,6 +28,8 @@ struct RootView: View {
     @Environment(\.scenePhase) private var scenePhase
     @AppStorage("requireBiometrics") private var requireBiometrics = false
     @StateObject private var lockController = AppLockController()
+    @AppStorage("hasCompletedOnboarding") private var hasCompletedOnboarding = false
+    @State private var showOnboarding = false
 
     var body: some View {
         Group {
@@ -37,7 +39,13 @@ struct RootView: View {
                 ContentView()
             }
         }
+        .fullScreenCover(isPresented: $showOnboarding) {
+            OnboardingView()
+        }
         .task {
+            // La bienvenida solo aparece si nunca se ha usado el teclado con acceso total.
+            let keyboardUsed = (SharedClipboardStore.sharedDefaults?.double(forKey: KeyboardPreferenceKey.lastActive) ?? 0) > 0
+            if !hasCompletedOnboarding && !keyboardUsed { showOnboarding = true }
             if requireBiometrics {
                 await lockController.unlock()
             } else {

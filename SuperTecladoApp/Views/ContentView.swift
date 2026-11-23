@@ -26,22 +26,22 @@ struct ContentView: View {
 
     @AppStorage(
         "skipOneTimeCodes",
-        store: UserDefaults(suiteName: SharedClipboardStore.appGroupID)
+        store: SharedClipboardStore.sharedDefaults
     ) private var skipOneTimeCodes = true
     @AppStorage("localClipboardOnly") private var localClipboardOnly = true
     @AppStorage("maximumItems") private var maximumItems = 250
     @AppStorage("autoDeleteDays") private var autoDeleteDays = 30
     @AppStorage(
         "automaticCaptureEnabled",
-        store: UserDefaults(suiteName: SharedClipboardStore.appGroupID)
+        store: SharedClipboardStore.sharedDefaults
     ) private var automaticCaptureEnabled = true
     @AppStorage(
         "temporaryRetentionHours",
-        store: UserDefaults(suiteName: SharedClipboardStore.appGroupID)
+        store: SharedClipboardStore.sharedDefaults
     ) private var temporaryRetentionHours = ClipboardRetentionPolicy.defaultTemporaryHours
     @AppStorage(
         "maximumTemporaryItems",
-        store: UserDefaults(suiteName: SharedClipboardStore.appGroupID)
+        store: SharedClipboardStore.sharedDefaults
     ) private var maximumTemporaryItems = ClipboardRetentionPolicy.defaultMaximumTemporaryItems
     @AppStorage("lastHandledPasteboardChangeCount") private var lastHandledPasteboardChangeCount = -1
 
@@ -54,30 +54,44 @@ struct ContentView: View {
     @State private var folders: [String] = []
     @State private var selectedFolder = ""
     @State private var selectedColor = ""
+    @State private var hasCompletedInitialLoad = false
+    @State private var isCapturingClipboard = false
 
+    /// `@Query` ya devuelve los elementos ordenados por `updatedAt` descendente: filtramos
+    /// primero y separamos fijados arriba en una sola pasada O(n), sin reordenar todo cada vez.
     private var filteredItems: [ClipboardItem] {
-        items.sorted { first, second in
-            if first.isPinned != second.isPinned { return first.isPinned && !second.isPinned }
-            return first.updatedAt > second.updatedAt
-        }.filter { item in
+        var pinned: [ClipboardItem] = []
+        var regular: [ClipboardItem] = []
+        for item in items {
             let matchesSection = librarySection == .temporary ? item.isTemporary : item.isPermanent
+            guard matchesSection else { continue }
             let matchesFilter: Bool = switch filter {
             case .all: true
             case .text: item.kind != .image
             case .images: item.kind == .image
             case .favorites: item.isFavorite
             }
-            let matchesSearch = searchText.isEmpty || item.searchableText.localizedCaseInsensitiveContains(searchText)
-            let matchesFolder = librarySection == .temporary || selectedFolder.isEmpty || item.folderName == selectedFolder
-            let matchesColor = librarySection == .temporary || selectedColor.isEmpty || item.colorTagRawValue == selectedColor
-            return matchesSection && matchesFilter && matchesSearch && matchesFolder && matchesColor
+            guard matchesFilter else { continue }
+            if !searchText.isEmpty, !item.searchableText.localizedCaseInsensitiveContains(searchText) { continue }
+            if librarySection == .saved {
+                if !selectedFolder.isEmpty, item.folderName != selectedFolder { continue }
+                if !selectedColor.isEmpty, item.colorTagRawValue != selectedColor { continue }
+            }
+            if item.isPinned {
+                pinned.append(item)
+            } else {
+                regular.append(item)
+            }
         }
+        return pinned + regular
     }
 
     var body: some View {
         NavigationStack {
             Group {
-                if filteredItems.isEmpty { emptyState } else { itemList }
+                // Se filtra y ordena una sola vez por dibujado (antes, dos veces).
+                let visibleItems = filteredItems
+                if visibleItems.isEmpty { emptyState } else { itemList(visibleItems) }
             }
             .navigationTitle("Super Teclado")
             .searchable(text: $searchText, prompt: "Buscar textos, OCR o etiquetas")
@@ -93,7 +107,7 @@ struct ContentView: View {
             .sheet(item: $selectedItem) { item in ItemDetailView(item: item) }
             .sheet(isPresented: $showingSettings) { SettingsView() }
             .onChange(of: selectedItem?.id) { _, itemID in
-                if itemID == nil { reloadFolders(); save() }
+                if itemID == nil { reloadFolders() }
             }
             .overlay(alignment: .top) {
                 if let toast {
@@ -108,17 +122,12 @@ struct ContentView: View {
                 }
             }
             .task {
-                reloadFolders()
-                KeyboardHistorySync.synchronize(with: modelContext)
-                performMaintenance()
-                captureAutomaticallyIfNeeded()
+                await refreshOnForeground()
+                hasCompletedInitialLoad = true
             }
             .onChange(of: scenePhase) { _, phase in
-                guard phase == .active else { return }
-                reloadFolders()
-                KeyboardHistorySync.synchronize(with: modelContext)
-                performMaintenance()
-                captureAutomaticallyIfNeeded()
+                guard phase == .active, hasCompletedInitialLoad else { return }
+                Task { await refreshOnForeground() }
             }
             .onChange(of: showingSettings) { _, isShowing in
                 if !isShowing { reloadFolders(); performMaintenance() }
@@ -127,10 +136,10 @@ struct ContentView: View {
                 for: UIPasteboard.changedNotification,
                 object: UIPasteboard.general
             )) { _ in
-                captureAutomaticallyIfNeeded()
+                Task { await captureAutomaticallyIfNeeded() }
             }
             .onReceive(Timer.publish(every: 60, on: .main, in: .common).autoconnect()) { _ in
-                cleanExpiredItems()
+                cleanExpiredItems(commit: true)
             }
         }
     }
@@ -161,13 +170,14 @@ struct ContentView: View {
         return "Los elementos que decidas conservar aparecerán aquí y en el teclado."
     }
 
-    private var itemList: some View {
+    private func itemList(_ visibleItems: [ClipboardItem]) -> some View {
         List {
-            ForEach(filteredItems) { item in
-                ClipboardRow(item: item)
-                    .onTapGesture { selectedItem = item }
-                    .accessibilityAddTraits(.isButton)
-                    .swipeActions(edge: .leading, allowsFullSwipe: true) {
+            ForEach(visibleItems) { item in
+                Button { selectedItem = item } label: {
+                    ClipboardRow(item: item)
+                }
+                .buttonStyle(.plain)
+                .swipeActions(edge: .leading, allowsFullSwipe: true) {
                         if item.isTemporary {
                             Button { promote(item) } label: {
                                 Label("Guardar", systemImage: "archivebox.fill")
@@ -279,7 +289,7 @@ struct ContentView: View {
     }
 
     private var captureButton: some View {
-        Button { captureClipboard(origin: .manual) } label: {
+        Button { Task { await captureClipboard(origin: .manual) } } label: {
             Label("Importar como temporal", systemImage: "clipboard.fill")
                 .font(.headline)
                 .frame(maxWidth: .infinity)
@@ -293,19 +303,32 @@ struct ContentView: View {
         .background(.bar)
     }
 
-    private func captureAutomaticallyIfNeeded() {
-        guard automaticCaptureEnabled, scenePhase == .active else { return }
-        captureClipboard(origin: .automatic)
+    private func refreshOnForeground() async {
+        reloadFolders()
+        KeyboardHistorySync.synchronize(with: modelContext)
+        performMaintenance()
+        await captureAutomaticallyIfNeeded()
+        await recognizeImportedImages()
     }
 
-    private func captureClipboard(origin: CaptureOrigin) {
+    private func captureAutomaticallyIfNeeded() async {
+        guard automaticCaptureEnabled, scenePhase == .active else { return }
+        await captureClipboard(origin: .automatic)
+    }
+
+    private func captureClipboard(origin: CaptureOrigin) async {
+        guard !isCapturingClipboard else { return }
         let changeCount = UIPasteboard.general.changeCount
         if origin == .automatic && changeCount == lastHandledPasteboardChangeCount { return }
+        isCapturingClipboard = true
+        defer { isCapturingClipboard = false }
         lastHandledPasteboardChangeCount = changeCount
 
-        switch ClipboardService.readCurrent() {
+        switch await ClipboardService.readCurrentAsync() {
         case .empty:
             if origin == .manual { showToast("El portapapeles está vacío") }
+        case .privateContent:
+            if origin == .manual { showToast("Contenido privado omitido") }
         case .unsupported:
             if origin == .manual { showToast("Este tipo de contenido aún no es compatible") }
         case .content(let draft):
@@ -314,6 +337,19 @@ struct ContentView: View {
                ClipboardService.isLikelyOneTimeCode(text) {
                 if origin == .manual { showToast("Código temporal omitido por privacidad") }
                 return
+            }
+
+            var isSensitive = false
+            if let text = draft.text, ClipboardClassifier.isSensitive(text) {
+                switch SharedClipboardStore.sensitiveMode {
+                case .skip:
+                    if origin == .manual { showToast("Contenido privado omitido") }
+                    return
+                case .mask:
+                    isSensitive = true
+                case .normal:
+                    break
+                }
             }
 
             if let existing = existingItem(withContentHash: draft.contentHash) {
@@ -334,17 +370,20 @@ struct ContentView: View {
                 kind: draft.kind,
                 contentHash: draft.contentHash,
                 isTemporary: true,
-                expiresAt: ClipboardRetentionPolicy.expirationDate(hours: temporaryRetentionHours)
+                expiresAt: isSensitive
+                    ? Date.now.addingTimeInterval(ClipboardClassifier.sensitiveLifetime)
+                    : ClipboardRetentionPolicy.expirationDate(hours: temporaryRetentionHours),
+                isSensitive: isSensitive
             )
             modelContext.insert(item)
+            _ = trimHistoryIfNeeded(commit: false)
             save()
-            trimHistoryIfNeeded()
             librarySection = .temporary
             showToast(origin == .automatic ? "Añadido a Temporales" : "Importado temporalmente")
 
             if let imageData = draft.imageData {
                 Task {
-                    item.recognizedText = await OCRService.recognizeText(in: imageData)
+                    item.recognizedText = await OCRService.recognizeText(in: imageData) ?? ""
                     save()
                 }
             }
@@ -353,14 +392,17 @@ struct ContentView: View {
 
     private func promote(_ item: ClipboardItem) {
         item.promoteToPermanent()
+        _ = trimHistoryIfNeeded(commit: false)
         save()
-        trimHistoryIfNeeded()
         showToast("Guardado permanentemente")
     }
 
     private func existingItem(withContentHash contentHash: String) -> ClipboardItem? {
-        let descriptor = FetchDescriptor<ClipboardItem>()
-        return try? modelContext.fetch(descriptor).first { $0.contentHash == contentHash }
+        var descriptor = FetchDescriptor<ClipboardItem>(
+            predicate: #Predicate { $0.contentHash == contentHash }
+        )
+        descriptor.fetchLimit = 1
+        return try? modelContext.fetch(descriptor).first
     }
 
     private func copy(_ item: ClipboardItem) {
@@ -373,17 +415,33 @@ struct ContentView: View {
     }
 
     private func delete(_ item: ClipboardItem) {
-        modelContext.delete(item)
+        KeyboardHistorySync.delete(item, from: modelContext)
         save()
         showToast("Eliminado")
     }
 
-    private func performMaintenance() {
-        cleanExpiredItems()
-        trimHistoryIfNeeded()
+    /// Extrae el texto de las capturas copiadas desde el teclado para poder buscarlas.
+    private func recognizeImportedImages() async {
+        // Comprueba `kind` y `recognizedText` antes de tocar `imageData` para no leer discos innecesarios.
+        let pending = items.filter { $0.kind == .image && $0.recognizedText == nil }
+        guard !pending.isEmpty else { return }
+        var recognizedAny = false
+        for item in pending {
+            guard let data = item.imageData else { continue }
+            item.recognizedText = await OCRService.recognizeText(in: data) ?? ""
+            recognizedAny = true
+        }
+        if recognizedAny { save() }
     }
 
-    private func cleanExpiredItems() {
+    private func performMaintenance() {
+        let expiredChanged = cleanExpiredItems(commit: false)
+        let trimmedChanged = trimHistoryIfNeeded(commit: false)
+        if expiredChanged || trimmedChanged { save() }
+    }
+
+    @discardableResult
+    private func cleanExpiredItems(commit: Bool = true) -> Bool {
         let now = Date.now
         var changed = false
         for item in items where ClipboardRetentionPolicy.isExpired(
@@ -391,41 +449,44 @@ struct ContentView: View {
             expiresAt: item.expiresAt,
             at: now
         ) {
-            modelContext.delete(item)
+            KeyboardHistorySync.delete(item, from: modelContext)
             changed = true
         }
         if autoDeleteDays > 0,
            let threshold = Calendar.current.date(byAdding: .day, value: -autoDeleteDays, to: now) {
             for item in items where item.isPermanent && item.updatedAt < threshold && !item.isFavorite && !item.isPinned {
-                modelContext.delete(item)
+                KeyboardHistorySync.delete(item, from: modelContext)
                 changed = true
             }
         }
-        if changed { save() }
+        if changed && commit { save() }
+        return changed
     }
 
-    private func trimHistoryIfNeeded() {
+    @discardableResult
+    private func trimHistoryIfNeeded(commit: Bool = true) -> Bool {
         let descriptor = FetchDescriptor<ClipboardItem>(
             sortBy: [SortDescriptor(\ClipboardItem.updatedAt, order: .forward)]
         )
-        guard let storedItems = try? modelContext.fetch(descriptor) else { return }
+        guard let storedItems = try? modelContext.fetch(descriptor) else { return false }
 
         let temporaryItems = storedItems.filter(\.isTemporary)
         let temporaryOverflow = max(0, temporaryItems.count - max(1, maximumTemporaryItems))
-        for item in temporaryItems.prefix(temporaryOverflow) { modelContext.delete(item) }
+        for item in temporaryItems.prefix(temporaryOverflow) { KeyboardHistorySync.delete(item, from: modelContext) }
 
         let permanentItems = storedItems.filter(\.isPermanent)
         let permanentOverflow = max(0, permanentItems.count - max(1, maximumItems))
         let removable = permanentItems.filter { !$0.isPinned && !$0.isFavorite }
-        for item in removable.prefix(permanentOverflow) { modelContext.delete(item) }
+        for item in removable.prefix(permanentOverflow) { KeyboardHistorySync.delete(item, from: modelContext) }
 
-        if temporaryOverflow > 0 || permanentOverflow > 0 { save() }
+        let changed = temporaryOverflow > 0 || permanentOverflow > 0
+        if changed && commit { save() }
+        return changed
     }
 
     private func save() {
         do {
-            try modelContext.save()
-            KeyboardHistorySync.publishAppHistory(from: modelContext)
+            try KeyboardHistorySync.commit(modelContext)
         } catch {
             showToast("No se pudieron guardar los cambios")
         }

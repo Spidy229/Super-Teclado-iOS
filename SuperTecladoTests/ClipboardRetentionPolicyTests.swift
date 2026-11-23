@@ -62,7 +62,7 @@ final class ClipboardRetentionPolicyTests: XCTestCase {
         XCTAssertNil(item.expiresAt)
     }
 
-    func testTemporaryClipboardKeepsSeveralCopyEvents() {
+    func testCopyingSameTextAgainMovesItToTheTop() {
         SharedClipboardStore.clearTemporaryInbox()
         defer { SharedClipboardStore.clearTemporaryInbox() }
 
@@ -89,8 +89,61 @@ final class ClipboardRetentionPolicyTests: XCTestCase {
         )
 
         let clips = SharedClipboardStore.loadTemporaryInbox()
-        XCTAssertEqual(clips.count, 3)
-        XCTAssertEqual(clips.filter { $0.text == "primera copia" }.count, 2)
+        XCTAssertEqual(clips.map(\.text), ["primera copia", "segunda copia"])
+    }
+
+    func testTemporaryInboxRespectsLimit() {
+        SharedClipboardStore.clearTemporaryInbox()
+        defer { SharedClipboardStore.clearTemporaryInbox() }
+
+        for index in 0..<5 {
+            SharedClipboardStore.captureTemporaryText(
+                "copia \(index)",
+                pasteboardChangeCount: 93_000 + index,
+                maximumItems: 3
+            )
+        }
+
+        XCTAssertEqual(SharedClipboardStore.loadTemporaryInbox().count, 3)
+    }
+
+    func testKeyboardDeletionIsRecordedForTheApp() throws {
+        SharedClipboardStore.clearTemporaryInbox()
+        _ = SharedClipboardStore.consumeDeletedIDs()
+        defer {
+            SharedClipboardStore.clearTemporaryInbox()
+            _ = SharedClipboardStore.consumeDeletedIDs()
+        }
+
+        SharedClipboardStore.captureTemporaryText("borrar", pasteboardChangeCount: 94_001)
+        let clip = try XCTUnwrap(SharedClipboardStore.loadTemporaryInbox().first)
+
+        SharedClipboardStore.deleteTemporary(ids: [clip.id])
+
+        XCTAssertTrue(SharedClipboardStore.loadTemporaryInbox().isEmpty)
+        XCTAssertEqual(SharedClipboardStore.consumeDeletedIDs(), [clip.id])
+        XCTAssertTrue(SharedClipboardStore.pendingDeletedIDs().isEmpty)
+    }
+
+    func testPinAndUnpinMovesClipBetweenSections() throws {
+        let originalSaved = SharedClipboardStore.load()
+        SharedClipboardStore.clearTemporaryInbox()
+        defer {
+            SharedClipboardStore.save(originalSaved)
+            SharedClipboardStore.clearTemporaryInbox()
+            _ = SharedClipboardStore.consumeDeletedIDs()
+        }
+
+        SharedClipboardStore.captureTemporaryText("fijar esto", pasteboardChangeCount: 95_001)
+        let temporary = try XCTUnwrap(SharedClipboardStore.loadTemporaryInbox().first)
+
+        XCTAssertTrue(SharedClipboardStore.promoteTemporary(id: temporary.id))
+        XCTAssertTrue(SharedClipboardStore.load().contains { $0.id == temporary.id && $0.isPinned })
+        XCTAssertFalse(SharedClipboardStore.loadTemporaryInbox().contains { $0.id == temporary.id })
+
+        XCTAssertTrue(SharedClipboardStore.demoteSaved(id: temporary.id))
+        XCTAssertFalse(SharedClipboardStore.load().contains { $0.id == temporary.id })
+        XCTAssertEqual(SharedClipboardStore.loadTemporaryInbox().first?.text, "fijar esto")
     }
 
     func testSamePasteboardEventIsCapturedOnlyOnce() {

@@ -9,6 +9,28 @@ struct ItemDetailView: View {
     @State private var copied = false
     @State private var folders: [String] = []
     @State private var newFolderName = ""
+    @State private var previewImage: UIImage?
+    @State private var initialSnapshot: EditableSnapshot?
+
+    private struct EditableSnapshot: Equatable {
+        let isFavorite: Bool
+        let isPinned: Bool
+        let folderName: String?
+        let colorTagRawValue: String?
+        let tagsText: String
+        let isTemporary: Bool
+    }
+
+    private var currentSnapshot: EditableSnapshot {
+        EditableSnapshot(
+            isFavorite: item.isFavorite,
+            isPinned: item.isPinned,
+            folderName: item.folderName,
+            colorTagRawValue: item.colorTagRawValue,
+            tagsText: item.tagsText,
+            isTemporary: item.isTemporary
+        )
+    }
 
     var body: some View {
         NavigationStack {
@@ -32,8 +54,8 @@ struct ItemDetailView: View {
                 }
 
                 Section("Contenido") {
-                    if let data = item.imageData, let image = UIImage(data: data) {
-                        Image(uiImage: image)
+                    if let previewImage {
+                        Image(uiImage: previewImage)
                             .resizable()
                             .scaledToFit()
                             .clipShape(RoundedRectangle(cornerRadius: 16))
@@ -113,12 +135,22 @@ struct ItemDetailView: View {
                 }
             }
             .onDisappear {
-                item.updatedAt = .now
-                try? modelContext.save()
-                KeyboardHistorySync.publishAppHistory(from: modelContext)
+                // Solo guarda y sincroniza si el usuario editó algo (abrir y cerrar para leer no bloquea).
+                if let initialSnapshot, initialSnapshot != currentSnapshot {
+                    item.updatedAt = .now
+                    try? KeyboardHistorySync.commit(modelContext)
+                }
             }
             .onAppear {
                 folders = SharedClipboardStore.loadFolders()
+                if initialSnapshot == nil { initialSnapshot = currentSnapshot }
+            }
+            .task(id: item.id) {
+                guard item.kind == .image, let data = item.imageData else { return }
+                let cgImage = await Task.detached(priority: .userInitiated) {
+                    ClipImageProcessing.downsampledImage(from: data, maxPixelSize: 1_400)
+                }.value
+                if let cgImage { previewImage = UIImage(cgImage: cgImage) }
             }
         }
     }
@@ -146,7 +178,7 @@ struct ItemDetailView: View {
 
     private func promote() {
         item.promoteToPermanent()
-        try? modelContext.save()
-        KeyboardHistorySync.publishAppHistory(from: modelContext)
+        try? KeyboardHistorySync.commit(modelContext)
+        initialSnapshot = currentSnapshot
     }
 }
