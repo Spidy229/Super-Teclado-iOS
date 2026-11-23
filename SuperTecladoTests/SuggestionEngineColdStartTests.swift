@@ -177,7 +177,7 @@ final class SuggestionEngineColdStartTests: XCTestCase {
 
         // Palabra nueva ofrece «+ palabra» para guardarla con un toque.
         let unknown = await engine.result(for: "KravaSigner")
-        XCTAssertEqual(unknown.slots.first?.canAddToDictionary, true)
+        XCTAssertEqual(unknown.slots[0]?.canAddToDictionary, true)
 
         // Al añadirla conserva mayúsculas y se encuentra incluso sin escribir tildes.
         XCTAssertEqual(engine.addWord("WhatsApp", persist: false), "WhatsApp")
