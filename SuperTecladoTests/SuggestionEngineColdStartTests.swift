@@ -154,6 +154,46 @@ final class SuggestionEngineColdStartTests: XCTestCase {
     }
 
     @MainActor
+    func testSuggestionsSurfaceSpanishAccentsContextAndPersonalDictionaryWords() async {
+        let validator = RecordingSpellValidator(validWords: ["hola"])
+        let engine = SuggestionEngine(makeSpellValidator: { validator })
+        engine.setDictionary(WordDictionary.parse("""
+        que 14421005
+        qué 4166708
+        está 2433246
+        esta 1051900
+        forma 900000
+        favor 500000
+        """))
+        engine.setBigramModel(BigramModel.parse("por\tfavor 50|qué 40\n"))
+
+        // Palabra conocida sin tilde sugiere también su variante acentuada en la barra.
+        let esta = await engine.result(for: "esta")
+        XCTAssertTrue(esta.slots.compactMap { $0 }.contains { $0.text == "está" && $0.kind == .completion })
+
+        // Contexto de la palabra anterior prioriza «favor» al escribir «por f».
+        let porF = await engine.result(for: "f", previousWord: "por")
+        XCTAssertTrue(porF.slots.compactMap { $0 }.contains { $0.text == "favor" })
+
+        // Palabra nueva ofrece «+ palabra» para guardarla con un toque.
+        let unknown = await engine.result(for: "KravaSigner")
+        XCTAssertEqual(unknown.slots.first?.canAddToDictionary, true)
+
+        // Al añadirla conserva mayúsculas y se encuentra incluso sin escribir tildes.
+        XCTAssertEqual(engine.addWord("WhatsApp", persist: false), "WhatsApp")
+        XCTAssertEqual(engine.addWord("Málaga", persist: false), "Málaga")
+        let whatsapp = await engine.result(for: "what")
+        XCTAssertTrue(whatsapp.slots.compactMap { $0 }.contains { $0.text == "WhatsApp" })
+        let malaga = await engine.result(for: "mal")
+        XCTAssertTrue(malaga.slots.compactMap { $0 }.contains { $0.text == "Málaga" })
+
+        // Olvidarla la quita de las sugerencias.
+        XCTAssertTrue(engine.forget("WhatsApp", persist: false))
+        let afterForget = await engine.result(for: "what")
+        XCTAssertFalse(afterForget.slots.compactMap { $0 }.contains { $0.text == "WhatsApp" })
+    }
+
+    @MainActor
     private func makeFixture(validWords: Set<String> = ["hola"]) -> (engine: SuggestionEngine, validator: RecordingSpellValidator) {
         let validator = RecordingSpellValidator(validWords: validWords)
         let engine = SuggestionEngine(makeSpellValidator: {

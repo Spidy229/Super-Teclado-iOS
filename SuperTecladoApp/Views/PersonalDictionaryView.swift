@@ -71,10 +71,11 @@ struct PersonalDictionaryView: View {
     }
 
     private func reload() {
+        let forms = PersonalDictionary.preferredForms()
         words = PersonalDictionary.learnedWords()
             .filter { $0.value >= PersonalDictionary.knownThreshold }
             .sorted { $0.value == $1.value ? $0.key < $1.key : $0.value > $1.value }
-            .map(\.key)
+            .map { PersonalDictionary.displayForm(for: $0.key, preferredForms: forms) }
         shortcuts = PersonalDictionary.shortcuts()
             .sorted { $0.key < $1.key }
             .map { (shortcut: $0.key, phrase: $0.value) }
@@ -88,7 +89,7 @@ struct PersonalDictionaryView: View {
 
     private func deleteWords(at offsets: IndexSet) {
         let visible = filteredWords
-        offsets.map { visible[$0] }.forEach(PersonalDictionary.removeWord)
+        for index in offsets { PersonalDictionary.removeWord(visible[index]) }
         reload()
     }
 

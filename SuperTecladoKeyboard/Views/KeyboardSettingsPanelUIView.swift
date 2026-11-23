@@ -75,10 +75,17 @@ final class KeyboardSettingsPanelUIView: UIView {
     let autocorrectSwitchRow = SettingsSwitchRow(title: "Autocorrección")
     private let spaceAfterSuggestionRow = SettingsSwitchRow(title: "Espacio tras elegir una sugerencia")
     private let smartTouchRow = SettingsSwitchRow(title: "Precisión inteligente")
+    private let longPressSymbolsSwitchRow = SettingsSwitchRow(title: "Símbolos al mantener pulsado")
     let longPressChips = SettingsChipBar(titles: SettingsLongPressOption.allCases.map(\.title))
     private let numberRowSwitchRow = SettingsSwitchRow(title: "Fila de números")
     private let keyBordersSwitchRow = SettingsSwitchRow(title: "Bordes de las teclas")
     private let incognitoSwitchRow = SettingsSwitchRow(title: "Modo incógnito")
+
+    // Diccionario personal
+    let addWordButton = SettingsActionButton(title: "Añadir palabra al diccionario", symbol: "plus.circle.fill")
+    private let dictionarySummaryLabel = UILabel()
+    private let savedWordsBar = SettingsWordChipsBar()
+    private let clearDictionaryButton = SettingsActionButton(title: "Borrar palabras aprendidas", symbol: "trash")
 
     // Diagnóstico
     private let showSpeedRow = SettingsSwitchRow(title: "Mostrar velocidad en la barra")
@@ -118,8 +125,8 @@ final class KeyboardSettingsPanelUIView: UIView {
     private var switchRows: [SettingsSwitchRow] {
         [
             hapticsSwitchRow, soundSwitchRow, glideSwitchRow, autocorrectSwitchRow,
-            spaceAfterSuggestionRow, smartTouchRow, numberRowSwitchRow, keyBordersSwitchRow,
-            incognitoSwitchRow, showSpeedRow
+            spaceAfterSuggestionRow, smartTouchRow, longPressSymbolsSwitchRow,
+            numberRowSwitchRow, keyBordersSwitchRow, incognitoSwitchRow, showSpeedRow
         ]
     }
 
@@ -206,6 +213,7 @@ final class KeyboardSettingsPanelUIView: UIView {
         buildVibrationSection()
         buildSoundSection()
         buildWritingSection()
+        buildDictionarySection()
         buildDiagnosticsSection()
     }
 
@@ -295,6 +303,8 @@ final class KeyboardSettingsPanelUIView: UIView {
         )
         section.addArrangedSubview(smartCaption)
 
+        section.addArrangedSubview(longPressSymbolsSwitchRow)
+
         let longPressLabel = UILabel()
         longPressLabel.text = "Pulsación larga (acentos y símbolos)"
         longPressLabel.font = .systemFont(ofSize: 13)
@@ -305,6 +315,20 @@ final class KeyboardSettingsPanelUIView: UIView {
         section.addArrangedSubview(numberRowSwitchRow)
         section.addArrangedSubview(keyBordersSwitchRow)
         section.addArrangedSubview(incognitoSwitchRow)
+        contentStack.addArrangedSubview(section)
+    }
+
+    private func buildDictionarySection() {
+        let section = makeSection(title: "Diccionario personal")
+        section.addArrangedSubview(addWordButton)
+
+        dictionarySummaryLabel.font = .systemFont(ofSize: 11)
+        dictionarySummaryLabel.numberOfLines = 0
+        secondaryLabels.append(dictionarySummaryLabel)
+        section.addArrangedSubview(dictionarySummaryLabel)
+
+        section.addArrangedSubview(savedWordsBar)
+        section.addArrangedSubview(clearDictionaryButton)
         contentStack.addArrangedSubview(section)
     }
 
@@ -405,6 +429,9 @@ final class KeyboardSettingsPanelUIView: UIView {
         smartTouchRow.onChange = { [weak self] value in
             self?.engine.updatePreferences { $0.smartTouch = value }
         }
+        longPressSymbolsSwitchRow.onChange = { [weak self] value in
+            self?.engine.updatePreferences { $0.longPressSymbols = value }
+        }
         longPressChips.onSelect = { [weak self] index in
             guard let self, SettingsLongPressOption.allCases.indices.contains(index) else { return }
             let option = SettingsLongPressOption.allCases[index]
@@ -421,6 +448,23 @@ final class KeyboardSettingsPanelUIView: UIView {
         }
         showSpeedRow.onChange = { [weak self] value in
             self?.engine.updatePreferences { $0.showSpeed = value }
+        }
+
+        addWordButton.onDown = { [weak self] in self?.engine.keyFeedback(.modifier) }
+        addWordButton.onTap = { [weak self] in self?.engine.openAddWord() }
+
+        savedWordsBar.onRemove = { [weak self] word in
+            guard let self else { return }
+            self.engine.keyFeedback(.delete)
+            self.engine.removePersonalWord(word)
+            self.refreshPersonalDictionary()
+        }
+
+        clearDictionaryButton.onDown = { [weak self] in self?.engine.keyFeedback(.modifier) }
+        clearDictionaryButton.onTap = { [weak self] in
+            guard let self else { return }
+            self.engine.clearPersonalDictionary()
+            self.refreshPersonalDictionary()
         }
 
         resetDiagnosticsButton.onDown = { [weak self] in self?.engine.keyFeedback(.modifier) }
@@ -503,7 +547,10 @@ final class KeyboardSettingsPanelUIView: UIView {
         appGroupRow.apply(textColor: textColor)
         safeModeRow.apply(textColor: textColor)
         copyReportButton.apply(tint: accentColor)
+        addWordButton.apply(tint: accentColor)
+        clearDictionaryButton.apply(tint: .systemRed)
         resetDiagnosticsButton.apply(tint: accentColor)
+        savedWordsBar.apply(chip: chipColor, text: textColor, secondary: secondaryColor)
 
         sectionHeaders.forEach { $0.textColor = secondaryColor }
         primaryLabels.forEach { $0.textColor = textColor }
@@ -565,6 +612,7 @@ final class KeyboardSettingsPanelUIView: UIView {
         autocorrectSwitchRow.setOn(preferences.autocorrect)
         spaceAfterSuggestionRow.setOn(preferences.spaceAfterSuggestion)
         smartTouchRow.setOn(preferences.smartTouch)
+        longPressSymbolsSwitchRow.setOn(preferences.longPressSymbols)
         let longPressOption = SettingsLongPressOption(milliseconds: preferences.longPressDelay)
         if let delayIndex = SettingsLongPressOption.allCases.firstIndex(of: longPressOption) {
             longPressChips.setSelectedIndex(delayIndex)
@@ -573,6 +621,22 @@ final class KeyboardSettingsPanelUIView: UIView {
         keyBordersSwitchRow.setOn(preferences.keyBorders)
         incognitoSwitchRow.setOn(preferences.incognito)
         showSpeedRow.setOn(preferences.showSpeed)
+    }
+
+    /// Actualiza la lista de palabras recordadas al abrir ⚙️ o al modificar el diccionario.
+    func refreshPersonalDictionary() {
+        let words = engine.savedPersonalWords(limit: 40)
+        if words.isEmpty {
+            dictionarySummaryLabel.text = "El teclado aprende automáticamente las palabras que usas. También puedes pulsar «+ palabra» en la barra al escribir, o mantener una sugerencia para olvidarla."
+            savedWordsBar.isHidden = true
+            clearDictionaryButton.isHidden = true
+        } else {
+            let countLabel = words.count == 1 ? "1 palabra recordada" : "\(words.count) palabras recordadas"
+            dictionarySummaryLabel.text = "\(countLabel) · Toca una palabra para olvidarla, o pulsa «+ palabra» en la barra al escribir."
+            savedWordsBar.setWords(words)
+            savedWordsBar.isHidden = false
+            clearDictionaryButton.isHidden = false
+        }
     }
 
     /// Actualiza los números del diagnóstico al abrir el panel o al pulsar «Poner a cero».
@@ -797,7 +861,7 @@ final class SettingsSwitchRow: UIView {
 }
 
 @MainActor
-private final class SettingsActionButton: UIControl {
+final class SettingsActionButton: UIControl {
     var onDown: () -> Void = {}
     var onTap: () -> Void = {}
 
@@ -1109,5 +1173,97 @@ private final class SettingsCounterRow: UIView {
     func setValue(_ value: Int) {
         let text = "\(value)"
         if valueLabel.text != text { valueLabel.text = text }
+    }
+}
+
+/// Barra horizontal de palabras recordadas del diccionario personal (con toque para eliminar).
+/// Comparte las mismas reglas táctiles que `SettingsChipBar` para nunca trabar el scroll vertical.
+@MainActor
+private final class SettingsWordChipsBar: UIScrollView {
+    var onRemove: (String) -> Void = { _ in }
+    private let stack = UIStackView()
+    private var currentWords: [String] = []
+    private var chipColor: UIColor = .secondarySystemFill
+    private var textColor: UIColor = .label
+    private var secondaryColor: UIColor = .secondaryLabel
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        showsHorizontalScrollIndicator = false
+        showsVerticalScrollIndicator = false
+        delaysContentTouches = true
+        canCancelContentTouches = true
+        isDirectionalLockEnabled = false
+        alwaysBounceVertical = false
+        contentInsetAdjustmentBehavior = .never
+
+        stack.axis = .horizontal
+        stack.spacing = 6
+        stack.alignment = .center
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(stack)
+
+        NSLayoutConstraint.activate([
+            stack.leadingAnchor.constraint(equalTo: contentLayoutGuide.leadingAnchor),
+            stack.trailingAnchor.constraint(equalTo: contentLayoutGuide.trailingAnchor),
+            stack.topAnchor.constraint(equalTo: contentLayoutGuide.topAnchor),
+            stack.bottomAnchor.constraint(equalTo: contentLayoutGuide.bottomAnchor),
+            stack.heightAnchor.constraint(equalTo: frameLayoutGuide.heightAnchor),
+            heightAnchor.constraint(equalToConstant: 32)
+        ])
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) no se usa")
+    }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        let overflows = contentSize.width > bounds.width + 1
+        if isScrollEnabled != overflows { isScrollEnabled = overflows }
+    }
+
+    override func touchesShouldCancel(in view: UIView) -> Bool {
+        true
+    }
+
+    override func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
+        guard gestureRecognizer === panGestureRecognizer else {
+            return super.gestureRecognizerShouldBegin(gestureRecognizer)
+        }
+        guard isScrollEnabled else { return false }
+        let velocity = panGestureRecognizer.velocity(in: self)
+        let translation = panGestureRecognizer.translation(in: self)
+        let movement = velocity == .zero ? translation : velocity
+        return abs(movement.x) > abs(movement.y) * 1.2
+    }
+
+    func apply(chip: UIColor, text: UIColor, secondary: UIColor) {
+        chipColor = chip
+        textColor = text
+        secondaryColor = secondary
+        rebuildChips()
+    }
+
+    func setWords(_ words: [String]) {
+        guard words != currentWords else { return }
+        currentWords = words
+        rebuildChips()
+    }
+
+    private func rebuildChips() {
+        for view in stack.arrangedSubviews {
+            stack.removeArrangedSubview(view)
+            view.removeFromSuperview()
+        }
+        for word in currentWords {
+            let pill = SettingsChipPill(title: "\(word) ×")
+            pill.apply(selected: false, chip: chipColor, accent: chipColor, text: textColor, accentText: secondaryColor)
+            pill.accessibilityLabel = "Eliminar \(word) del diccionario"
+            pill.onTap = { [weak self] in self?.onRemove(word) }
+            stack.addArrangedSubview(pill)
+        }
+        setNeedsLayout()
     }
 }

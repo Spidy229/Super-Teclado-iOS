@@ -18,8 +18,10 @@ struct SuggestionItem: Identifiable, Hashable {
 
     let text: String
     let kind: Kind
+    /// `true` en palabras nuevas que el usuario puede guardar con un toque («+ palabra»).
+    var canAddToDictionary: Bool = false
 
-    var id: String { "\(kind)-\(text)" }
+    var id: String { "\(kind)-\(text)-\(canAddToDictionary)" }
 }
 
 struct SuggestionResult: Sendable {
@@ -57,8 +59,11 @@ private final class SystemSuggestionSpellValidator: SuggestionSpellValidating {
 /// así una palabra larga nunca retrasa la siguiente pulsación.
 struct SuggestionSnapshot: Sendable {
     var dictionary: WordDictionary?
+    var bigramModel: BigramModel? = nil
     var layout: LetterLayout
     var learned: [String: Int]
+    var learnedBigrams: [String: [String: Int]] = [:]
+    var preferredForms: [String: String] = [:]
     var lexiconShortcuts: [String: String]
     var lexiconWords: Set<String>
     var personalShortcuts: [String: String]
@@ -81,8 +86,22 @@ struct SuggestionSnapshot: Sendable {
             || dictionary?.contains(lower) == true
     }
 
-    func compute(for word: String, hints: CheckerHints? = nil) -> SuggestionResult {
+    private func formatCandidate(_ candidate: String, to typed: String) -> String {
+        if let preferred = preferredForms[candidate.lowercased()] {
+            if typed.count > 1, typed == typed.uppercased(), typed != typed.lowercased() {
+                return preferred.uppercased()
+            }
+            if typed.first?.isUppercase == true, preferred.first?.isUppercase != true {
+                return preferred.prefix(1).uppercased() + preferred.dropFirst()
+            }
+            return preferred
+        }
+        return KeyboardTextLogic.matchCase(candidate, to: typed)
+    }
+
+    func compute(for word: String, previousWord: String? = nil, hints: CheckerHints? = nil) -> SuggestionResult {
         let lower = word.lowercased()
+        let foldedLower = WordDictionary.fold(lower)
         let isKnown = isKnownWord(lower) || hints?.isKnown == true
 
         var others: [String] = []
@@ -91,13 +110,13 @@ struct SuggestionSnapshot: Sendable {
             let key = candidate.lowercased()
             guard !candidate.isEmpty, !seen.contains(key) else { return }
             seen.insert(key)
-            others.append(KeyboardTextLogic.matchCase(candidate, to: word))
+            others.append(formatCandidate(candidate, to: word))
         }
 
         // La corrección de erratas se calcula una sola vez y sirve para la corrección y la barra.
         var typos: [TypoCorrector.Candidate] = []
         if !isKnown, lower.count >= 3, let dictionary {
-            typos = TypoCorrector.candidates(for: lower, in: dictionary, layout: layout, limit: 2)
+            typos = TypoCorrector.candidates(for: lower, in: dictionary, layout: layout, extraWords: learned, limit: 2)
         }
 
         var correction: String?
@@ -121,26 +140,63 @@ struct SuggestionSnapshot: Sendable {
                 best = hints?.guesses.first { Self.isPlausibleCorrection($0, for: word) }
             }
             if let best {
-                correction = KeyboardTextLogic.matchCase(best, to: word)
+                correction = formatCandidate(best, to: word)
                 seen.insert(best.lowercased())
             }
         }
 
+        // 1. Completados contextuales según la palabra anterior (hábitos del usuario + bigramas):
+        // p. ej. «por f» → «favor», «me g» → «gusta», «buenos d» → «días».
+        if let previousWord, !previousWord.isEmpty {
+            let prevLower = previousWord.lowercased()
+            if let followers = learnedBigrams[prevLower] {
+                followers
+                    .filter { $0.value >= 1 && $0.key != lower && WordDictionary.fold($0.key).hasPrefix(foldedLower) }
+                    .sorted { $0.value == $1.value ? $0.key < $1.key : $0.value > $1.value }
+                    .prefix(2)
+                    .forEach { append($0.key) }
+            }
+            if let bigramModel {
+                var baseMatches = bigramModel.followers(of: prevLower, matchingPrefix: lower, limit: 2)
+                if baseMatches.isEmpty, let accentedPrev = dictionary?.bestForm(matching: prevLower), accentedPrev != prevLower {
+                    baseMatches = bigramModel.followers(of: accentedPrev, matchingPrefix: lower, limit: 2)
+                }
+                baseMatches.forEach(append)
+            }
+        }
+
+        // 2. Variantes con tilde de palabras existentes («esta» → «está», «que» → «qué», «si» → «sí»).
+        if isKnown, correction == nil, let dictionary {
+            dictionary.accentVariants(matching: lower).prefix(1).forEach(append)
+        }
+
+        // 3. Palabras aprendidas del usuario (sin exigir escribir la tilde para encontrarlas).
         learned
-            .filter { $0.key.hasPrefix(lower) && $0.key != lower && $0.value >= PersonalDictionary.knownThreshold }
-            .sorted { $0.value > $1.value }
+            .filter {
+                $0.key != lower
+                    && $0.value >= PersonalDictionary.knownThreshold
+                    && WordDictionary.fold($0.key).hasPrefix(foldedLower)
+            }
+            .sorted { $0.value == $1.value ? $0.key < $1.key : $0.value > $1.value }
             .prefix(2)
             .forEach { append($0.key) }
+
+        // 4. Completados del diccionario, subiendo las palabras que el usuario ya suele escribir.
         if let dictionary {
-            dictionary.completions(for: word, limit: 4).forEach(append)
+            let candidates = dictionary.completions(for: word, limit: 8)
+            let boosted = candidates.filter { (learned[$0] ?? 0) >= 1 }
+                .sorted { (learned[$0] ?? 0) > (learned[$1] ?? 0) }
+            boosted.forEach(append)
+            candidates.forEach(append)
         } else if others.count < 2 {
             hints?.completions.prefix(3).forEach(append)
         }
-        if correction == nil {
-            typos.forEach { append($0.word) }
-        }
 
-        let typed = SuggestionItem(text: word, kind: .typed)
+        // 5. Segunda candidata de errata (si la primera ya pasó a `correction`, `seen` la omite).
+        typos.forEach { append($0.word) }
+
+        let canAdd = !isKnown && lower.count >= 2 && lower.contains(where: \.isLetter)
+        let typed = SuggestionItem(text: word, kind: .typed, canAddToDictionary: canAdd)
         func completion(_ text: String) -> SuggestionItem { SuggestionItem(text: text, kind: .completion) }
         let slots: [SuggestionItem?]
         if let correction {
@@ -191,9 +247,13 @@ final class SuggestionEngine {
     private var personalShortcuts: [String: String] = [:]
     private var learned: [String: Int] = [:]
     private var bigrams: [String: [String: Int]] = [:]
+    private var preferredForms: [String: String] = [:]
     private var rejected: Set<String> = []
     private var pendingSave = false
-    /// Sugerencias ya calculadas por palabra; se vacía cuando cambia lo aprendido o el diccionario.
+    private var saveTask: Task<Void, Never>?
+    /// Evita que una lectura asíncrona antigua del disco sobrescriba palabras recién aprendidas o añadidas.
+    private var personalDataGeneration = 0
+    /// Sugerencias ya calculadas por palabra y contexto; se vacía cuando cambia lo aprendido o el diccionario.
     private var cache: [String: SuggestionResult] = [:]
     /// Cambia al vaciar la caché, para descartar cálculos en segundo plano ya desfasados.
     private var cacheGeneration = 0
@@ -262,18 +322,21 @@ final class SuggestionEngine {
     /// que aparece el teclado y no debe retrasar el primer toque.
     func reloadPersonalData() {
         guard !pendingSave else { return }
+        let generation = personalDataGeneration
         Task { [weak self] in
             let personal = await Task.detached(priority: .utility) {
                 (
                     learned: PersonalDictionary.learnedWords(),
                     bigrams: PersonalDictionary.learnedBigrams(),
+                    forms: PersonalDictionary.preferredForms(),
                     shortcuts: PersonalDictionary.shortcuts()
                 )
             }.value
-            // Si mientras tanto ha aprendido algo nuevo, lo de memoria es más reciente.
-            guard let self, !self.pendingSave else { return }
+            // Si mientras tanto ha aprendido o añadido algo nuevo, lo de memoria es más reciente.
+            guard let self, !self.pendingSave, self.personalDataGeneration == generation else { return }
             self.learned = personal.learned
             self.bigrams = personal.bigrams
+            self.preferredForms = personal.forms
             self.personalShortcuts = personal.shortcuts
             self.invalidateCache()
         }
@@ -290,14 +353,17 @@ final class SuggestionEngine {
 
     /// Palabras propias del usuario que también se pueden escribir deslizando.
     var glideExtraWords: [String: Int] {
-        learned.filter { $0.value >= 3 && dictionary?.contains($0.key) != true }
+        learned.filter { $0.value >= PersonalDictionary.knownThreshold && dictionary?.contains($0.key) != true }
     }
 
     private var snapshot: SuggestionSnapshot {
         SuggestionSnapshot(
             dictionary: dictionary,
+            bigramModel: bigramModel,
             layout: layout,
             learned: learned,
+            learnedBigrams: bigrams,
+            preferredForms: preferredForms,
             lexiconShortcuts: lexiconShortcuts,
             lexiconWords: lexiconWords,
             personalShortcuts: personalShortcuts,
@@ -311,32 +377,39 @@ final class SuggestionEngine {
         !word.isEmpty && word.count <= 40 && word.contains(where: \.isLetter)
     }
 
+    private static func cacheKey(for word: String, previousWord: String?) -> String {
+        guard let previousWord, !previousWord.isEmpty else { return word }
+        return "\(previousWord.lowercased())|\(word)"
+    }
+
     /// Sugerencias para la barra. Con el diccionario cargado se calculan en segundo plano.
-    func result(for word: String) async -> SuggestionResult {
+    func result(for word: String, previousWord: String? = nil) async -> SuggestionResult {
         guard Self.isSuggestible(word) else { return .empty }
-        if let cached = cache[word] { return cached }
-        guard dictionary != nil else { return computeNow(for: word) }
+        let key = Self.cacheKey(for: word, previousWord: previousWord)
+        if let cached = cache[key] { return cached }
+        guard dictionary != nil else { return computeNow(for: word, previousWord: previousWord) }
         let snapshot = snapshot
         let generation = cacheGeneration
         let result = await Task.detached(priority: .userInitiated) {
-            snapshot.compute(for: word)
+            snapshot.compute(for: word, previousWord: previousWord)
         }.value
         // Para la barra no se consulta el corrector de iOS (va en el hilo principal y frena la
         // siguiente tecla); solo se hace si de verdad se va a corregir al pulsar espacio.
-        if generation == cacheGeneration { store(result, for: word) }
+        if generation == cacheGeneration { store(result, forKey: key) }
         return result
     }
 
     /// Corrección que se aplica al pulsar espacio o un signo. Casi siempre ya está calculada.
-    func autocorrection(for word: String) -> String? {
+    func autocorrection(for word: String, previousWord: String? = nil) -> String? {
         guard Self.isSuggestible(word) else { return nil }
-        let result = cache[word] ?? computeNow(for: word)
+        let key = Self.cacheKey(for: word, previousWord: previousWord)
+        let result = cache[key] ?? computeNow(for: word, previousWord: previousWord)
         // Si se ha empezado a escribir sin ninguna pausa, la primera errata no debe crear ni
         // cargar UITextChecker desde la pulsación. Conservamos la propuesta para elegirla a mano.
         guard !result.needsSpellCheck || checkerWarm else { return nil }
-        let checked = finalize(result, for: word)
+        let checked = finalize(result, for: word, previousWord: previousWord)
         if checked.needsSpellCheck != result.needsSpellCheck || checked.autocorrection != result.autocorrection {
-            store(checked, for: word)
+            store(checked, forKey: key)
         }
         return checked.autocorrection
     }
@@ -356,30 +429,30 @@ final class SuggestionEngine {
         return slots
     }
 
-    private func computeNow(for word: String) -> SuggestionResult {
+    private func computeNow(for word: String, previousWord: String? = nil) -> SuggestionResult {
         // Mientras carga el diccionario (medio segundo al abrir el teclado) no se sugiere nada:
         // el corrector de iOS tardaba en arrancar y congelaba las primeras teclas.
         guard dictionary != nil else { return .empty }
-        let result = snapshot.compute(for: word)
-        store(result, for: word)
+        let result = snapshot.compute(for: word, previousWord: previousWord)
+        store(result, forKey: Self.cacheKey(for: word, previousWord: previousWord))
         return result
     }
 
     /// Solo se consulta el corrector de iOS (lento) cuando una palabra que no está en el
     /// diccionario se iba a corregir: si iOS la da por buena, se respeta.
-    private func finalize(_ result: SuggestionResult, for word: String) -> SuggestionResult {
+    private func finalize(_ result: SuggestionResult, for word: String, previousWord: String? = nil) -> SuggestionResult {
         guard result.needsSpellCheck else { return result }
         if isValidSpelling(word) {
-            return snapshot.compute(for: word, hints: SuggestionSnapshot.CheckerHints(isKnown: true))
+            return snapshot.compute(for: word, previousWord: previousWord, hints: SuggestionSnapshot.CheckerHints(isKnown: true))
         }
         var checked = result
         checked.needsSpellCheck = false
         return checked
     }
 
-    private func store(_ result: SuggestionResult, for word: String) {
+    private func store(_ result: SuggestionResult, forKey key: String) {
         if cache.count > 300 { cache.removeAll(keepingCapacity: true) }
-        cache[word] = result
+        cache[key] = result
     }
 
     private func isValidSpelling(_ word: String) -> Bool {
@@ -394,14 +467,37 @@ final class SuggestionEngine {
         return validator.isValidSpelling(word, language: language)
     }
 
-
     /// Siguiente palabra: base de frases reales combinada con lo que escribe el usuario.
     /// Sin palabra anterior (inicio de frase) propone las palabras con que suelen empezar.
     func predictions(after previous: String?, capitalized: Bool) -> [SuggestionItem?] {
-        let base = previous.map { bigramModel?.followers(of: $0) ?? [] } ?? (bigramModel?.sentenceStarters ?? [])
-        let learnedFollowers = previous.flatMap { bigrams[$0.lowercased()] } ?? [:]
+        let base: [(word: String, count: Int)]
+        var learnedFollowers: [String: Int] = [:]
+        if let previous {
+            let lower = previous.lowercased()
+            var directBase = bigramModel?.followers(of: lower) ?? []
+            if directBase.isEmpty, let accented = dictionary?.bestForm(matching: lower), accented != lower {
+                directBase = bigramModel?.followers(of: accented) ?? []
+            }
+            base = directBase
+            learnedFollowers = bigrams[lower] ?? [:]
+            if let accented = dictionary?.bestForm(matching: lower), accented != lower,
+               let accentedLearned = bigrams[accented] {
+                for (word, count) in accentedLearned {
+                    learnedFollowers[word, default: 0] += count
+                }
+            }
+        } else {
+            base = bigramModel?.sentenceStarters ?? []
+        }
         let ranked = BigramModel.rank(base: base, learned: learnedFollowers).map { word in
-            SuggestionItem(text: capitalized ? word.prefix(1).uppercased() + word.dropFirst() : word, kind: .prediction)
+            let displayed = PersonalDictionary.displayForm(for: word, preferredForms: preferredForms)
+            let text: String
+            if capitalized, displayed.first?.isUppercase != true {
+                text = displayed.prefix(1).uppercased() + displayed.dropFirst()
+            } else {
+                text = displayed
+            }
+            return SuggestionItem(text: text, kind: .prediction)
         }
         guard !ranked.isEmpty else { return [] }
         return [ranked.dropFirst().first, ranked.first, ranked.dropFirst(2).first]
@@ -419,20 +515,100 @@ final class SuggestionEngine {
 
     func setBigramModel(_ model: BigramModel?) {
         bigramModel = model
+        invalidateCache()
     }
 
     // MARK: Aprendizaje
 
     func learn(_ word: String) {
         invalidateCache()
-        let lower = word.lowercased()
+        let trimmed = word.trimmingCharacters(in: .whitespacesAndNewlines)
+        let lower = trimmed.lowercased()
         guard lower.count >= 2, lower.count <= 30, lower.contains(where: \.isLetter) else { return }
+        personalDataGeneration &+= 1
         learned[lower, default: 0] += 1
+        // Conservar mayúsculas internas intencionadas («WhatsApp», «iPhone», «SuperTeclado»).
+        if trimmed.dropFirst().contains(where: \.isUppercase), trimmed != trimmed.uppercased() {
+            preferredForms[lower] = trimmed
+        }
         if learned.count > 3_000 {
             let removable = learned.sorted { $0.value < $1.value }.prefix(learned.count - 2_500)
-            removable.forEach { learned.removeValue(forKey: $0.key) }
+            removable.forEach {
+                learned.removeValue(forKey: $0.key)
+                preferredForms.removeValue(forKey: $0.key)
+            }
         }
         scheduleSave()
+    }
+
+    /// Añade explícitamente una palabra al diccionario personal del teclado («+ palabra» o ⚙️).
+    @discardableResult
+    func addWord(_ proposed: String, persist: Bool = true) -> String? {
+        let trimmed = proposed.trimmingCharacters(in: .whitespacesAndNewlines)
+        let lower = trimmed.lowercased()
+        guard lower.count >= 2, lower.count <= 30,
+              !lower.contains(where: \.isWhitespace),
+              lower.contains(where: \.isLetter) else { return nil }
+        invalidateCache()
+        personalDataGeneration &+= 1
+        learned[lower] = max(learned[lower] ?? 0, 5)
+        rejected.remove(lower)
+        if trimmed != lower {
+            preferredForms[lower] = trimmed
+        }
+        if persist {
+            persistNow(synchronous: false)
+        }
+        return trimmed
+    }
+
+    /// Elimina una palabra aprendida (al mantener pulsada una sugerencia o desde ⚙️).
+    @discardableResult
+    func forget(_ word: String, persist: Bool = true) -> Bool {
+        let lower = word.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !lower.isEmpty else { return false }
+        let existed = learned.removeValue(forKey: lower) != nil
+            || preferredForms.removeValue(forKey: lower) != nil
+            || rejected.remove(lower) != nil
+        bigrams.removeValue(forKey: lower)
+        for key in bigrams.keys {
+            bigrams[key]?.removeValue(forKey: lower)
+        }
+        bigrams = bigrams.filter { !$0.value.isEmpty }
+        guard existed else { return false }
+        personalDataGeneration &+= 1
+        invalidateCache()
+        if persist {
+            persistNow(synchronous: false)
+        }
+        return true
+    }
+
+    func isLearnedWord(_ word: String) -> Bool {
+        (learned[word.lowercased()] ?? 0) >= PersonalDictionary.knownThreshold
+    }
+
+    func savedWordsList(limit: Int = 30) -> [String] {
+        learned
+            .filter { $0.value >= PersonalDictionary.knownThreshold }
+            .sorted { $0.value == $1.value ? $0.key < $1.key : $0.value > $1.value }
+            .prefix(limit)
+            .map { PersonalDictionary.displayForm(for: $0.key, preferredForms: preferredForms) }
+    }
+
+    func clearLearnedWords(persist: Bool = true) {
+        saveTask?.cancel()
+        saveTask = nil
+        pendingSave = false
+        personalDataGeneration &+= 1
+        learned.removeAll()
+        bigrams.removeAll()
+        preferredForms.removeAll()
+        rejected.removeAll()
+        invalidateCache()
+        if persist {
+            PersonalDictionary.clearLearned()
+        }
     }
 
     func learnBigram(previous: String, word: String) {
@@ -440,6 +616,7 @@ final class SuggestionEngine {
         let second = word.lowercased()
         guard first.contains(where: \.isLetter), second.contains(where: \.isLetter),
               first.count <= 30, second.count <= 30 else { return }
+        personalDataGeneration &+= 1
         var followers = bigrams[first] ?? [:]
         followers[second, default: 0] += 1
         if followers.count > 12 {
@@ -460,30 +637,55 @@ final class SuggestionEngine {
     /// El usuario deshizo una corrección o eligió lo que había escrito: se respeta su palabra.
     func reject(_ word: String, persist: Bool = true) {
         invalidateCache()
-        let lower = word.lowercased()
+        let trimmed = word.trimmingCharacters(in: .whitespacesAndNewlines)
+        let lower = trimmed.lowercased()
         guard !lower.isEmpty else { return }
         rejected.insert(lower)
         guard persist else { return }
         // El diccionario propio conserva el rechazo sin arrancar el aprendizaje de iOS
         // desde la pulsación de borrar o de una sugerencia.
+        personalDataGeneration &+= 1
         learned[lower, default: 0] += 2
+        if trimmed != lower, trimmed.dropFirst().contains(where: \.isUppercase) {
+            preferredForms[lower] = trimmed
+        }
         scheduleSave()
+    }
+
+    /// Guarda de inmediato cualquier palabra o par pendiente al cerrar el teclado: iOS suele
+    /// suspender la extensión antes de los 2 s del guardado diferido.
+    func flushPendingSave() {
+        guard pendingSave else { return }
+        persistNow(synchronous: true)
     }
 
     private func scheduleSave() {
         guard !pendingSave else { return }
         pendingSave = true
-        Task { @MainActor [weak self] in
+        saveTask?.cancel()
+        saveTask = Task { @MainActor [weak self] in
             try? await Task.sleep(for: .seconds(2))
-            guard let self else { return }
-            self.pendingSave = false
-            // Guardar miles de palabras y pares lleva unos milisegundos: se hace fuera del hilo
-            // principal para no frenar la siguiente tecla.
-            let learned = self.learned
-            let bigrams = self.bigrams
+            guard let self, !Task.isCancelled else { return }
+            self.persistNow(synchronous: false)
+        }
+    }
+
+    private func persistNow(synchronous: Bool) {
+        saveTask?.cancel()
+        saveTask = nil
+        pendingSave = false
+        let learned = self.learned
+        let bigrams = self.bigrams
+        let forms = self.preferredForms
+        if synchronous {
+            PersonalDictionary.saveLearnedWords(learned)
+            PersonalDictionary.saveLearnedBigrams(bigrams)
+            PersonalDictionary.savePreferredForms(forms)
+        } else {
             Task.detached(priority: .utility) {
                 PersonalDictionary.saveLearnedWords(learned)
                 PersonalDictionary.saveLearnedBigrams(bigrams)
+                PersonalDictionary.savePreferredForms(forms)
             }
         }
     }

@@ -37,6 +37,25 @@ final class BigramModel: Sendable {
         followers[word.lowercased()] ?? []
     }
 
+    /// Seguidores frecuentes tras `previous` que empiezan por `prefix` (sin distinguir tildes).
+    /// Permite priorizar «favor» al escribir «por f» o «gusta» al escribir «me g».
+    func followers(of previous: String, matchingPrefix prefix: String, limit: Int = 3) -> [String] {
+        let foldedPrefix = WordDictionary.fold(prefix.lowercased())
+        guard !foldedPrefix.isEmpty else { return [] }
+        let lowerPrefix = prefix.lowercased()
+        var matches: [String] = []
+        for entry in followers(of: previous) {
+            let candidate = entry.word
+            guard candidate != lowerPrefix else { continue }
+            let folded = WordDictionary.fold(candidate)
+            if folded.hasPrefix(foldedPrefix) {
+                matches.append(candidate)
+                if matches.count == limit { break }
+            }
+        }
+        return matches
+    }
+
     var sentenceStarters: [(word: String, count: Int)] {
         followers[Self.sentenceStartKey] ?? []
     }

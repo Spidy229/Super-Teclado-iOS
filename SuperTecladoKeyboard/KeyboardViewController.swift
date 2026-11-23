@@ -13,6 +13,7 @@ final class KeyboardViewController: UIInputViewController {
     /// La barra de sugerencias, los ajustes rápidos y los avisos también van en UIKit: al escribir
     /// o abrir ⚙️ no interviene SwiftUI ni ningún `UIHostingController`.
     private lazy var suggestionBar = SuggestionBarUIView(engine: engine)
+    private lazy var addWordBar = AddWordBarUIView(engine: engine)
     private lazy var settingsPanel = KeyboardSettingsPanelUIView(engine: engine)
     private let toastView = KeyboardToastView()
     private var engineObserver: AnyCancellable?
@@ -116,6 +117,7 @@ final class KeyboardViewController: UIInputViewController {
         grid.suspend()
         clipboardTimer?.invalidate()
         clipboardTimer = nil
+        engine.flushLearnedData()
         if engine.panel != .typing { engine.closePanel() }
         if hasFullAccess {
             Self.recordAvailableMemory()
@@ -311,6 +313,8 @@ final class KeyboardViewController: UIInputViewController {
         // Al escribir y en el panel de ajustes todo es UIKit puro (como en Gboard y el teclado de
         // Apple): el `UIHostingController` de SwiftUI se crea solo cuando hace falta otro panel.
         view.addSubview(suggestionBar)
+        addWordBar.isHidden = true
+        view.addSubview(addWordBar)
         view.addSubview(grid)
         settingsPanel.isHidden = true
         view.addSubview(settingsPanel)
@@ -324,7 +328,7 @@ final class KeyboardViewController: UIInputViewController {
 
     private func needsSwiftUI(for panel: KeyboardPanel) -> Bool {
         switch panel {
-        case .settings:
+        case .settings, .addWord:
             return false
         case .typing:
             return engine.metrics.favoritesRowHeight > 0 || engine.preferences.oneHandedMode != .off
@@ -398,7 +402,7 @@ final class KeyboardViewController: UIInputViewController {
         syncSwiftUIHost(needed: needsSwiftUI(for: panel))
         syncSettingsPanel(panel: panel, palette: palette)
         syncBarAndToast(panel: panel, palette: palette)
-        guard panel == .typing || panel == .emojiSearch || panel == .clipboardSearch else {
+        guard panel == .typing || panel == .emojiSearch || panel == .clipboardSearch || panel == .addWord else {
             if !grid.isHidden {
                 grid.suspend()
                 grid.isHidden = true
@@ -422,7 +426,10 @@ final class KeyboardViewController: UIInputViewController {
         let justOpened = settingsPanel.isHidden
         settingsPanel.isHidden = false
         settingsPanel.apply(palette: palette, stripHeight: engine.metrics.stripHeight, safeAreaInsets: view.safeAreaInsets)
-        if justOpened { settingsPanel.refreshDiagnostics() }
+        if justOpened {
+            settingsPanel.refreshDiagnostics()
+            settingsPanel.refreshPersonalDictionary()
+        }
     }
 
     private func syncBarAndToast(panel: KeyboardPanel, palette: KeyboardPalette) {
@@ -435,6 +442,14 @@ final class KeyboardViewController: UIInputViewController {
             suggestionBar.apply(palette: palette)
         } else if !suggestionBar.isHidden {
             suggestionBar.isHidden = true
+        }
+        if panel == .addWord {
+            let frame = CGRect(x: insets.left, y: insets.top, width: width, height: engine.metrics.stripHeight)
+            if addWordBar.frame != frame { addWordBar.frame = frame }
+            addWordBar.isHidden = false
+            addWordBar.apply(palette: palette)
+        } else if !addWordBar.isHidden {
+            addWordBar.isHidden = true
         }
 
         toastView.show(message: engine.toast, actionTitle: engine.toastActionTitle, palette: palette)

@@ -84,7 +84,30 @@ final class DictionaryAndGlideTests: XCTestCase {
 
         PersonalDictionary.addWord("Finde")
         XCTAssertGreaterThanOrEqual(PersonalDictionary.learnedWords()["finde"] ?? 0, PersonalDictionary.knownThreshold)
+        XCTAssertEqual(PersonalDictionary.preferredForms()["finde"], "Finde")
         PersonalDictionary.removeWord("finde")
         XCTAssertNil(PersonalDictionary.learnedWords()["finde"])
+        XCTAssertNil(PersonalDictionary.preferredForms()["finde"])
+    }
+
+    func testAccentVariantsContextualBigramsAndPersonalTypos() {
+        let rich = WordDictionary.parse("""
+        que 14421005
+        qué 4166708
+        está 2433246
+        esta 1051900
+        favor 500000
+        forma 900000
+        """)
+        XCTAssertEqual(rich.accentVariants(matching: "que"), ["qué"])
+        XCTAssertEqual(rich.accentVariants(matching: "esta"), ["está"])
+        XCTAssertEqual(rich.accentVariants(matching: "está"), ["esta"])
+
+        let bigrams = BigramModel.parse("por\tqué 50|favor 30|la 20\n")
+        XCTAssertEqual(bigrams.followers(of: "por", matchingPrefix: "f"), ["favor"])
+        XCTAssertEqual(bigrams.followers(of: "por", matchingPrefix: "qu"), ["qué"])
+
+        let typos = TypoCorrector.candidates(for: "aitro", in: rich, extraWords: ["aitor": 5])
+        XCTAssertEqual(typos.first?.word, "aitor")
     }
 }

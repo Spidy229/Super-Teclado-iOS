@@ -11,6 +11,7 @@ enum TypoCorrector {
         for typed: String,
         in dictionary: WordDictionary,
         layout: LetterLayout = .spanish,
+        extraWords: [String: Int] = [:],
         limit: Int = 3
     ) -> [Candidate] {
         let positions = layout.unitPositions
@@ -20,12 +21,29 @@ enum TypoCorrector {
         }
         guard letters.count >= 2, letters.allSatisfy({ positions[$0] != nil }) else { return [] }
 
+        var extraByFolded: [String: (word: String, count: Int)] = [:]
+        if !extraWords.isEmpty {
+            for (word, count) in extraWords where count >= PersonalDictionary.knownThreshold {
+                let lower = word.lowercased()
+                let folded = WordDictionary.fold(lower)
+                if let existing = extraByFolded[folded], existing.count >= count { continue }
+                extraByFolded[folded] = (lower, count)
+            }
+        }
+
         var best: [String: Double] = [:]
         func consider(_ edit: [Character], weight: Double) {
-            guard !edit.isEmpty, let word = dictionary.bestForm(matching: String(edit)),
-                  let count = dictionary.count(of: word) else { return }
-            let score = log(Double(count)) + 3 * log(weight)
-            if score > best[word] ?? -.infinity { best[word] = score }
+            guard !edit.isEmpty else { return }
+            let key = String(edit)
+            if let word = dictionary.bestForm(matching: key),
+               let count = dictionary.count(of: word) {
+                let score = log(Double(count)) + 3 * log(weight)
+                if score > best[word] ?? -.infinity { best[word] = score }
+            }
+            if !extraByFolded.isEmpty, let personal = extraByFolded[WordDictionary.fold(key)] {
+                let score = log(Double(personal.count * 2_000)) + 3 * log(weight)
+                if score > best[personal.word] ?? -.infinity { best[personal.word] = score }
+            }
         }
 
         for index in letters.indices {

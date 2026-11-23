@@ -229,4 +229,89 @@ final class KeyGridDeliveryTests: XCTestCase {
         panel.backButton.sendActions(for: .touchUpInside)
         XCTAssertEqual(engine.panel, .typing)
     }
+
+    @MainActor
+    func testLongPressDefaultsToCornerHintAndKeepsSpanishVowelAccentsAdjacent() {
+        let contentRect = CGRect(x: 0, y: 0, width: 390, height: 224)
+
+        // Lado izquierdo («a», «e»): el símbolo de la esquina va por defecto y la tilde justo a la derecha.
+        let aOptions = KeyboardLayout.letterAlternates(for: "a", hint: "@")
+        let aLayout = KeyGridUIView.alternateBarLayout(
+            options: aOptions,
+            keyFrame: CGRect(x: 3, y: 58, width: 38.4, height: 54),
+            contentRect: contentRect
+        )
+        XCTAssertEqual(aLayout.options[aLayout.defaultIndex], "@")
+        XCTAssertEqual(aLayout.options[aLayout.defaultIndex + 1], "á")
+
+        let eOptions = KeyboardLayout.letterAlternates(for: "e", hint: "3")
+        let eLayout = KeyGridUIView.alternateBarLayout(
+            options: eOptions,
+            keyFrame: CGRect(x: 80, y: 4, width: 38.4, height: 54),
+            contentRect: contentRect
+        )
+        XCTAssertEqual(eLayout.options[eLayout.defaultIndex], "3")
+        XCTAssertEqual(eLayout.options[eLayout.defaultIndex + 1], "é")
+
+        // Lado derecho («u», «i», «o»): la barra se invierte para que el símbolo quede sobre la
+        // tecla por defecto y la tilde española quede inmediatamente 1 posición a la izquierda.
+        for (letter, hint, accent, keyX) in [
+            ("u", "7", "ú", CGFloat(233)),
+            ("i", "8", "í", CGFloat(272)),
+            ("o", "9", "ó", CGFloat(310))
+        ] {
+            let options = KeyboardLayout.letterAlternates(for: letter, hint: hint)
+            let layout = KeyGridUIView.alternateBarLayout(
+                options: options,
+                keyFrame: CGRect(x: keyX, y: 4, width: 38.4, height: 54),
+                contentRect: contentRect
+            )
+            XCTAssertEqual(layout.options[layout.defaultIndex], hint, "Símbolo por defecto en \(letter)")
+            XCTAssertEqual(layout.options[layout.defaultIndex - 1], accent, "Tilde a mano en \(letter)")
+            XCTAssertGreaterThanOrEqual(layout.start, contentRect.minX)
+            XCTAssertLessThanOrEqual(layout.start + CGFloat(layout.options.count) * layout.optionWidth + 6, contentRect.maxX)
+
+            // Con fila de números activa (sin dígito en la esquina), la tilde española es el valor por defecto.
+            let accentOnly = KeyboardLayout.letterAlternates(for: letter, hint: nil)
+            let accentLayout = KeyGridUIView.alternateBarLayout(
+                options: accentOnly,
+                keyFrame: CGRect(x: keyX, y: 4, width: 38.4, height: 54),
+                contentRect: contentRect
+            )
+            XCTAssertEqual(accentLayout.options[accentLayout.defaultIndex], accent, "Tilde directa en \(letter)")
+        }
+
+        // «m» y «n» también ofrecen «¿» y «¡» justo al lado de «?» y «!».
+        let mOptions = KeyboardLayout.letterAlternates(for: "m", hint: "?")
+        XCTAssertEqual(mOptions, ["?", "¿"])
+        let nOptions = KeyboardLayout.letterAlternates(for: "n", hint: "!")
+        XCTAssertEqual(Array(nOptions.prefix(2)), ["!", "¡"])
+    }
+
+    @MainActor
+    func testAddWordFlowFromSettingsPanelSavesAndRemovesPersonalWord() {
+        let engine = KeyboardEngine()
+        engine.panel = .settings
+        let panel = KeyboardSettingsPanelUIView(engine: engine)
+        panel.frame = CGRect(x: 0, y: 0, width: 390, height: 260)
+        panel.apply(palette: .make(theme: .dark, systemIsDark: true), stripHeight: 44)
+
+        panel.addWordButton.sendActions(for: .touchUpInside)
+        XCTAssertEqual(engine.panel, .addWord)
+
+        engine.shift = .on
+        engine.insertCharacter("a", caseSensitive: true)
+        engine.insertCharacter("i", caseSensitive: true)
+        engine.insertCharacter("t", caseSensitive: true)
+        engine.insertCharacter("o", caseSensitive: true)
+        engine.insertCharacter("r", caseSensitive: true)
+        XCTAssertEqual(engine.searchQuery, "Aitor")
+
+        engine.submitAddWord()
+        XCTAssertEqual(engine.searchQuery, "")
+        XCTAssertTrue(engine.savedPersonalWords().contains("Aitor"))
+
+        engine.removePersonalWord("Aitor")
+        XCTAssertFalse(engine.savedPersonalWords().contains("Aitor"))
+    }
 }

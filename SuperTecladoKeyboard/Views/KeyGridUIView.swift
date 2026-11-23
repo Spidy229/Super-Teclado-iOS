@@ -83,7 +83,10 @@ private final class TouchState {
     /// El dedo de iOS, para saber si sigue en la pantalla.
     weak var touch: UITouch?
     var phase: Phase = .pressed
+    var alternateOptions: [String] = []
     var selectedAlternate = 0
+    var alternatesDefaultIndex = 0
+    var alternatesAnchorX: CGFloat = 0
     var alternatesStart: CGFloat = 0
     var optionWidth: CGFloat = 1
     var cursorStep = 0
@@ -983,8 +986,8 @@ final class KeyGridUIView: UIView {
             }
             commit(state)
         case .alternates:
-            if state.spec.alternates.indices.contains(state.selectedAlternate) {
-                let option = state.spec.alternates[state.selectedAlternate]
+            if state.alternateOptions.indices.contains(state.selectedAlternate) {
+                let option = state.alternateOptions[state.selectedAlternate]
                 engine.touchDiagnostics.alternates += 1
                 engine.touchDiagnostics.log("\(option) pulsación larga")
                 engine.insertCharacter(option, caseSensitive: state.spec.isLetter)
@@ -1150,29 +1153,58 @@ final class KeyGridUIView: UIView {
         )
     }
 
+    /// Disposición de la barra de pulsación larga al estilo Gboard: la opción principal (el
+    /// símbolo de la esquina si existe, o la tilde española en vocales) queda siempre justo
+    /// encima de la tecla y seleccionada por defecto; en el lado derecho del teclado la barra se
+    /// despliega hacia la izquierda para que la tilde («ú», «í», «ó») quede a un paso del dedo.
+    static func alternateBarLayout(
+        options: [String],
+        keyFrame: CGRect,
+        contentRect: CGRect
+    ) -> (options: [String], defaultIndex: Int, start: CGFloat, optionWidth: CGFloat) {
+        let count = max(options.count, 1)
+        let preferredWidth = max(30, min(44, keyFrame.width - 6))
+        let maxFittingWidth = max(22, floor((contentRect.width - 10) / CGFloat(count)))
+        let optionWidth = min(preferredWidth, maxFittingWidth)
+        let barWidth = CGFloat(count) * optionWidth + 6
+        let leftStart = keyFrame.minX + (keyFrame.width - optionWidth) / 2 - 3
+
+        if leftStart + barWidth <= contentRect.maxX - 2 {
+            let start = max(contentRect.minX + 2, leftStart)
+            return (options, 0, start, optionWidth)
+        } else {
+            let reversed = Array(options.reversed())
+            let defaultIndex = max(reversed.count - 1, 0)
+            let rightStart = keyFrame.midX + optionWidth / 2 + 3 - barWidth
+            let clamped = min(max(rightStart, contentRect.minX + 2), max(contentRect.minX + 2, contentRect.maxX - 2 - barWidth))
+            return (reversed, defaultIndex, clamped, optionWidth)
+        }
+    }
+
     private func showAlternates(for state: TouchState) {
         let options = state.spec.alternates
         guard !options.isEmpty else { return }
         let frame = state.frame
         let popupHeight = max(36, frame.height - 8)
-        let optionWidth = max(30, min(44, frame.width - 6))
-        let barWidth = CGFloat(options.count) * optionWidth + 6
         let contentRect = bounds.inset(by: keyContentInsets)
-        var start = frame.minX + (frame.width - optionWidth) / 2 - 3
-        if start + barWidth > contentRect.maxX - 2 { start = contentRect.maxX - 2 - barWidth }
-        if start < contentRect.minX + 2 { start = contentRect.minX + 2 }
-        state.alternatesStart = start
-        state.optionWidth = optionWidth
-        state.phase = .alternates
-        state.selectedAlternate = alternateIndex(for: state, x: state.last.x)
+        let layout = Self.alternateBarLayout(options: options, keyFrame: frame, contentRect: contentRect)
+        let barWidth = CGFloat(layout.options.count) * layout.optionWidth + 6
 
-        let rect = CGRect(x: start, y: frame.minY + 2 - (popupHeight + 6), width: barWidth, height: popupHeight + 6)
+        state.alternateOptions = layout.options
+        state.alternatesStart = layout.start
+        state.optionWidth = layout.optionWidth
+        state.alternatesDefaultIndex = layout.defaultIndex
+        state.alternatesAnchorX = state.last.x
+        state.phase = .alternates
+        state.selectedAlternate = layout.defaultIndex
+
+        let rect = CGRect(x: layout.start, y: frame.minY + 2 - (popupHeight + 6), width: barWidth, height: popupHeight + 6)
         let popup = state.popup ?? dequeuePopup()
         state.popup = popup
         popup.showAlternates(
-            options.map { engine.displayText(for: $0, caseSensitive: state.spec.isLetter) },
+            layout.options.map { engine.displayText(for: $0, caseSensitive: state.spec.isLetter) },
             selected: state.selectedAlternate,
-            optionWidth: optionWidth,
+            optionWidth: layout.optionWidth,
             optionHeight: popupHeight,
             colors: colors,
             frame: convert(rect, to: overlayHost)
@@ -1182,8 +1214,10 @@ final class KeyGridUIView: UIView {
     }
 
     private func alternateIndex(for state: TouchState, x: CGFloat) -> Int {
-        let raw = Int(((x - state.alternatesStart - 3) / state.optionWidth).rounded(.down))
-        return min(max(raw, 0), max(state.spec.alternates.count - 1, 0))
+        guard !state.alternateOptions.isEmpty, state.optionWidth > 0 else { return 0 }
+        let delta = x - state.alternatesAnchorX
+        let step = Int((delta / state.optionWidth).rounded())
+        return min(max(state.alternatesDefaultIndex + step, 0), state.alternateOptions.count - 1)
     }
 
     // MARK: Trazo de la escritura deslizando

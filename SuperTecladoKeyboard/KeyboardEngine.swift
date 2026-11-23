@@ -228,8 +228,8 @@ final class KeyboardEngine: ObservableObject {
 
     var isEmailField: Bool { keyboardType == .emailAddress }
 
-    /// En las búsquedas, las teclas escriben en el buscador y no en el documento.
-    var isSearching: Bool { panel == .emojiSearch || panel == .clipboardSearch }
+    /// En las búsquedas y al añadir palabras, las teclas escriben en la barra interna, no en el documento.
+    var isSearching: Bool { panel == .emojiSearch || panel == .clipboardSearch || panel == .addWord }
 
     /// Modo incógnito elegido por el usuario o campo sensible (contraseñas, códigos, tarjetas).
     var isIncognito: Bool {
@@ -416,10 +416,11 @@ final class KeyboardEngine: ObservableObject {
     }
 
     private func updateShiftState(contextBeforeInput: String? = nil, useProvidedContext: Bool = false) {
-        if isSearching {
+        if panel == .emojiSearch || panel == .clipboardSearch {
             if shift != .off { shift = .off }
             return
         }
+        if panel == .addWord { return }
         guard shift != .locked else { return }
         let mode = autocapitalizationMode
         let capitalize: Bool
@@ -447,7 +448,9 @@ final class KeyboardEngine: ObservableObject {
             if quickPaste != nil, Date().timeIntervalSince(quickPasteDate) > 180 { quickPaste = nil }
             return
         }
-        let word = currentWord
+        let context = proxy?.documentContextBeforeInput
+        let word = KeyboardTextLogic.currentWord(before: context)
+        let previousWord = KeyboardTextLogic.previousWord(before: context)
         if let glide = lastGlide, glide.word != word { lastGlide = nil }
 
         let newSuggestions: [SuggestionItem?]
@@ -458,10 +461,10 @@ final class KeyboardEngine: ObservableObject {
         } else if !suggestionsAllowed {
             newSuggestions = []
         } else if word.isEmpty {
-            newSuggestions = predictions()
+            newSuggestions = predictions(context: context)
         } else {
             // Con el diccionario cargado se calculan en segundo plano, como en Gboard.
-            let result = await suggestionEngine.result(for: word)
+            let result = await suggestionEngine.result(for: word, previousWord: previousWord)
             guard !Task.isCancelled, currentWord == word else { return }
             let slots = suggestionEngine.slots(for: result, word: word, includeEmoji: preferences.emojiSuggestions)
             // En azul solo lo que se va a corregir al pulsar espacio: sin autocorrección, la
@@ -474,9 +477,9 @@ final class KeyboardEngine: ObservableObject {
         if quickPaste != nil, Date().timeIntervalSince(quickPasteDate) > 180 { quickPaste = nil }
     }
 
-    private func predictions() -> [SuggestionItem?] {
+    private func predictions(context: String?) -> [SuggestionItem?] {
         guard preferences.nextWordPrediction,
-              let context = proxy?.documentContextBeforeInput, context.hasSuffix(" ") else { return [] }
+              let context, context.hasSuffix(" ") else { return [] }
         let capitalized = shift != .off
         if let previous = KeyboardTextLogic.previousWord(before: context) {
             return suggestionEngine.predictions(after: previous, capitalized: capitalized)
@@ -527,6 +530,14 @@ final class KeyboardEngine: ObservableObject {
     }
 
     func insertCharacter(_ value: String, caseSensitive: Bool) {
+        if panel == .addWord {
+            let output = displayText(for: value, caseSensitive: caseSensitive)
+            if !output.contains(where: \.isWhitespace) {
+                setSearchQuery(searchQuery + output)
+            }
+            if shift == .on { shift = .off }
+            return
+        }
         if isSearching {
             setSearchQuery(searchQuery + value.lowercased())
             return
@@ -559,6 +570,10 @@ final class KeyboardEngine: ObservableObject {
     }
 
     func insertSpace() {
+        if panel == .addWord {
+            submitAddWord()
+            return
+        }
         if isSearching {
             if !searchQuery.isEmpty, !searchQuery.hasSuffix(" ") {
                 setSearchQuery(searchQuery + " ")
@@ -591,6 +606,10 @@ final class KeyboardEngine: ObservableObject {
     }
 
     func insertReturn() {
+        if panel == .addWord {
+            submitAddWord()
+            return
+        }
         if panel == .emojiSearch {
             if let first = emojiSearchResults.first { insertSearchedEmoji(first) }
             return
@@ -599,6 +618,9 @@ final class KeyboardEngine: ObservableObject {
             if let first = clipSearchResults.first { useClip(first) }
             return
         }
+        let context = proxy?.documentContextBeforeInput
+        let word = KeyboardTextLogic.currentWord(before: context)
+        if !word.isEmpty { recordWord(word, context: context) }
         autoSpaceInserted = false
         proxy?.insertText("\n")
         pendingAutocorrection = nil
@@ -607,11 +629,12 @@ final class KeyboardEngine: ObservableObject {
 
     private func commitWord(separator: String) {
         guard let proxy else { return }
-        let word = currentWord
         let context = proxy.documentContextBeforeInput
+        let word = KeyboardTextLogic.currentWord(before: context)
+        let previousWord = KeyboardTextLogic.previousWord(before: context)
         if !word.isEmpty,
            autocorrectAllowed,
-           let correction = suggestionEngine.autocorrection(for: word),
+           let correction = suggestionEngine.autocorrection(for: word, previousWord: previousWord),
            correction != word {
             for _ in 0..<word.count { proxy.deleteBackward() }
             proxy.insertText(correction + separator)
@@ -716,15 +739,80 @@ final class KeyboardEngine: ObservableObject {
             recordWord(item.text, context: context)
             addSpaceAfterSuggestion(textAfterCursor: textAfterCursor)
         case .typed, .correction, .completion:
-            for _ in 0..<word.count { proxy.deleteBackward() }
-            proxy.insertText(item.text)
-            if item.kind == .typed { suggestionEngine.reject(item.text, persist: !isIncognito) }
+            if item.text != word {
+                for _ in 0..<word.count { proxy.deleteBackward() }
+                proxy.insertText(item.text)
+            }
+            if item.kind == .typed {
+                if item.canAddToDictionary, !isIncognito {
+                    if let saved = suggestionEngine.addWord(item.text, persist: true) {
+                        showToast("«\(saved)» añadida al diccionario")
+                    }
+                } else {
+                    suggestionEngine.reject(item.text, persist: !isIncognito)
+                }
+            }
             recordWord(item.text, context: context)
             lastGlide = nil
             addSpaceAfterSuggestion(textAfterCursor: textAfterCursor)
         }
         if shift == .on { shift = .off }
         afterEdit()
+    }
+
+    /// Mantener pulsada una sugerencia aprendida la olvida del diccionario personal (como Gboard).
+    func forgetSuggestion(_ item: SuggestionItem) {
+        guard suggestionEngine.isLearnedWord(item.text) else { return }
+        keyFeedback(.modifier)
+        if suggestionEngine.forget(item.text, persist: !isIncognito) {
+            showToast("«\(item.text)» eliminada del diccionario")
+            scheduleSuggestions()
+        }
+    }
+
+    // MARK: Diccionario personal desde el teclado
+
+    func openAddWord() {
+        searchQuery = ""
+        page = .letters
+        shift = .off
+        panel = .addWord
+    }
+
+    func closeAddWord() {
+        searchQuery = ""
+        panel = .settings
+    }
+
+    func submitAddWord() {
+        guard let saved = suggestionEngine.addWord(searchQuery, persist: !isIncognito) else {
+            if !searchQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                showToast("Escribe una palabra de al menos 2 letras")
+            }
+            return
+        }
+        searchQuery = ""
+        shift = .off
+        showToast("«\(saved)» añadida al diccionario")
+    }
+
+    func savedPersonalWords(limit: Int = 30) -> [String] {
+        suggestionEngine.savedWordsList(limit: limit)
+    }
+
+    func removePersonalWord(_ word: String) {
+        if suggestionEngine.forget(word, persist: !isIncognito) {
+            showToast("«\(word)» eliminada")
+        }
+    }
+
+    func clearPersonalDictionary() {
+        suggestionEngine.clearLearnedWords(persist: !isIncognito)
+        showToast("Palabras aprendidas borradas")
+    }
+
+    func flushLearnedData() {
+        suggestionEngine.flushPendingSave()
     }
 
     /// Espacio tras la palabra elegida, como en Gboard, pero sin duplicar uno que ya esté detrás
@@ -1085,7 +1173,7 @@ final class KeyboardEngine: ObservableObject {
         searchQuery = query
         if panel == .clipboardSearch {
             updateClipSearchResults()
-        } else {
+        } else if panel == .emojiSearch {
             updateEmojiSearchResults()
         }
     }

@@ -21,6 +21,8 @@ enum KeyboardPanel: Equatable {
     case themes
     /// Ajustes rápidos (vibración, sonido…) y estado del acceso total.
     case settings
+    /// Añadir palabras al diccionario personal usando el propio teclado.
+    case addWord
 }
 
 enum ShiftState {
@@ -103,7 +105,11 @@ enum KeyboardLayout {
 
     static func letterAlternates(for key: String, hint: String?) -> [String] {
         var options: [String] = []
-        if let hint { options.append(hint) }
+        if let hint {
+            options.append(hint)
+            if hint == "?" { options.append("¿") }
+            if hint == "!" { options.append("¡") }
+        }
         options += accents[key] ?? []
         if key == "'" { options += ["’", "‘", "\""] }
         return options

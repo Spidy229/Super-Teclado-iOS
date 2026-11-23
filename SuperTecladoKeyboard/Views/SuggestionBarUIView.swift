@@ -84,6 +84,10 @@ final class SuggestionBarUIView: UIView {
                 guard let self, self.slots.indices.contains(index), let item = self.slots[index] else { return }
                 self.engine.selectSuggestion(item)
             }
+            button.onLongPress = { [weak self] in
+                guard let self, self.slots.indices.contains(index), let item = self.slots[index] else { return }
+                self.engine.forgetSuggestion(item)
+            }
             addSubview(button)
         }
         separators.forEach(addSubview)
@@ -192,6 +196,26 @@ final class SuggestionBarUIView: UIView {
             guard index < slots.count, let item = slots[index] else {
                 button.setTitle(nil, font: .systemFont(ofSize: 17), color: colors.text)
                 button.isEnabled = false
+                continue
+            }
+            if item.kind == .typed, item.canAddToDictionary, !engine.isIncognito {
+                let attributed = NSMutableAttributedString(
+                    string: "+ ",
+                    attributes: [
+                        .font: UIFont.systemFont(ofSize: 16, weight: .bold),
+                        .foregroundColor: colors.accent
+                    ]
+                )
+                attributed.append(NSAttributedString(
+                    string: item.text,
+                    attributes: [
+                        .font: UIFont.systemFont(ofSize: 16, weight: .regular),
+                        .foregroundColor: colors.text
+                    ]
+                ))
+                button.setAttributedTitle(attributed)
+                button.isEnabled = true
+                button.accessibilityLabel = "Añadir \(item.text) al diccionario"
                 continue
             }
             let title = item.kind == .typed && hasCorrection ? "«\(item.text)»" : item.text
@@ -334,7 +358,10 @@ final class BarIconButton: UIControl {
 final class BarTextButton: UIControl {
     var onDown: () -> Void = {}
     var onTap: () -> Void = {}
+    var onLongPress: (() -> Void)?
     private let label = UILabel()
+    private var longPressTask: Task<Void, Never>?
+    private var longPressFired = false
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -367,24 +394,45 @@ final class BarTextButton: UIControl {
     }
 
     func setTitle(_ title: String?, font: UIFont, color: UIColor) {
+        if label.attributedText != nil { label.attributedText = nil }
         if label.text != title { label.text = title }
         if label.font != font { label.font = font }
         if label.textColor != color { label.textColor = color }
     }
 
+    func setAttributedTitle(_ attributed: NSAttributedString) {
+        label.attributedText = attributed
+    }
+
     @objc private func pressed() {
         guard isEnabled else { return }
         alpha = 0.55
+        longPressFired = false
         onDown()
+        longPressTask?.cancel()
+        if onLongPress != nil {
+            longPressTask = Task { @MainActor [weak self] in
+                try? await Task.sleep(for: .milliseconds(550))
+                guard let self, !Task.isCancelled, self.isTracking else { return }
+                self.longPressFired = true
+                self.alpha = 1
+                self.onLongPress?()
+            }
+        }
     }
 
     @objc private func released() {
+        longPressTask?.cancel()
+        longPressTask = nil
         alpha = 1
-        guard isEnabled else { return }
+        guard isEnabled, !longPressFired else { return }
         onTap()
     }
 
     @objc private func abandoned() {
+        longPressTask?.cancel()
+        longPressTask = nil
+        longPressFired = false
         alpha = 1
     }
 
@@ -608,5 +656,118 @@ final class KeyboardToastView: UIView {
 
     @objc private func actionTapped() {
         onAction()
+    }
+}
+
+/// Barra superior en UIKit puro para añadir palabras al diccionario personal desde el teclado.
+@MainActor
+final class AddWordBarUIView: UIView {
+    private let engine: KeyboardEngine
+    private let backButton = UIButton(type: .system)
+    private let fieldBackground = UIView()
+    private let queryLabel = UILabel()
+    private let saveButton = UIButton(type: .system)
+    private var appliedPalette: KeyboardPalette?
+
+    init(engine: KeyboardEngine) {
+        self.engine = engine
+        super.init(frame: .zero)
+        backgroundColor = UIColor(white: 0, alpha: 0.01)
+
+        var backConfig = UIButton.Configuration.plain()
+        backConfig.image = UIImage(systemName: "chevron.left", withConfiguration: UIImage.SymbolConfiguration(pointSize: 13, weight: .bold))
+        backConfig.title = "Ajustes"
+        backConfig.imagePadding = 4
+        backConfig.contentInsets = NSDirectionalEdgeInsets(top: 4, leading: 10, bottom: 4, trailing: 10)
+        backConfig.titleTextAttributesTransformer = UIConfigurationTextAttributesTransformer { incoming in
+            var outgoing = incoming
+            outgoing.font = .systemFont(ofSize: 13, weight: .semibold)
+            return outgoing
+        }
+        backButton.configuration = backConfig
+        backButton.layer.cornerCurve = .continuous
+        backButton.addTarget(self, action: #selector(backTapped), for: .touchUpInside)
+        addSubview(backButton)
+
+        fieldBackground.layer.cornerRadius = 15
+        fieldBackground.layer.cornerCurve = .continuous
+        addSubview(fieldBackground)
+
+        queryLabel.font = .systemFont(ofSize: 15, weight: .medium)
+        queryLabel.lineBreakMode = .byTruncatingHead
+        fieldBackground.addSubview(queryLabel)
+
+        var saveConfig = UIButton.Configuration.filled()
+        saveConfig.title = "Guardar"
+        saveConfig.cornerStyle = .capsule
+        saveConfig.contentInsets = NSDirectionalEdgeInsets(top: 5, leading: 12, bottom: 5, trailing: 12)
+        saveConfig.titleTextAttributesTransformer = UIConfigurationTextAttributesTransformer { incoming in
+            var outgoing = incoming
+            outgoing.font = .systemFont(ofSize: 13, weight: .semibold)
+            return outgoing
+        }
+        saveButton.configuration = saveConfig
+        saveButton.addTarget(self, action: #selector(saveTapped), for: .touchUpInside)
+        addSubview(saveButton)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) no se usa")
+    }
+
+    func apply(palette: KeyboardPalette) {
+        if palette != appliedPalette {
+            appliedPalette = palette
+            let textColor = UIColor(palette.text)
+            let chipColor = UIColor(palette.chip)
+            let accentColor = UIColor(palette.accent)
+            let accentTextColor = UIColor(palette.accentText)
+
+            backButton.backgroundColor = chipColor
+            backButton.tintColor = textColor
+            fieldBackground.backgroundColor = chipColor
+            saveButton.configuration?.baseBackgroundColor = accentColor
+            saveButton.configuration?.baseForegroundColor = accentTextColor
+        }
+        let query = engine.searchQuery
+        let hasText = query.trimmingCharacters(in: .whitespacesAndNewlines).count >= 2
+        saveButton.isEnabled = hasText
+        saveButton.alpha = hasText ? 1 : 0.45
+        if query.isEmpty {
+            queryLabel.text = "Escribe una palabra…"
+            queryLabel.textColor = UIColor(palette.secondaryText)
+        } else {
+            queryLabel.text = query
+            queryLabel.textColor = UIColor(palette.text)
+        }
+    }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        UIView.withoutAnimation {
+            let height = bounds.height
+            let buttonHeight: CGFloat = min(32, max(24, height - 10))
+            let y = (height - buttonHeight) / 2
+            let backWidth = max(78, backButton.sizeThatFits(CGSize(width: 120, height: buttonHeight)).width)
+            let saveWidth = max(72, saveButton.sizeThatFits(CGSize(width: 110, height: buttonHeight)).width)
+            backButton.frame = CGRect(x: 8, y: y, width: backWidth, height: buttonHeight)
+            backButton.layer.cornerRadius = buttonHeight / 2
+            saveButton.frame = CGRect(x: bounds.width - 8 - saveWidth, y: y, width: saveWidth, height: buttonHeight)
+            let fieldX = backButton.frame.maxX + 8
+            let fieldWidth = max(0, saveButton.frame.minX - 8 - fieldX)
+            fieldBackground.frame = CGRect(x: fieldX, y: y, width: fieldWidth, height: buttonHeight)
+            queryLabel.frame = fieldBackground.bounds.insetBy(dx: 10, dy: 0)
+        }
+    }
+
+    @objc private func backTapped() {
+        engine.keyFeedback(.modifier)
+        engine.closeAddWord()
+    }
+
+    @objc private func saveTapped() {
+        engine.keyFeedback(.modifier)
+        engine.submitAddWord()
     }
 }

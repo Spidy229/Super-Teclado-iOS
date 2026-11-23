@@ -10,6 +10,8 @@ final class WordDictionary: Sendable {
     private let indexByWord: [String: Int32]
     /// Solo para palabras con tildes, «ñ» o «ç»: forma sin tildes → palabra más usada.
     private let bestIndexByFolded: [String: Int32]
+    /// Todas las formas acentuadas / con «ñ» que coinciden al quitar tildes (p. ej. «esta» → [«está»]).
+    private let accentedVariantsByFolded: [String: [Int32]]
     private let indicesByFirstLetter: [Character: [Int32]]
     /// Índices agrupados por la primera y la última tecla, para la escritura deslizando.
     private let indicesByGlideEnds: [String: [Int32]]
@@ -24,6 +26,7 @@ final class WordDictionary: Sendable {
         var counts: [Int32] = []
         var indexByWord: [String: Int32] = [:]
         var bestIndexByFolded: [String: Int32] = [:]
+        var accentedVariantsByFolded: [String: [Int32]] = [:]
         var indicesByFirstLetter: [Character: [Int32]] = [:]
         var indicesByGlideEnds: [String: [Int32]] = [:]
         words.reserveCapacity(entries.count)
@@ -39,8 +42,11 @@ final class WordDictionary: Sendable {
             counts.append(Int32(clamping: max(entry.count, 1)))
             indexByWord[word] = index
             // Como van de más a menos usadas, si la forma sin tilde ya está, es más frecuente.
-            if folded != word, bestIndexByFolded[folded] == nil, indexByWord[folded] == nil {
-                bestIndexByFolded[folded] = index
+            if folded != word {
+                if bestIndexByFolded[folded] == nil, indexByWord[folded] == nil {
+                    bestIndexByFolded[folded] = index
+                }
+                accentedVariantsByFolded[folded, default: []].append(index)
             }
             if let first = folded.first { indicesByFirstLetter[first, default: []].append(index) }
             let keys = Self.keyLetters(word)
@@ -53,6 +59,7 @@ final class WordDictionary: Sendable {
         self.counts = counts
         self.indexByWord = indexByWord
         self.bestIndexByFolded = bestIndexByFolded
+        self.accentedVariantsByFolded = accentedVariantsByFolded
         self.indicesByFirstLetter = indicesByFirstLetter
         self.indicesByGlideEnds = indicesByGlideEnds
 
@@ -139,6 +146,25 @@ final class WordDictionary: Sendable {
         let folded = Self.fold(word.lowercased())
         if let index = bestIndexByFolded[folded] { return words[Int(index)] }
         return indexByWord[folded] == nil ? nil : folded
+    }
+
+    /// Variantes con tilde o «ñ» de la misma palabra (p. ej. «esta» → [«está»], «que» → [«qué»],
+    /// «paso» → [«pasó»]), ordenadas de más a menos frecuentes y excluyendo la forma exacta escrita.
+    func accentVariants(matching word: String) -> [String] {
+        let lower = word.lowercased()
+        let folded = Self.fold(lower)
+        var result: [String] = []
+        if let indices = accentedVariantsByFolded[folded] {
+            for index in indices {
+                let candidate = words[Int(index)]
+                if candidate != lower { result.append(candidate) }
+            }
+        }
+        if lower != folded, let unaccentedIndex = indexByWord[folded] {
+            let plain = words[Int(unaccentedIndex)]
+            if plain != lower { result.append(plain) }
+        }
+        return result
     }
 
     /// Palabras que empiezan por el prefijo (sin distinguir tildes), de más a menos usadas.

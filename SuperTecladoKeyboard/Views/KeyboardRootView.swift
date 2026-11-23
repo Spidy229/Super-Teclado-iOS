@@ -44,6 +44,7 @@ struct KeyboardRootView: View {
         case .editing: PanelHeaderView(title: "Edición de texto")
         case .themes: PanelHeaderView(title: "Temas")
         case .settings: PanelHeaderView(title: "Ajustes")
+        case .addWord: Color.clear
         }
     }
 
@@ -62,6 +63,7 @@ struct KeyboardRootView: View {
         case .editing: TextEditingPanelView()
         case .themes: ThemePickerPanelView()
         case .settings: KeyboardSettingsPanelView()
+        case .addWord: TypingKeyboardView()
         }
     }
 }
