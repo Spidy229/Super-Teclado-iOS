@@ -607,7 +607,9 @@ final class SuggestionEngine {
         rejected.removeAll()
         invalidateCache()
         if persist {
-            PersonalDictionary.clearLearned()
+            Self.persistenceQueue.sync {
+                PersonalDictionary.clearLearned()
+            }
         }
     }
 
@@ -670,6 +672,8 @@ final class SuggestionEngine {
         }
     }
 
+    private static let persistenceQueue = DispatchQueue(label: "com.spidy229.superteclado.dictionary.io", qos: .utility)
+
     private func persistNow(synchronous: Bool) {
         saveTask?.cancel()
         saveTask = nil
@@ -678,11 +682,13 @@ final class SuggestionEngine {
         let bigrams = self.bigrams
         let forms = self.preferredForms
         if synchronous {
-            PersonalDictionary.saveLearnedWords(learned)
-            PersonalDictionary.saveLearnedBigrams(bigrams)
-            PersonalDictionary.savePreferredForms(forms)
+            Self.persistenceQueue.sync {
+                PersonalDictionary.saveLearnedWords(learned)
+                PersonalDictionary.saveLearnedBigrams(bigrams)
+                PersonalDictionary.savePreferredForms(forms)
+            }
         } else {
-            Task.detached(priority: .utility) {
+            Self.persistenceQueue.async {
                 PersonalDictionary.saveLearnedWords(learned)
                 PersonalDictionary.saveLearnedBigrams(bigrams)
                 PersonalDictionary.savePreferredForms(forms)

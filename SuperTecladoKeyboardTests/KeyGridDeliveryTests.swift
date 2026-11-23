@@ -291,13 +291,23 @@ final class KeyGridDeliveryTests: XCTestCase {
     @MainActor
     func testAddWordFlowFromSettingsPanelSavesAndRemovesPersonalWord() {
         let engine = KeyboardEngine()
+        engine.preferences.incognito = false
+        engine.preferences.sound = false
+        engine.preferences.haptics = false
         engine.panel = .settings
+        let palette = KeyboardPalette.make(theme: .dark, systemIsDark: true)
         let panel = KeyboardSettingsPanelUIView(engine: engine)
         panel.frame = CGRect(x: 0, y: 0, width: 390, height: 260)
-        panel.apply(palette: .make(theme: .dark, systemIsDark: true), stripHeight: 44)
+        panel.apply(palette: palette, stripHeight: 44)
 
         panel.addWordButton.sendActions(for: .touchUpInside)
         XCTAssertEqual(engine.panel, .addWord)
+
+        let bar = AddWordBarUIView(engine: engine)
+        bar.frame = CGRect(x: 0, y: 0, width: 390, height: 44)
+        bar.apply(palette: palette)
+        bar.layoutIfNeeded()
+        XCTAssertFalse(bar.saveButton.isEnabled)
 
         engine.shift = .on
         engine.insertCharacter("a", caseSensitive: true)
@@ -307,9 +317,14 @@ final class KeyGridDeliveryTests: XCTestCase {
         engine.insertCharacter("r", caseSensitive: true)
         XCTAssertEqual(engine.searchQuery, "Aitor")
 
-        engine.submitAddWord()
+        bar.apply(palette: palette)
+        XCTAssertTrue(bar.saveButton.isEnabled)
+        bar.saveButton.sendActions(for: .touchUpInside)
         XCTAssertEqual(engine.searchQuery, "")
         XCTAssertTrue(engine.savedPersonalWords().contains("Aitor"))
+
+        bar.backButton.sendActions(for: .touchUpInside)
+        XCTAssertEqual(engine.panel, .settings)
 
         engine.removePersonalWord("Aitor")
         XCTAssertFalse(engine.savedPersonalWords().contains("Aitor"))

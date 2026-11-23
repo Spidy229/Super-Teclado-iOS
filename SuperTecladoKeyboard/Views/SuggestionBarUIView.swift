@@ -663,10 +663,10 @@ final class KeyboardToastView: UIView {
 @MainActor
 final class AddWordBarUIView: UIView {
     private let engine: KeyboardEngine
-    private let backButton = UIButton(type: .system)
+    let backButton = AddWordPillButton(title: "Ajustes", symbol: "chevron.left")
     private let fieldBackground = UIView()
     private let queryLabel = UILabel()
-    private let saveButton = UIButton(type: .system)
+    let saveButton = AddWordPillButton(title: "Guardar")
     private var appliedPalette: KeyboardPalette?
 
     init(engine: KeyboardEngine) {
@@ -674,19 +674,8 @@ final class AddWordBarUIView: UIView {
         super.init(frame: .zero)
         backgroundColor = UIColor(white: 0, alpha: 0.01)
 
-        var backConfig = UIButton.Configuration.plain()
-        backConfig.image = UIImage(systemName: "chevron.left", withConfiguration: UIImage.SymbolConfiguration(pointSize: 13, weight: .bold))
-        backConfig.title = "Ajustes"
-        backConfig.imagePadding = 4
-        backConfig.contentInsets = NSDirectionalEdgeInsets(top: 4, leading: 10, bottom: 4, trailing: 10)
-        backConfig.titleTextAttributesTransformer = UIConfigurationTextAttributesTransformer { incoming in
-            var outgoing = incoming
-            outgoing.font = .systemFont(ofSize: 13, weight: .semibold)
-            return outgoing
-        }
-        backButton.configuration = backConfig
-        backButton.layer.cornerCurve = .continuous
-        backButton.addTarget(self, action: #selector(backTapped), for: .touchUpInside)
+        backButton.onDown = { [weak self] in self?.engine.keyFeedback(.modifier) }
+        backButton.onTap = { [weak self] in self?.engine.closeAddWord() }
         addSubview(backButton)
 
         fieldBackground.layer.cornerRadius = 15
@@ -697,17 +686,8 @@ final class AddWordBarUIView: UIView {
         queryLabel.lineBreakMode = .byTruncatingHead
         fieldBackground.addSubview(queryLabel)
 
-        var saveConfig = UIButton.Configuration.filled()
-        saveConfig.title = "Guardar"
-        saveConfig.cornerStyle = .capsule
-        saveConfig.contentInsets = NSDirectionalEdgeInsets(top: 5, leading: 12, bottom: 5, trailing: 12)
-        saveConfig.titleTextAttributesTransformer = UIConfigurationTextAttributesTransformer { incoming in
-            var outgoing = incoming
-            outgoing.font = .systemFont(ofSize: 13, weight: .semibold)
-            return outgoing
-        }
-        saveButton.configuration = saveConfig
-        saveButton.addTarget(self, action: #selector(saveTapped), for: .touchUpInside)
+        saveButton.onDown = { [weak self] in self?.engine.keyFeedback(.modifier) }
+        saveButton.onTap = { [weak self] in self?.engine.submitAddWord() }
         addSubview(saveButton)
     }
 
@@ -724,11 +704,9 @@ final class AddWordBarUIView: UIView {
             let accentColor = UIColor(palette.accent)
             let accentTextColor = UIColor(palette.accentText)
 
-            backButton.backgroundColor = chipColor
-            backButton.tintColor = textColor
+            backButton.apply(background: chipColor, foreground: textColor)
             fieldBackground.backgroundColor = chipColor
-            saveButton.configuration?.baseBackgroundColor = accentColor
-            saveButton.configuration?.baseForegroundColor = accentTextColor
+            saveButton.apply(background: accentColor, foreground: accentTextColor)
         }
         let query = engine.searchQuery
         let hasText = query.trimmingCharacters(in: .whitespacesAndNewlines).count >= 2
@@ -752,7 +730,6 @@ final class AddWordBarUIView: UIView {
             let backWidth = max(78, backButton.sizeThatFits(CGSize(width: 120, height: buttonHeight)).width)
             let saveWidth = max(72, saveButton.sizeThatFits(CGSize(width: 110, height: buttonHeight)).width)
             backButton.frame = CGRect(x: 8, y: y, width: backWidth, height: buttonHeight)
-            backButton.layer.cornerRadius = buttonHeight / 2
             saveButton.frame = CGRect(x: bounds.width - 8 - saveWidth, y: y, width: saveWidth, height: buttonHeight)
             let fieldX = backButton.frame.maxX + 8
             let fieldWidth = max(0, saveButton.frame.minX - 8 - fieldX)
@@ -760,14 +737,100 @@ final class AddWordBarUIView: UIView {
             queryLabel.frame = fieldBackground.bounds.insetBy(dx: 10, dy: 0)
         }
     }
+}
 
-    @objc private func backTapped() {
-        engine.keyFeedback(.modifier)
-        engine.closeAddWord()
+/// Botón píldora en UIKit puro para la barra de añadir palabra (sin SwiftUI ni `AttributeContainer`).
+@MainActor
+final class AddWordPillButton: UIControl {
+    var onDown: () -> Void = {}
+    var onTap: () -> Void = {}
+    private let iconView: UIImageView?
+    private let label = UILabel()
+
+    init(title: String, symbol: String? = nil) {
+        if let symbol {
+            let imageView = UIImageView(image: UIImage(
+                systemName: symbol,
+                withConfiguration: UIImage.SymbolConfiguration(pointSize: 12, weight: .bold)
+            ))
+            imageView.contentMode = .scaleAspectFit
+            imageView.isUserInteractionEnabled = false
+            iconView = imageView
+        } else {
+            iconView = nil
+        }
+        super.init(frame: .zero)
+        layer.cornerCurve = .continuous
+        isAccessibilityElement = true
+        accessibilityLabel = title
+        accessibilityTraits = .button
+
+        if let iconView { addSubview(iconView) }
+        label.text = title
+        label.font = .systemFont(ofSize: 13, weight: .semibold)
+        label.textAlignment = .center
+        label.isUserInteractionEnabled = false
+        addSubview(label)
+
+        addTarget(self, action: #selector(pressed), for: .touchDown)
+        addTarget(self, action: #selector(released), for: .touchUpInside)
+        addTarget(self, action: #selector(abandoned), for: [.touchUpOutside, .touchCancel, .touchDragExit])
     }
 
-    @objc private func saveTapped() {
-        engine.keyFeedback(.modifier)
-        engine.submitAddWord()
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) no se usa")
+    }
+
+    func apply(background: UIColor, foreground: UIColor) {
+        backgroundColor = background
+        iconView?.tintColor = foreground
+        label.textColor = foreground
+    }
+
+    override func sizeThatFits(_ size: CGSize) -> CGSize {
+        let labelSize = label.sizeThatFits(CGSize(width: max(0, size.width - 24), height: size.height))
+        let iconSpace: CGFloat = iconView == nil ? 0 : 14
+        return CGSize(width: ceil(labelSize.width) + iconSpace + 22, height: size.height)
+    }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        UIView.withoutAnimation {
+            layer.cornerRadius = bounds.height / 2
+            let height = bounds.height
+            if let iconView {
+                let iconSize: CGFloat = 12
+                let labelWidth = ceil(label.sizeThatFits(CGSize(width: bounds.width, height: height)).width)
+                let totalWidth = iconSize + 4 + labelWidth
+                let startX = max(8, (bounds.width - totalWidth) / 2)
+                iconView.frame = CGRect(x: startX, y: (height - iconSize) / 2, width: iconSize, height: iconSize)
+                label.frame = CGRect(x: iconView.frame.maxX + 4, y: 0, width: max(0, bounds.width - iconView.frame.maxX - 12), height: height)
+            } else {
+                label.frame = bounds.insetBy(dx: 10, dy: 0)
+            }
+        }
+    }
+
+    @objc private func pressed() {
+        guard isEnabled else { return }
+        alpha = 0.55
+        onDown()
+    }
+
+    @objc private func released() {
+        guard isEnabled else { return }
+        alpha = 1
+        onTap()
+    }
+
+    @objc private func abandoned() {
+        alpha = isEnabled ? 1 : 0.45
+    }
+
+    override func accessibilityActivate() -> Bool {
+        guard isEnabled else { return false }
+        onTap()
+        return true
     }
 }
